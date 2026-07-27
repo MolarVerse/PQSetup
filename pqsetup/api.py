@@ -13,6 +13,11 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .executable import discover_pq
 from .input_writer import render_input
+from .mm import (
+    mm_method_label,
+    validate_mm_setup_contents,
+    validate_mm_structure,
+)
 from .models import (
     Bootstrap,
     ExportRequest,
@@ -20,6 +25,7 @@ from .models import (
     PerturbationResult,
     RenderResult,
     RunPlanRequest,
+    SetupFileReference,
     SimulationSetup,
     StructureAnalysis,
 )
@@ -27,6 +33,7 @@ from .presets import list_presets
 from .release import TARGET_PQ_RELEASE
 from .runners import detect_runners
 from .run_plan import plan_requested, render_run_plan
+from .run_script import RUN_SCRIPT_NAME, render_run_script
 from .structures import (
     analyze_structure,
     format_pq_restart,
@@ -35,6 +42,7 @@ from .structures import (
 )
 
 _MAX_STRUCTURE_BYTES = 100 * 1024 * 1024
+_MAX_SETUP_FILE_BYTES = 100 * 1024 * 1024
 
 
 def create_app(*, pq_executable: str | None = None) -> FastAPI:
@@ -104,7 +112,10 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
 
     @app.post("/api/project/export")
     def export_project(request: ExportRequest) -> Response:
-        if plan_requested(request.sampling_run_count, request.equilibration):
+        if (
+            plan_requested(request.sampling_run_count, request.equilibration)
+            or request.setup.job_type == "mm-md"
+        ):
             return _export_plan(
                 request,
                 pq_executable=pq_executable,
@@ -241,12 +252,34 @@ def _export_plan(
     *,
     pq_executable: str | None,
 ) -> Response:
+    if request.setup_files and request.setup.job_type != "mm-md":
+        raise HTTPException(
+            status_code=422,
+            detail="Setup files are only supported for molecular mechanics.",
+        )
+    _validate_setup_file_contents(request)
+    setup_content_diagnostics = validate_mm_setup_contents(
+        request.setup,
+        request.structure,
+        request.setup_files,
+    )
+    if setup_content_diagnostics:
+        raise HTTPException(
+            status_code=422,
+            detail=[item.model_dump() for item in setup_content_diagnostics],
+        )
+
     pq = discover_pq(pq_executable)
     runners = detect_runners(pq.executable if pq.found else None)
     plan_request = RunPlanRequest(
         setup=request.setup,
+        structure=request.structure,
         equilibration=request.equilibration,
         sampling_run_count=request.sampling_run_count or 1,
+        setup_files=[
+            SetupFileReference(role=item.role, name=item.name)
+            for item in request.setup_files
+        ],
     )
     rendered = render_run_plan(plan_request, pq=pq, runners=runners)
     if not rendered.valid:
@@ -261,7 +294,20 @@ def _export_plan(
             status_code=422,
             detail=[item.model_dump() for item in analysis.diagnostics],
         )
-    if request.structure.cell_generated and request.setup.ensemble == "NPT":
+    mm_structure_diagnostics = validate_mm_structure(
+        request.setup,
+        request.structure,
+    )
+    if mm_structure_diagnostics:
+        raise HTTPException(
+            status_code=422,
+            detail=[item.model_dump() for item in mm_structure_diagnostics],
+        )
+    if (
+        request.structure.cell_generated
+        and request.setup.ensemble == "NPT"
+        and request.setup.job_type != "mm-md"
+    ):
         raise HTTPException(
             status_code=422,
             detail="NPT needs a physical periodic cell, not a generated vacuum cell.",
@@ -278,9 +324,9 @@ def _export_plan(
         for atom in exported_structure.atoms:
             atom.velocity = None
             atom.force = None
-    structure_content = format_pq_restart(exported_structure)
-    structure_hash = sha256(structure_content.encode("utf-8")).hexdigest()
-    if request.preparation and request.preparation.prepared_sha256 != structure_hash:
+    prepared_content = format_pq_restart(exported_structure)
+    prepared_hash = sha256(prepared_content.encode("utf-8")).hexdigest()
+    if request.preparation and request.preparation.prepared_sha256 != prepared_hash:
         raise HTTPException(
             status_code=422,
             detail=(
@@ -288,6 +334,12 @@ def _export_plan(
                 "perturbation. Apply the preparation again."
             ),
         )
+    if request.setup.job_type == "mm-md" and request.structure.cell_generated:
+        exported_structure.cell = None
+        exported_structure.periodic = (False, False, False)
+        exported_structure.wrapped_centered = False
+    structure_content = format_pq_restart(exported_structure)
+    structure_hash = sha256(structure_content.encode("utf-8")).hexdigest()
 
     input_files = [
         {
@@ -304,6 +356,28 @@ def _export_plan(
         }
         for item in rendered.files
     ]
+    execution_order = [item.name for item in rendered.files]
+    _validate_setup_file_collisions(
+        request,
+        {
+            *execution_order,
+            *(item.restart_file for item in rendered.files),
+            structure_name,
+            RUN_SCRIPT_NAME,
+            "pqproject.json",
+            "run-logs",
+        },
+    )
+    setup_file_entries = [
+        {
+            "role": item.role,
+            "name": item.name,
+            "sha256": sha256(item.content.encode("utf-8")).hexdigest(),
+        }
+        for item in request.setup_files
+    ]
+    run_script = render_run_script(execution_order)
+    run_script_hash = sha256(run_script.encode("utf-8")).hexdigest()
     aliases = {"mace": "mace_mp"}
     runner_by_id = {item.id: item for item in runners}
     runner_id = request.setup.runner
@@ -312,36 +386,61 @@ def _export_plan(
         if runner_id
         else None
     )
-    environment_calculator = {
-        "id": runner_id,
-        "detected": bool(status and status.installed),
-        "ready": bool(status and status.ready),
-        "version": status.version if status else None,
-        "detail": (
-            status.detail
-            if status
-            else "No environment status is available for this calculator."
-        ),
-    }
+    environment_calculator = (
+        None
+        if request.setup.job_type == "mm-md"
+        else {
+            "id": runner_id,
+            "detected": bool(status and status.installed),
+            "ready": bool(status and status.ready),
+            "version": status.version if status else None,
+            "detail": (
+                status.detail
+                if status
+                else "No environment status is available for this calculator."
+            ),
+        }
+    )
+    plan_manifest = plan_request.model_dump(mode="json", exclude={"structure"})
+    for setup_file in plan_manifest["setup_files"]:
+        setup_file.pop("content", None)
 
     manifest = {
         "schema_version": 3,
         "project_name": project_name,
         "pqsetup_version": __version__,
         "target_pq_release": TARGET_PQ_RELEASE,
-        "plan": plan_request.model_dump(mode="json"),
+        "plan": plan_manifest,
         "files": {
             "inputs": input_files,
             "structure": {
                 "name": structure_name,
                 "sha256": structure_hash,
             },
+            "run_script": {
+                "name": RUN_SCRIPT_NAME,
+                "sha256": run_script_hash,
+                "shell": "bash",
+            },
+            "setup_files": setup_file_entries,
         },
-        "execution_order": [item.name for item in rendered.files],
+        "execution_order": execution_order,
         "environment": {
             "pq_detected": pq.found,
             "pq_version": pq.version,
             "calculator": environment_calculator,
+        },
+        "method": {
+            "id": (
+                "molecular_mechanics"
+                if request.setup.job_type == "mm-md"
+                else runner_id
+            ),
+            "label": (
+                mm_method_label(request.setup.mm_force_field)
+                if request.setup.job_type == "mm-md"
+                else rendered.files[0].calculator_label
+            ),
         },
         "diagnostics": [
             item.model_dump(mode="json")
@@ -374,6 +473,9 @@ def _export_plan(
         for item in rendered.files:
             bundle.writestr(item.name, item.input_text)
         bundle.writestr(structure_name, structure_content)
+        for item in request.setup_files:
+            bundle.writestr(item.name, item.content)
+        _write_executable(bundle, RUN_SCRIPT_NAME, run_script)
         bundle.writestr(
             "pqproject.json",
             json.dumps(manifest, indent=2) + "\n",
@@ -383,6 +485,52 @@ def _export_plan(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{project_name}.zip"'},
     )
+
+
+def _validate_setup_file_contents(request: ExportRequest) -> None:
+    total_bytes = 0
+    for item in request.setup_files:
+        if not item.content.strip():
+            raise HTTPException(
+                status_code=422,
+                detail=f"Setup file '{item.name}' is empty.",
+            )
+        if "\x00" in item.content:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Setup file '{item.name}' contains binary data.",
+            )
+        total_bytes += len(item.content.encode("utf-8"))
+        if total_bytes > _MAX_SETUP_FILE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Setup files must be 100 MB or smaller in total.",
+            )
+
+
+def _validate_setup_file_collisions(
+    request: ExportRequest,
+    reserved_names: set[str],
+) -> None:
+    reserved = {name.casefold() for name in reserved_names}
+    for item in request.setup_files:
+        if item.name.casefold() in reserved:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Setup file '{item.name}' conflicts with a generated file.",
+            )
+
+
+def _write_executable(
+    bundle: zipfile.ZipFile,
+    name: str,
+    content: str,
+) -> None:
+    archive_entry = zipfile.ZipInfo(name)
+    archive_entry.create_system = 3
+    archive_entry.external_attr = 0o100755 << 16
+    archive_entry.compress_type = zipfile.ZIP_DEFLATED
+    bundle.writestr(archive_entry, content)
 
 
 app = create_app()

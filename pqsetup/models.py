@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 Severity = Literal["error", "warning", "info"]
 Ensemble = Literal["NPT", "NVT", "NVE", "OPT"]
 JobType = Literal["mm-md", "qm-md", "qm-rpmd", "mm-opt"]
+MMForceFieldMode = Literal["off", "bonded", "on"]
+SetupFileRole = Literal[
+    "moldescriptor",
+    "guff",
+    "topology",
+    "parameter",
+    "intra_nonbonded",
+]
 PressureIsotropy = Literal[
     "isotropic",
     "xy",
@@ -30,6 +38,7 @@ class Atom(BaseModel):
 
     symbol: str
     position: tuple[float, float, float]
+    atom_name: str | None = None
     molecule_type: int = 0
     velocity: tuple[float, float, float] | None = None
     force: tuple[float, float, float] | None = None
@@ -145,6 +154,14 @@ class SimulationSetup(BaseModel):
     random_seed: int = 238917
     runner: str | None = "ase_xtb"
     runner_script: str | None = None
+    mm_force_field: MMForceFieldMode = "off"
+    density_g_cm3: float | None = None
+    coulomb_cutoff_angstrom: float = 12.5
+    moldescriptor_file: str | None = None
+    guff_file: str | None = None
+    topology_file: str | None = None
+    parameter_file: str | None = None
+    intra_nonbonded_file: str | None = None
     overwrite_output: bool = False
     extra_settings: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
@@ -172,12 +189,29 @@ class EquilibrationStage(BaseModel):
     coupling_frequency_cm_inverse: float = 1000.0
 
 
+class SetupFileReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: SetupFileRole
+    name: str
+    content: str | None = None
+
+
+class SetupFile(SetupFileReference):
+    content: str
+
+
 class RunPlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     setup: SimulationSetup
+    structure: Structure | None = None
     equilibration: EquilibrationStage | None = None
     sampling_run_count: int = Field(default=1, ge=1, le=99)
+    setup_files: list[SetupFileReference] = Field(
+        default_factory=list,
+        max_length=5,
+    )
 
 
 class PlannedInput(BaseModel):
@@ -228,6 +262,7 @@ class ExportRequest(BaseModel):
     preparation: PreparationMetadata | None = None
     equilibration: EquilibrationStage | None = None
     sampling_run_count: int | None = Field(default=None, ge=1, le=99)
+    setup_files: list[SetupFile] = Field(default_factory=list, max_length=5)
 
 
 class DoctorReport(BaseModel):

@@ -4,23 +4,25 @@ import type {
   PlanRenderResult,
   PreparationMetadata,
   PerturbationResult,
+  SetupFile,
+  SetupFileReference,
   SimulationSetup,
   Structure,
   StructureAnalysis,
 } from "./types";
 
-function errorDetail(detail: unknown, fallback: string): string {
+export function errorDetail(detail: unknown, fallback: string): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     const messages = detail
       .map((item) => {
-        if (
-          typeof item === "object" &&
-          item !== null &&
-          "msg" in item &&
-          typeof item.msg === "string"
-        ) {
-          return item.msg;
+        if (typeof item === "object" && item !== null) {
+          if ("msg" in item && typeof item.msg === "string") {
+            return item.msg;
+          }
+          if ("message" in item && typeof item.message === "string") {
+            return item.message;
+          }
         }
         return null;
       })
@@ -72,6 +74,8 @@ export async function renderPlan(
   setup: SimulationSetup,
   equilibration: EquilibrationStage | null,
   samplingRunCount: number,
+  setupFiles: SetupFileReference[],
+  structure: Structure,
 ): Promise<PlanRenderResult> {
   return readJson(
     await fetch("/api/plan/render", {
@@ -81,6 +85,8 @@ export async function renderPlan(
         setup,
         equilibration,
         sampling_run_count: samplingRunCount,
+        setup_files: setupFiles,
+        structure,
       }),
     }),
   );
@@ -93,6 +99,7 @@ export async function exportProject(
   preparation: PreparationMetadata | null,
   equilibration: EquilibrationStage | null,
   samplingRunCount: number,
+  setupFiles: SetupFile[],
 ): Promise<Blob> {
   const response = await fetch("/api/project/export", {
     method: "POST",
@@ -104,6 +111,7 @@ export async function exportProject(
       preparation,
       equilibration,
       sampling_run_count: samplingRunCount,
+      setup_files: setupFiles,
     }),
   });
   if (!response.ok) {

@@ -27,6 +27,24 @@ from .models import (
 )
 
 _VACUUM_PADDING_ANGSTROM = 6.0
+_UPPERCASE_ELEMENT_LABELS = {
+    "AL": "Al",
+    "BR": "Br",
+    "CL": "Cl",
+    "CO": "Co",
+    "CR": "Cr",
+    "CU": "Cu",
+    "FE": "Fe",
+    "LI": "Li",
+    "MG": "Mg",
+    "MN": "Mn",
+    "MO": "Mo",
+    "NA": "Na",
+    "NI": "Ni",
+    "SE": "Se",
+    "SI": "Si",
+    "ZN": "Zn",
+}
 
 
 def parse_structure_bytes(filename: str, content: bytes) -> Structure:
@@ -76,9 +94,10 @@ def parse_pq_restart(text: str, filename: str | None = None) -> Structure:
             continue
         if len(fields) not in {6, 9, 12, 15, 18, 21}:
             raise ValueError(f"Invalid atom record on line {line_number}.")
-        symbol = fields[0]
-        if symbol not in atomic_numbers:
-            raise ValueError(f"Unknown element '{symbol}' on line {line_number}.")
+        atom_name = fields[0]
+        symbol = _element_from_atom_name(atom_name)
+        if symbol is None:
+            raise ValueError(f"Unknown element '{atom_name}' on line {line_number}.")
         try:
             molecule_type = int(fields[2])
         except ValueError as error:
@@ -88,6 +107,7 @@ def parse_pq_restart(text: str, filename: str | None = None) -> Structure:
             Atom(
                 symbol=symbol,
                 position=_vector3(numeric[:3]),
+                atom_name=atom_name,
                 molecule_type=molecule_type,
                 velocity=_vector3(numeric[3:6]) if len(numeric) >= 6 else None,
                 force=_vector3(numeric[6:9]) if len(numeric) >= 9 else None,
@@ -232,10 +252,10 @@ def analyze_structure(structure: Structure) -> StructureAnalysis:
         diagnostics.append(
             Diagnostic(
                 code="structure.molecule_types",
-                severity="error",
+                severity="info",
                 message=(
-                    "Non-zero molecule types need moldescriptor.dat, which "
-                    "guided packages do not include yet."
+                    "The restart contains molecular typing. Include matching "
+                    "setup files when the selected method needs them."
                 ),
                 atom_indices=molecule_type_indices,
             )
@@ -447,7 +467,8 @@ def format_pq_restart(structure: Structure) -> str:
         lines.append(f"Box {values}")
     for index, atom in enumerate(structure.atoms, start=1):
         coordinates = " ".join(_number(value) for value in atom.position)
-        values = f"{atom.symbol} {index} {atom.molecule_type} {coordinates}"
+        atom_name = atom.atom_name or atom.symbol
+        values = f"{atom_name} {index} {atom.molecule_type} {coordinates}"
         if atom.velocity is not None:
             values += " " + " ".join(_number(value) for value in atom.velocity)
         if atom.force is not None:
@@ -479,6 +500,30 @@ def _minimum_distance(structure: Structure) -> float | None:
 def _prepared_filename(source_name: str | None) -> str:
     stem = Path(source_name).stem if source_name else "structure"
     return f"{stem}-prepared.rst"
+
+
+def _element_from_atom_name(atom_name: str) -> str | None:
+    if atom_name in atomic_numbers:
+        return atom_name
+    base = atom_name.rstrip("0123456789+-")
+    if base in atomic_numbers:
+        return base
+    uppercase_element = _UPPERCASE_ELEMENT_LABELS.get(base)
+    if uppercase_element is not None:
+        return uppercase_element
+    if atom_name.endswith(("+", "-")):
+        charged_candidate = base.capitalize()
+        if charged_candidate in atomic_numbers:
+            return charged_candidate
+    if len(base) >= 2 and base[0].isupper() and base[1].islower():
+        candidate = base[:2]
+        if candidate in atomic_numbers:
+            return candidate
+    if base:
+        candidate = base[0].upper()
+        if candidate in atomic_numbers:
+            return candidate
+    return None
 
 
 def _finite_float(value: str, line_number: int) -> float:

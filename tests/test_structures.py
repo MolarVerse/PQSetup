@@ -47,6 +47,39 @@ def test_reads_legacy_restart_width_and_preserves_current_vectors() -> None:
     assert "1 2 3 4 5 6" in text
 
 
+def test_restart_preserves_charged_atom_names_for_molecular_mechanics() -> None:
+    structure = parse_structure_bytes(
+        "ion.rst",
+        b"Box 20 20 20\nNa+ 1 1 0 0 0\n",
+    )
+
+    assert structure.atoms[0].symbol == "Na"
+    assert structure.atoms[0].atom_name == "Na+"
+    assert "Na+ 1 1 0 0 0" in format_pq_restart(structure)
+
+
+def test_restart_distinguishes_uppercase_metal_and_protein_atom_names() -> None:
+    structure = parse_structure_bytes(
+        "protein-metal.rst",
+        (
+            b"Box 20 20 20\n"
+            b"CA 1 1 0 0 0\n"
+            b"CD1 2 1 2 0 0\n"
+            b"NE2 3 1 4 0 0\n"
+            b"ZN 4 2 6 0 0\n"
+        ),
+    )
+
+    assert [atom.symbol for atom in structure.atoms] == ["C", "C", "N", "Zn"]
+    assert [atom.atom_name for atom in structure.atoms] == [
+        "CA",
+        "CD1",
+        "NE2",
+        "ZN",
+    ]
+    assert "ZN 4 2 6 0 0" in format_pq_restart(structure)
+
+
 def test_periodic_collision_across_centered_cell_boundary() -> None:
     structure = Structure(
         atoms=[
@@ -100,14 +133,18 @@ def test_invalid_cell_shape_is_a_diagnostic_not_an_exception() -> None:
     assert result.diagnostics[0].code == "cell.shape"
 
 
-def test_nonzero_molecule_types_require_companion_metadata() -> None:
+def test_nonzero_molecule_types_are_reported_without_invalidating_structure() -> None:
     structure = load("water.rst")
     structure.atoms[0].molecule_type = 1
 
     result = analyze_structure(structure)
 
-    assert not result.valid
+    assert result.valid
     assert "structure.molecule_types" in {item.code for item in result.diagnostics}
+    diagnostic = next(
+        item for item in result.diagnostics if item.code == "structure.molecule_types"
+    )
+    assert diagnostic.severity == "info"
 
 
 def test_perturbation_is_reproducible_centered_and_non_destructive() -> None:

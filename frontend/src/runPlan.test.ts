@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   clampSamplingRunCount,
-  commitSamplingRunCountDraft,
+  commitContinuedSamplingRunCountDraft,
   compactRunFileNames,
-  parseSamplingRunCountDraft,
+  parseContinuedSamplingRunCountDraft,
   samplingLabel,
+  samplingOutputMode,
+  samplingRunCountForMode,
   samplingRunSummary,
 } from "./runPlan";
 
@@ -32,12 +34,22 @@ describe("run plan labels", () => {
     expect(samplingLabel(7)).toBe("07");
   });
 
-  it("allows an empty draft while a sampling count is edited", () => {
-    expect(parseSamplingRunCountDraft("")).toBeNull();
-    expect(parseSamplingRunCountDraft("12")).toBe(12);
-    expect(parseSamplingRunCountDraft("100")).toBeNull();
-    expect(commitSamplingRunCountDraft("", 12)).toBe(12);
-    expect(commitSamplingRunCountDraft("100", 12)).toBe(99);
+  it("keeps continued input counts between 2 and 99", () => {
+    expect(parseContinuedSamplingRunCountDraft("")).toBeNull();
+    expect(parseContinuedSamplingRunCountDraft("1")).toBeNull();
+    expect(parseContinuedSamplingRunCountDraft("12")).toBe(12);
+    expect(parseContinuedSamplingRunCountDraft("100")).toBeNull();
+    expect(commitContinuedSamplingRunCountDraft("", 12)).toBe(12);
+    expect(commitContinuedSamplingRunCountDraft("1", 12)).toBe(2);
+    expect(commitContinuedSamplingRunCountDraft("100", 12)).toBe(99);
+  });
+
+  it("maps the visible output choice to the backend file count", () => {
+    expect(samplingOutputMode(1)).toBe("single");
+    expect(samplingOutputMode(3)).toBe("continued");
+    expect(samplingRunCountForMode("single", 8)).toBe(1);
+    expect(samplingRunCountForMode("continued")).toBe(3);
+    expect(samplingRunCountForMode("continued", 8)).toBe(8);
   });
 
   it("describes which sampling inputs are continuations", () => {

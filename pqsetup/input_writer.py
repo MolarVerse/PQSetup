@@ -4,6 +4,7 @@ import math
 import re
 from pathlib import Path
 
+from .mm import MM_FILE_FIELDS, mm_method_label, required_mm_file_roles
 from .models import Diagnostic, RenderResult, SimulationSetup
 from .release import (
     PQ_DEFAULT_RUNNER_SCRIPTS,
@@ -49,6 +50,15 @@ _GENERATED_KEYS = {
     "isotropy",
     "qm_prog",
     "qm_script",
+    "density",
+    "rcoulomb",
+    "virial",
+    "force_field",
+    "moldescriptor_file",
+    "guff_file",
+    "topology_file",
+    "parameter_file",
+    "intra_nonbonded_file",
     "overwrite_output",
 }
 _EXTERNAL_RUNNERS = {"dftbplus", "pyscf", "turbomole"}
@@ -141,6 +151,42 @@ def render_input(setup: SimulationSetup) -> RenderResult:
                 f"isotropy = {setup.pressure_isotropy};",
             ]
         )
+
+    if setup.job_type == "mm-md":
+        lines.extend(
+            [
+                "",
+                "# ── Molecular mechanics ───────────────────────────────────────",
+            ]
+        )
+        if setup.density_g_cm3 is not None:
+            lines.append(f"density = {_number(setup.density_g_cm3)};")
+        lines.extend(
+            [
+                f"rcoulomb = {_number(setup.coulomb_cutoff_angstrom)};",
+                "virial = molecular;",
+                f"force-field = {setup.mm_force_field};",
+                "",
+                "# ── Force-field files ─────────────────────────────────────────",
+                f"moldescriptor_file = {setup.moldescriptor_file};",
+            ]
+        )
+        if setup.mm_force_field in {"off", "bonded"}:
+            lines.append(f"guff_file = {setup.guff_file};")
+        if setup.mm_force_field in {"on", "bonded"}:
+            lines.extend(
+                [
+                    f"topology_file = {setup.topology_file};",
+                    f"parameter_file = {setup.parameter_file};",
+                ]
+            )
+        if (
+            setup.mm_force_field in {"bonded", "on"}
+            and setup.intra_nonbonded_file
+        ):
+            lines.append(
+                f"intra-nonbonded_file = {setup.intra_nonbonded_file};"
+            )
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
@@ -380,15 +426,36 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         "restart_file": setup.restart_file,
         "file_prefix": setup.file_prefix,
         "runner_script": setup.runner_script,
+        "moldescriptor_file": setup.moldescriptor_file,
+        "guff_file": setup.guff_file,
+        "topology_file": setup.topology_file,
+        "parameter_file": setup.parameter_file,
+        "intra_nonbonded_file": setup.intra_nonbonded_file,
     }.items():
         if token_value and (
-            any(character in token_value for character in ";\n\r#")
+            any(character in token_value for character in ";\n\r#\x00\\")
             or any(character.isspace() for character in token_value)
         ):
             diagnostics.append(
                 _error(
                     f"input.{name}",
                     f"{name.replace('_', ' ').capitalize()} contains an invalid character.",
+                )
+            )
+    for field_name in MM_FILE_FIELDS.values():
+        filename = getattr(setup, field_name)
+        if filename and Path(filename).name != filename:
+            diagnostics.append(
+                _error(
+                    f"mm.{field_name}",
+                    f"{field_name.replace('_', ' ').capitalize()} must be a filename.",
+                )
+            )
+        if filename and len(filename) > 255:
+            diagnostics.append(
+                _error(
+                    f"mm.{field_name}",
+                    f"{field_name.replace('_', ' ').capitalize()} is too long.",
                 )
             )
     if setup.start_file and Path(setup.start_file).name != setup.start_file:
@@ -427,6 +494,29 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     "Restart file must use the PQ restart format (.rst).",
                 )
             )
+    if setup.job_type == "mm-md":
+        if setup.density_g_cm3 is not None and not _positive_finite(
+            setup.density_g_cm3
+        ):
+            diagnostics.append(
+                _error("mm.density", "Density must be finite and positive.")
+            )
+        if not _positive_finite(setup.coulomb_cutoff_angstrom):
+            diagnostics.append(
+                _error(
+                    "mm.coulomb_cutoff",
+                    "Coulomb cutoff must be finite and positive.",
+                )
+            )
+        for role in required_mm_file_roles(setup.mm_force_field):
+            field_name = MM_FILE_FIELDS[role]
+            if not getattr(setup, field_name):
+                diagnostics.append(
+                    _error(
+                        f"mm.{field_name}",
+                        f"{field_name.replace('_', ' ').capitalize()} is required.",
+                    )
+                )
     if setup.job_type.startswith("qm-"):
         if not setup.runner:
             diagnostics.append(
@@ -588,7 +678,14 @@ def _header(setup: SimulationSetup) -> list[str]:
         content = value if len(value) <= width - 2 else f"{value[: width - 3]}…"
         return f"# │ {content:<{width - 2}} │"
 
-    method = PQ_RUNNER_LABELS.get(setup.runner or "", setup.runner or setup.job_type)
+    method = (
+        mm_method_label(setup.mm_force_field)
+        if setup.job_type == "mm-md"
+        else PQ_RUNNER_LABELS.get(
+            setup.runner or "",
+            setup.runner or setup.job_type,
+        )
+    )
     transition = f"{setup.start_file} → {restart_filename(setup)}"
 
     return [

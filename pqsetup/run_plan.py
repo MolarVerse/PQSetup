@@ -3,6 +3,12 @@ from __future__ import annotations
 from typing import Literal
 
 from .input_writer import render_input, restart_filename
+from .mm import (
+    mm_method_label,
+    validate_mm_setup_contents,
+    validate_mm_setup_files,
+    validate_mm_structure,
+)
 from .models import (
     Diagnostic,
     EquilibrationStage,
@@ -40,8 +46,9 @@ def render_run_plan(
     runners: list[RunnerStatus] | None = None,
 ) -> PlanRenderResult:
     diagnostics: list[Diagnostic] = []
+    is_mm = request.setup.job_type == "mm-md"
     runner_id = request.setup.runner
-    if not runner_id:
+    if not is_mm and not runner_id:
         return PlanRenderResult(
             files=[],
             diagnostics=[_error("runner.missing", "A QM calculator must be selected.")],
@@ -85,21 +92,40 @@ def render_run_plan(
         )
 
     status_by_id = {status.id: status for status in runners or []}
-    label = _runner_label(runner_id, status_by_id)
-    if runner_id not in PQ_QM_PROGRAMS:
-        diagnostics.append(
-            _error(
-                "runner.unknown",
-                f"{label} is not available in PQ {TARGET_PQ_RELEASE}.",
-            )
+    if is_mm:
+        method_id = "molecular_mechanics"
+        label = mm_method_label(request.setup.mm_force_field)
+        diagnostics.extend(
+            validate_mm_setup_files(request.setup, request.setup_files)
         )
-    _append_runner_warning(
-        diagnostics,
-        runner_id=runner_id,
-        label=label,
-        statuses=status_by_id,
-        enabled=runners is not None,
-    )
+        if request.structure is not None:
+            diagnostics.extend(
+                validate_mm_structure(request.setup, request.structure)
+            )
+            diagnostics.extend(
+                validate_mm_setup_contents(
+                    request.setup,
+                    request.structure,
+                    request.setup_files,
+                )
+            )
+    else:
+        method_id = runner_id or ""
+        label = _runner_label(method_id, status_by_id)
+        if method_id not in PQ_QM_PROGRAMS:
+            diagnostics.append(
+                _error(
+                    "runner.unknown",
+                    f"{label} is not available in PQ {TARGET_PQ_RELEASE}.",
+                )
+            )
+        _append_runner_warning(
+            diagnostics,
+            runner_id=method_id,
+            label=label,
+            statuses=status_by_id,
+            enabled=runners is not None,
+        )
 
     equilibration = request.equilibration
     has_equilibration = bool(equilibration and equilibration.enabled)
@@ -134,7 +160,7 @@ def render_run_plan(
                 stage_count=stage_count,
                 segment_index=None,
                 segment_count=None,
-                calculator_id=runner_id,
+                calculator_id=method_id,
                 calculator_label=label,
             )
         )
@@ -172,7 +198,7 @@ def render_run_plan(
                 stage_count=stage_count,
                 segment_index=segment_index,
                 segment_count=request.sampling_run_count,
-                calculator_id=runner_id,
+                calculator_id=method_id,
                 calculator_label=label,
             )
         )

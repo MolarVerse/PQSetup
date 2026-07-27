@@ -154,6 +154,7 @@ def test_plan_export_manifest_and_archive_are_self_consistent(monkeypatch) -> No
         input_names = [item["name"] for item in inputs]
         assert manifest["schema_version"] == 3
         assert manifest["plan"]["sampling_run_count"] == 3
+        assert "structure" not in manifest["plan"]
         assert "calculators" not in manifest["plan"]
         assert input_names == [
             "run-eq.in",
@@ -165,6 +166,7 @@ def test_plan_export_manifest_and_archive_are_self_consistent(monkeypatch) -> No
         assert archive.namelist() == [
             *input_names,
             manifest["files"]["structure"]["name"],
+            manifest["files"]["run_script"]["name"],
             "pqproject.json",
         ]
         assert manifest["environment"]["calculator"] == {

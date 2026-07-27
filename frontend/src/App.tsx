@@ -44,11 +44,23 @@ import {
   THERMOSTATS,
 } from "./conditionOptions";
 import {
-  commitSamplingRunCountDraft,
+  activeSetupFiles,
+  defaultSetupFileName,
+  missingSetupFileRoles,
+  MM_MODES,
+  mmModeLabel,
+  setupFileSpecs,
+} from "./method";
+import {
+  commitContinuedSamplingRunCountDraft,
   compactRunFileNames,
-  parseSamplingRunCountDraft,
+  DEFAULT_CONTINUED_SAMPLING_RUNS,
+  parseContinuedSamplingRunCountDraft,
   samplingLabel,
+  samplingOutputMode,
+  samplingRunCountForMode,
   samplingRunSummary,
+  type SamplingOutputMode,
 } from "./runPlan";
 import StructureViewer from "./StructureViewer";
 import type {
@@ -56,15 +68,18 @@ import type {
   Diagnostic,
   Ensemble,
   EquilibrationStage,
+  MMForceFieldMode,
   PlanRenderResult,
   PreparationMetadata,
+  SetupFile,
+  SetupFileRole,
   SimulationSetup,
   StructureAnalysis,
 } from "./types";
 
 const STEPS = [
   { id: "system", label: "System", hint: "Structure" },
-  { id: "method", label: "Method", hint: "Calculator" },
+  { id: "method", label: "Method", hint: "Interaction" },
   { id: "conditions", label: "Conditions", hint: "Run plan" },
   { id: "prepare", label: "Prepare", hint: "Coordinates" },
   { id: "review", label: "Review", hint: "Inputs" },
@@ -148,6 +163,14 @@ const INITIAL_SETUP: SimulationSetup = {
   initialize_velocities: true,
   random_seed: 238917,
   runner: "ase_xtb",
+  mm_force_field: "off",
+  density_g_cm3: null,
+  coulomb_cutoff_angstrom: 12.5,
+  moldescriptor_file: null,
+  guff_file: null,
+  topology_file: null,
+  parameter_file: null,
+  intra_nonbonded_file: null,
   overwrite_output: false,
   extra_settings: {},
 };
@@ -166,6 +189,48 @@ const INITIAL_EQUILIBRATION: EquilibrationStage = {
   nh_chain_length: 3,
   coupling_frequency_cm_inverse: 1000,
 };
+
+function isMolecularMechanics(setup: SimulationSetup): boolean {
+  return setup.job_type === "mm-md" || setup.job_type === "mm-opt";
+}
+
+function withMMFileNames(
+  setup: SimulationSetup,
+  mode: MMForceFieldMode,
+): SimulationSetup {
+  return {
+    ...setup,
+    mm_force_field: mode,
+    moldescriptor_file:
+      setup.moldescriptor_file ?? defaultSetupFileName("moldescriptor"),
+    guff_file:
+      mode === "off" || mode === "bonded"
+        ? setup.guff_file ?? defaultSetupFileName("guff")
+        : setup.guff_file,
+    topology_file:
+      mode === "on" || mode === "bonded"
+        ? setup.topology_file ?? defaultSetupFileName("topology")
+        : setup.topology_file,
+    parameter_file:
+      mode === "on" || mode === "bonded"
+        ? setup.parameter_file ?? defaultSetupFileName("parameter")
+        : setup.parameter_file,
+  };
+}
+
+function withSetupFileName(
+  setup: SimulationSetup,
+  role: SetupFileRole,
+  name: string,
+): SimulationSetup {
+  if (role === "moldescriptor") {
+    return { ...setup, moldescriptor_file: name };
+  }
+  if (role === "guff") return { ...setup, guff_file: name };
+  if (role === "topology") return { ...setup, topology_file: name };
+  if (role === "parameter") return { ...setup, parameter_file: name };
+  return { ...setup, intra_nonbonded_file: name };
+}
 
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -566,6 +631,7 @@ export default function App() {
   const [preparation, setPreparation] =
     useState<PreparationMetadata | null>(null);
   const [setup, setSetup] = useState<SimulationSetup>(INITIAL_SETUP);
+  const [setupFiles, setSetupFiles] = useState<SetupFile[]>([]);
   const [equilibration, setEquilibration] =
     useState<EquilibrationStage | null>(null);
   const [samplingRunCount, setSamplingRunCount] = useState(1);
@@ -584,14 +650,58 @@ export default function App() {
     message: string;
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const workflowNav = useRef<HTMLElement>(null);
+  const workflowStepButtons = useRef<
+    Partial<Record<StepId, HTMLButtonElement | null>>
+  >({});
   const setupMain = useRef<HTMLElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
+  const lastContinuedSamplingRunCount = useRef(
+    DEFAULT_CONTINUED_SAMPLING_RUNS,
+  );
   const generatedFileTabs = useRef<Array<HTMLButtonElement | null>>([]);
+  const molecularMechanics = isMolecularMechanics(setup);
+  const methodSetupFiles = useMemo(
+    () =>
+      molecularMechanics
+        ? activeSetupFiles(setup.mm_force_field, setupFiles)
+        : [],
+    [molecularMechanics, setup.mm_force_field, setupFiles],
+  );
+  const setupFileReferences = useMemo(
+    () =>
+      methodSetupFiles.map(({ role, name, content }) => ({
+        role,
+        name,
+        content: role === "moldescriptor" ? content : null,
+      })),
+    [methodSetupFiles],
+  );
 
   useEffect(() => {
     setupMain.current?.scrollTo({ top: 0, left: 0 });
+  }, [activeStep]);
+
+  useEffect(() => {
+    function revealActiveStep() {
+      if (!window.matchMedia("(max-width: 720px)").matches) return;
+      window.requestAnimationFrame(() => {
+        const navigation = workflowNav.current;
+        const button = workflowStepButtons.current[activeStep];
+        if (!navigation || !button) return;
+        const left =
+          button.offsetLeft +
+          button.offsetWidth / 2 -
+          navigation.clientWidth / 2;
+        navigation.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+      });
+    }
+
+    revealActiveStep();
+    window.addEventListener("resize", revealActiveStep);
+    return () => window.removeEventListener("resize", revealActiveStep);
   }, [activeStep]);
 
   useEffect(() => {
@@ -604,7 +714,11 @@ export default function App() {
           value.runners.find((runner) => runner.id === "ase_xtb") ??
           value.runners.find((runner) => runner.supported);
         if (preferred) {
-          setSetup((existing) => ({ ...existing, runner: preferred.id }));
+          setSetup((existing) =>
+            isMolecularMechanics(existing) || existing.runner
+              ? existing
+              : { ...existing, runner: preferred.id },
+          );
         }
       })
       .catch((error) => {
@@ -619,7 +733,13 @@ export default function App() {
     const sequence = ++renderSequence.current;
     setRendering(true);
     const timeout = window.setTimeout(() => {
-      renderPlan(setup, equilibration, samplingRunCount)
+      renderPlan(
+        setup,
+        equilibration,
+        samplingRunCount,
+        setupFileReferences,
+        analysis.structure,
+      )
         .then((result) => {
           if (sequence !== renderSequence.current) return;
           setRendered(result);
@@ -655,7 +775,13 @@ export default function App() {
         });
     }, 120);
     return () => window.clearTimeout(timeout);
-  }, [equilibration, samplingRunCount, setup]);
+  }, [
+    analysis.structure,
+    equilibration,
+    samplingRunCount,
+    setup,
+    setupFileReferences,
+  ]);
 
   const selectedRunnerStatus = useMemo(
     () =>
@@ -671,17 +797,44 @@ export default function App() {
   );
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
-  const selectedCalculatorLabel =
-    selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
+  const selectedMethodLabel = molecularMechanics
+    ? `Molecular mechanics · ${mmModeLabel(setup.mm_force_field)}`
+    : selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
+  const mmFileSpecs = useMemo(
+    () => setupFileSpecs(setup.mm_force_field),
+    [setup.mm_force_field],
+  );
+  const missingMMFiles = useMemo(
+    () => missingSetupFileRoles(setup.mm_force_field, methodSetupFiles),
+    [methodSetupFiles, setup.mm_force_field],
+  );
+  const hasTypedMolecules = analysis.structure.atoms.some(
+    (atom) => atom.molecule_type > 0,
+  );
+  const mmDensityReady =
+    !analysis.structure.cell_generated ||
+    Boolean(setup.density_g_cm3 && setup.density_g_cm3 > 0);
+  const calculatorMissing = Boolean(
+    !molecularMechanics &&
+      bootstrap &&
+      setup.runner &&
+      !selectedRunnerStatus?.ready,
+  );
+  const methodReady = molecularMechanics
+    ? hasTypedMolecules && mmDensityReady && missingMMFiles.length === 0
+    : Boolean(setup.runner);
   const samplingTotalSteps =
     setup.steps == null ? null : setup.steps * samplingRunCount;
+  const samplingMode = samplingOutputMode(samplingRunCount);
   const runFileNames = useMemo(
     () => compactRunFileNames(Boolean(equilibration), samplingRunCount),
     [equilibration, samplingRunCount],
   );
 
   const generatedCellNpt =
-    analysis.structure.cell_generated && setup.ensemble === "NPT";
+    !molecularMechanics &&
+    analysis.structure.cell_generated &&
+    setup.ensemble === "NPT";
 
   const diagnostics = useMemo(
     () => [
@@ -699,27 +852,28 @@ export default function App() {
           ]
         : []),
     ],
-    [analysis.diagnostics, generatedCellNpt, rendered?.diagnostics],
+    [
+      analysis.diagnostics,
+      generatedCellNpt,
+      rendered?.diagnostics,
+    ],
   );
 
   const errorCount = diagnostics.filter(
     (item) => item.severity === "error",
   ).length;
-  const calculatorMissing = Boolean(
-    bootstrap && setup.runner && !selectedRunnerStatus?.ready,
-  );
   const ready = Boolean(
     analysis.valid &&
       !generatedCellNpt &&
       rendered?.valid &&
-      setup.runner &&
+      methodReady &&
       errorCount === 0,
   );
 
   const stepState = useMemo<Record<StepId, "ok" | "warn" | "idle">>(
     () => ({
       system: analysis.valid ? "ok" : "warn",
-      method: !setup.runner || calculatorMissing ? "warn" : "ok",
+      method: !methodReady || calculatorMissing ? "warn" : "ok",
       conditions: diagnostics.some(
         (item) =>
           item.severity === "error" &&
@@ -738,9 +892,9 @@ export default function App() {
       analysis,
       calculatorMissing,
       diagnostics,
+      methodReady,
       ready,
       rendered,
-      setup.runner,
     ],
   );
 
@@ -761,6 +915,7 @@ export default function App() {
         preparation,
         equilibration,
         samplingRunCount,
+        methodSetupFiles,
       );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -781,6 +936,7 @@ export default function App() {
     analysis.structure,
     equilibration,
     exporting,
+    methodSetupFiles,
     preparation,
     ready,
     samplingRunCount,
@@ -866,6 +1022,10 @@ export default function App() {
         ...existing,
         start_file: restartName,
         file_prefix: `${stem || "pq"}-run`,
+        density_g_cm3:
+          isMolecularMechanics(existing) && result.structure.cell_generated
+            ? existing.density_g_cm3 ?? 1
+            : existing.density_g_cm3,
       }));
       setNotice({
         kind: result.valid ? "success" : "info",
@@ -942,14 +1102,84 @@ export default function App() {
   function chooseCalculator(runnerId: string) {
     setSetup((existing) => ({
       ...existing,
+      job_type: "qm-md",
       runner: runnerId,
     }));
   }
 
+  function chooseInteractionModel(model: "qm" | "mm") {
+    if (model === "mm") {
+      setSetup((existing) => ({
+        ...withMMFileNames(existing, existing.mm_force_field),
+        preset_id: null,
+        job_type: "mm-md",
+        runner: null,
+        density_g_cm3:
+          analysis.structure.cell_generated
+            ? existing.density_g_cm3 ?? 1
+            : existing.density_g_cm3,
+      }));
+      return;
+    }
+
+    const preferred =
+      bootstrap?.runners.find((runner) => runner.id === "ase_xtb") ??
+      bootstrap?.runners.find((runner) => runner.supported);
+    setSetup((existing) => ({
+      ...existing,
+      preset_id: null,
+      job_type: "qm-md",
+      runner: existing.runner ?? preferred?.id ?? null,
+    }));
+  }
+
+  function chooseMMMode(mode: MMForceFieldMode) {
+    setSetup((existing) => ({
+      ...withMMFileNames(existing, mode),
+      preset_id: null,
+      job_type: "mm-md",
+      runner: null,
+    }));
+  }
+
+  async function chooseSetupFile(
+    role: SetupFileRole,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    try {
+      const content = await file.text();
+      setSetupFiles((existing) => [
+        ...existing.filter((item) => item.role !== role),
+        { role, name: file.name, content },
+      ]);
+      setSetup((existing) => withSetupFileName(existing, role, file.name));
+    } catch (error) {
+      setNotice({ kind: "error", message: formatError(error) });
+    }
+  }
+
   function commitSamplingRunCount() {
-    const count = commitSamplingRunCountDraft(
+    const count = commitContinuedSamplingRunCountDraft(
       samplingRunCountDraft,
       samplingRunCount,
+    );
+    lastContinuedSamplingRunCount.current = count;
+    setSamplingRunCount(count);
+    setSamplingRunCountDraft(String(count));
+  }
+
+  function chooseSamplingOutputMode(mode: SamplingOutputMode) {
+    if (mode === samplingMode) return;
+    if (samplingRunCount > 1) {
+      lastContinuedSamplingRunCount.current = samplingRunCount;
+    }
+    const count = samplingRunCountForMode(
+      mode,
+      lastContinuedSamplingRunCount.current,
     );
     setSamplingRunCount(count);
     setSamplingRunCountDraft(String(count));
@@ -1065,7 +1295,11 @@ export default function App() {
       </header>
 
       <div className="workspace">
-        <nav className="workflow" aria-label="Setup workflow">
+        <nav
+          ref={workflowNav}
+          className="workflow"
+          aria-label="Setup workflow"
+        >
           <div className="workflow-title">
             <span>Workflow</span>
             <Keyboard size={16} aria-label="Keyboard accessible" />
@@ -1074,6 +1308,9 @@ export default function App() {
             {STEPS.map((step, index) => (
               <li key={step.id}>
                 <button
+                  ref={(node) => {
+                    workflowStepButtons.current[step.id] = node;
+                  }}
                   type="button"
                   className={activeStep === step.id ? "active" : ""}
                   aria-current={activeStep === step.id ? "step" : undefined}
@@ -1180,8 +1417,8 @@ export default function App() {
             <section className="step-panel">
               <StepHeading
                 eyebrow="02 · Method"
-                title="Choose the calculator"
-                description="PQ uses one calculator for the complete run sequence."
+                title="Choose the interaction model"
+                description="Use one electronic-structure calculator or one molecular-mechanics model for the run sequence."
               />
               {bootstrap && (
                 <div className="compatibility-line" aria-label="PQ compatibility">
@@ -1194,84 +1431,268 @@ export default function App() {
                   </span>
                 </div>
               )}
-              <div className="method-principle">
-                <strong>One calculator</strong>
-                <span>
-                  The initial choice is a suggestion, not a PQ default. Select
-                  the method required by the study.
-                </span>
-              </div>
-              <div
-                className="calculator-list"
-                role="radiogroup"
-                aria-label="Calculator"
-              >
-                {(bootstrap?.runners ?? [])
-                  .filter((runner) => runner.supported)
-                  .map((runner) => {
-                    const selected = setup.runner === runner.id;
-                    const runnerState = runner.ready
-                      ? "ready"
-                      : runner.installed
-                        ? "incomplete"
-                        : "missing";
-                    return (
-                      <div
-                        className={`calculator-option ${
-                          selected ? "selected" : ""
-                        }`}
-                        key={runner.id}
-                      >
-                        <label>
+              <fieldset className="interaction-model-fieldset">
+                <legend>Interaction model</legend>
+                <div className="interaction-model-options">
+                  <label className={!molecularMechanics ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="interaction-model"
+                      checked={!molecularMechanics}
+                      onChange={() => chooseInteractionModel("qm")}
+                    />
+                    <span>
+                      <strong>Quantum mechanics</strong>
+                      <small>External electronic-structure calculator</small>
+                    </span>
+                  </label>
+                  <label className={molecularMechanics ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="interaction-model"
+                      checked={molecularMechanics}
+                      onChange={() => chooseInteractionModel("mm")}
+                    />
+                    <span>
+                      <strong>Molecular mechanics</strong>
+                      <small>GUFF or a classical force field</small>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              {!molecularMechanics ? (
+                <div className="method-content">
+                  <div className="method-principle">
+                    <strong>Calculator</strong>
+                    <span>
+                      Select the calculator required by the study. Missing local
+                      software is reported but does not prevent setup.
+                    </span>
+                  </div>
+                  <div
+                    className="calculator-list"
+                    role="radiogroup"
+                    aria-label="Calculator"
+                  >
+                    {(bootstrap?.runners ?? [])
+                      .filter((runner) => runner.supported)
+                      .map((runner) => {
+                        const selected = setup.runner === runner.id;
+                        const runnerState = runner.ready
+                          ? "ready"
+                          : runner.installed
+                            ? "incomplete"
+                            : "missing";
+                        return (
+                          <div
+                            className={`calculator-option ${
+                              selected ? "selected" : ""
+                            }`}
+                            key={runner.id}
+                          >
+                            <label>
+                              <input
+                                type="radio"
+                                name="calculator"
+                                checked={selected}
+                                onChange={() => chooseCalculator(runner.id)}
+                              />
+                              <span
+                                className="calculator-radio"
+                                aria-hidden="true"
+                              >
+                                {selected && <span />}
+                              </span>
+                              <span className="runner-name">
+                                <strong>{runner.label}</strong>
+                                <small>
+                                  {runner.version
+                                    ? `Version ${runner.version}`
+                                    : runner.detail}
+                                </small>
+                              </span>
+                              <span
+                                className={`runner-state ${runnerState}`}
+                              >
+                                {runner.ready
+                                  ? "Ready"
+                                  : runner.installed
+                                    ? "Setup incomplete"
+                                    : "Not detected"}
+                              </span>
+                            </label>
+                            {selected && !runner.ready && (
+                              <div
+                                className="calculator-warning"
+                                role="status"
+                              >
+                                <CircleAlert size={14} aria-hidden="true" />
+                                <span>
+                                  {runner.detail} Inputs can still be created.
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    {!bootstrap && (
+                      <div className="runner-loading">
+                        <LoaderCircle className="spin" size={18} />
+                        Detecting calculators
+                      </div>
+                    )}
+                  </div>
+                  {!setup.runner && (
+                    <div className="inline-warning" role="alert">
+                      <CircleAlert size={15} aria-hidden="true" />
+                      Select a calculator.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="method-content">
+                  <div className="method-principle">
+                    <strong>Force-field model</strong>
+                    <span>
+                      PQSetup packages supplied parameters unchanged. It does
+                      not infer a force field from coordinates.
+                    </span>
+                  </div>
+                  <fieldset className="mm-mode-fieldset">
+                    <legend>Interaction terms</legend>
+                    <div className="mm-mode-list">
+                      {MM_MODES.map((option) => (
+                        <label
+                          className={
+                            setup.mm_force_field === option.value
+                              ? "selected"
+                              : ""
+                          }
+                          key={option.value}
+                        >
                           <input
                             type="radio"
-                            name="calculator"
-                            checked={selected}
-                            onChange={() => chooseCalculator(runner.id)}
+                            name="mm-force-field"
+                            checked={setup.mm_force_field === option.value}
+                            onChange={() => chooseMMMode(option.value)}
                           />
-                          <span className="calculator-radio" aria-hidden="true">
-                            {selected && <span />}
-                          </span>
-                          <span className="runner-name">
-                            <strong>{runner.label}</strong>
-                            <small>
-                              {runner.version
-                                ? `Version ${runner.version}`
-                                : runner.detail}
-                            </small>
-                          </span>
-                          <span
-                            className={`runner-state ${runnerState}`}
-                          >
-                            {runner.ready
-                              ? "Ready"
-                              : runner.installed
-                                ? "Setup incomplete"
-                                : "Not detected"}
+                          <span>
+                            <strong>{option.label}</strong>
+                            <small>{option.description}</small>
                           </span>
                         </label>
-                        {selected && !runner.ready && (
-                          <div className="calculator-warning" role="status">
-                            <CircleAlert size={14} aria-hidden="true" />
-                            <span>
-                              {runner.detail} Inputs can still be created.
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                {!bootstrap && (
-                  <div className="runner-loading">
-                    <LoaderCircle className="spin" size={18} />
-                    Detecting calculators
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <div className="form-grid mm-settings">
+                    {analysis.structure.cell_generated && (
+                      <Field
+                        label="System density"
+                        unit="g cm⁻³"
+                        help="Required because the imported structure has no physical periodic cell. PQ uses the equivalent kg L⁻¹ value."
+                      >
+                        <input
+                          type="number"
+                          min="0.000001"
+                          step="0.01"
+                          value={setup.density_g_cm3 ?? ""}
+                          onChange={(event) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              density_g_cm3: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                        />
+                      </Field>
+                    )}
+                    <Field
+                      label="Coulomb cutoff"
+                      unit="Å"
+                      help={
+                        analysis.structure.cell_generated
+                          ? "Must be below half the box length derived from the density."
+                          : "Must fit inside half the shortest periodic box length."
+                      }
+                    >
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={setup.coulomb_cutoff_angstrom}
+                        onChange={(event) =>
+                          setSetup((existing) => ({
+                            ...existing,
+                            coulomb_cutoff_angstrom: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </Field>
                   </div>
-                )}
-              </div>
-              {!setup.runner && (
-                <div className="inline-warning" role="alert">
-                  <CircleAlert size={15} aria-hidden="true" />
-                  Select a calculator.
+
+                  {!hasTypedMolecules && (
+                    <div className="inline-warning" role="alert">
+                      <CircleAlert size={15} aria-hidden="true" />
+                      Import a PQ restart with molecule type IDs for molecular
+                      mechanics.
+                    </div>
+                  )}
+
+                  <section
+                    className="setup-files"
+                    aria-labelledby="setup-files-title"
+                  >
+                    <div className="section-rule-heading">
+                      <strong id="setup-files-title">Force-field files</strong>
+                      <span>Included in the package</span>
+                    </div>
+                    <div className="setup-file-list">
+                      {mmFileSpecs.map((spec) => {
+                        const selected = setupFiles.find(
+                          (file) => file.role === spec.role,
+                        );
+                        return (
+                          <label
+                            className={selected ? "selected" : ""}
+                            key={spec.role}
+                          >
+                            <input
+                              className="setup-file-input"
+                              type="file"
+                              onChange={(event) =>
+                                void chooseSetupFile(spec.role, event)
+                              }
+                            />
+                            <Upload size={16} aria-hidden="true" />
+                            <span>
+                              <strong>{spec.label}</strong>
+                              <small>
+                                {selected?.name ?? spec.defaultName}
+                              </small>
+                            </span>
+                            <span
+                              className={
+                                selected
+                                  ? "file-added"
+                                  : spec.optional
+                                    ? "file-optional"
+                                    : "file-required"
+                              }
+                            >
+                              {selected
+                                ? "Added"
+                                : spec.optional
+                                  ? "Optional"
+                                  : "Required"}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </section>
                 </div>
               )}
             </section>
@@ -1299,9 +1720,10 @@ export default function App() {
                     </span>
                     <label className="stage-toggle">
                       <span>{equilibration ? "Included" : "Skip"}</span>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(equilibration)}
+                        <input
+                          type="checkbox"
+                          aria-label="Include equilibration stage"
+                          checked={Boolean(equilibration)}
                         onChange={(event) => chooseProtocol(event.target.checked)}
                       />
                       <span className="stage-toggle-track" aria-hidden="true">
@@ -1423,6 +1845,167 @@ export default function App() {
                     </span>
                   </header>
                   <div className="stage-body">
+                    <section
+                      className="sampling-plan"
+                      aria-labelledby="sampling-files-title"
+                    >
+                      <div className="section-rule-heading">
+                        <strong id="sampling-files-title">
+                          Sampling files
+                        </strong>
+                        <span>Run layout</span>
+                      </div>
+                      <fieldset className="sampling-output-fieldset">
+                        <legend>Write sampling as</legend>
+                        <div className="sampling-output-modes">
+                          <label
+                            className={
+                              samplingMode === "single" ? "selected" : ""
+                            }
+                          >
+                            <input
+                              type="radio"
+                              name="sampling-output-mode"
+                              value="single"
+                              checked={samplingMode === "single"}
+                              onChange={() =>
+                                chooseSamplingOutputMode("single")
+                              }
+                            />
+                            <span>
+                              <strong>Single input</strong>
+                              <small>One run-01.in</small>
+                            </span>
+                          </label>
+                          <label
+                            className={
+                              samplingMode === "continued" ? "selected" : ""
+                            }
+                          >
+                            <input
+                              type="radio"
+                              name="sampling-output-mode"
+                              value="continued"
+                              checked={samplingMode === "continued"}
+                              onChange={() =>
+                                chooseSamplingOutputMode("continued")
+                              }
+                            />
+                            <span>
+                              <strong>Split into continued inputs</strong>
+                              <small>Numbered 01, 02, 03…</small>
+                            </span>
+                          </label>
+                        </div>
+                      </fieldset>
+                      <p
+                        className="sampling-output-description"
+                        aria-live="polite"
+                      >
+                        {samplingMode === "single"
+                          ? "Create one sampling input."
+                          : `Create ${samplingRunCount} linked inputs. Each later input reads the previous restart.`}
+                      </p>
+
+                      <div className="form-grid sampling-length-grid">
+                        <Field label="Steps per input">
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={setup.steps ?? ""}
+                            onChange={(event) =>
+                              setSetup((existing) => ({
+                                ...existing,
+                                steps: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label="Number of inputs"
+                          help={
+                            samplingMode === "single"
+                              ? "Choose continued inputs to split the sampling run."
+                              : undefined
+                          }
+                        >
+                          <input
+                            type="number"
+                            min="2"
+                            max="99"
+                            step="1"
+                            inputMode="numeric"
+                            disabled={samplingMode === "single"}
+                            value={samplingRunCountDraft}
+                            onChange={(event) => {
+                              const draft = event.target.value;
+                              setSamplingRunCountDraft(draft);
+                              const count =
+                                parseContinuedSamplingRunCountDraft(draft);
+                              if (count !== null) {
+                                lastContinuedSamplingRunCount.current = count;
+                                setSamplingRunCount(count);
+                              }
+                            }}
+                            onBlur={commitSamplingRunCount}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.currentTarget.blur();
+                              }
+                            }}
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="sampling-total" aria-live="polite">
+                        <span>
+                          <strong>{samplingRunCount}</strong>
+                          {samplingRunCount === 1
+                            ? "input file"
+                            : "input files"}
+                        </span>
+                        <span>
+                          <strong>
+                            {setup.steps?.toLocaleString() ?? "—"}
+                          </strong>
+                          steps per input
+                        </span>
+                        <span>
+                          <strong>
+                            {durationLabel(
+                              samplingTotalSteps,
+                              setup.timestep_fs,
+                            )}
+                          </strong>
+                          total sampling time
+                        </span>
+                      </div>
+
+                      <div
+                        className="filename-chain"
+                        aria-label={`Run order: ${runFileNames.join(" then ")}`}
+                      >
+                        <span>Run order</span>
+                        <div>
+                          {runFileNames.map((name, index) => (
+                            <span key={`${name}-${index}`}>
+                              {index > 0 && (
+                                <ArrowRight size={12} aria-hidden="true" />
+                              )}
+                              {name === "…" ? (
+                                <b>…</b>
+                              ) : (
+                                <code>{name}</code>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </section>
+
                     <fieldset className="ensemble-fieldset">
                       <legend>Sampling ensemble</legend>
                       <div role="radiogroup" aria-label="Sampling ensemble">
@@ -1518,90 +2101,6 @@ export default function App() {
                           }
                         />
                       </Field>
-                    </div>
-
-                    <div className="sampling-length">
-                      <div className="form-grid sampling-length-grid">
-                        <Field label="Steps per file">
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={setup.steps ?? ""}
-                            onChange={(event) =>
-                              setSetup((existing) => ({
-                                ...existing,
-                                steps: event.target.value
-                                  ? Number(event.target.value)
-                                  : null,
-                              }))
-                            }
-                          />
-                        </Field>
-                        <Field
-                          label="Sampling files"
-                          help={
-                            equilibration
-                              ? "01 continues from eq; later files continue from the previous restart."
-                              : "01 starts from the prepared structure; later files continue from the previous restart."
-                          }
-                        >
-                          <input
-                            type="number"
-                            min="1"
-                            max="99"
-                            step="1"
-                            inputMode="numeric"
-                            value={samplingRunCountDraft}
-                            onChange={(event) => {
-                              const draft = event.target.value;
-                              setSamplingRunCountDraft(draft);
-                              const count = parseSamplingRunCountDraft(draft);
-                              if (count !== null) setSamplingRunCount(count);
-                            }}
-                            onBlur={commitSamplingRunCount}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.currentTarget.blur();
-                              }
-                            }}
-                          />
-                        </Field>
-                      </div>
-                      <div className="sampling-total" aria-live="polite">
-                        <span>
-                          <strong>
-                            {samplingTotalSteps?.toLocaleString() ?? "—"}
-                          </strong>
-                          total steps
-                        </span>
-                        <span>
-                          <strong>
-                            {durationLabel(
-                              samplingTotalSteps,
-                              setup.timestep_fs,
-                            )}
-                          </strong>
-                          total sampling time
-                        </span>
-                      </div>
-                    </div>
-
-                    <div
-                      className="filename-chain"
-                      aria-label={`Input sequence: ${runFileNames.join(" then ")}`}
-                    >
-                      <span>Files</span>
-                      <div>
-                        {runFileNames.map((name, index) => (
-                          <span key={`${name}-${index}`}>
-                            {index > 0 && (
-                              <ArrowRight size={12} aria-hidden="true" />
-                            )}
-                            {name === "…" ? <b>…</b> : <code>{name}</code>}
-                          </span>
-                        ))}
-                      </div>
                     </div>
 
                     {(setup.ensemble === "NVT" ||
@@ -1801,7 +2300,7 @@ export default function App() {
                   {rendered?.files.length === 1 ? "input file" : "input files"}
                 </span>
                 <span>
-                  <strong>{selectedCalculatorLabel}</strong> calculator
+                  <strong>{selectedMethodLabel}</strong> method
                 </span>
                 <span>
                   <strong>{samplingRunCount}</strong> sampling{" "}
@@ -1809,13 +2308,31 @@ export default function App() {
                   {equilibration ? " + eq" : ""}
                 </span>
               </div>
+              <section
+                className="run-launcher"
+                aria-labelledby="run-launcher-title"
+              >
+                <div>
+                  <strong id="run-launcher-title">Run the package</strong>
+                  <span>run.sh follows the generated input sequence.</span>
+                </div>
+                <pre>
+                  <code>
+                    {"./run.sh\nPQ_EXECUTABLE=/path/to/PQ ./run.sh"}
+                  </code>
+                </pre>
+                <p>
+                  Stops at the first failed input or when PQ does not report{" "}
+                  <code>PQ ended normally</code>.
+                </p>
+              </section>
               {rendered && rendered.files.length > 0 && (
                 <div className="generated-files" aria-label="Generated inputs">
                   <section>
-                    <header>{selectedCalculatorLabel}</header>
+                    <header>{selectedMethodLabel}</header>
                     <div
                       role="tablist"
-                      aria-label={`${selectedCalculatorLabel} input files`}
+                      aria-label={`${selectedMethodLabel} input files`}
                     >
                       {rendered.files.map((file, index) => {
                         const key = file.name;
@@ -1999,26 +2516,34 @@ export default function App() {
                   </small>
                 </span>
               </li>
-              <li
-                className={setup.runner && !calculatorMissing ? "ok" : "warn"}
-              >
+              <li className={methodReady && !calculatorMissing ? "ok" : "warn"}>
                 <StatusDot
                   status={
-                    setup.runner && !calculatorMissing
+                    methodReady && !calculatorMissing
                       ? "ok"
-                      : setup.runner
+                      : methodReady || molecularMechanics
                         ? "warn"
                         : "idle"
                   }
                 />
                 <span>
-                  <strong>Calculator</strong>
+                  <strong>Method</strong>
                   <small>
-                    {!setup.runner
-                      ? "Choose a calculator."
-                      : calculatorMissing
-                        ? `${selectedCalculatorLabel} was not detected.`
-                        : `${selectedCalculatorLabel} is ready.`}
+                    {molecularMechanics
+                      ? !hasTypedMolecules
+                        ? "Import a PQ restart with molecule type IDs."
+                        : missingMMFiles.length
+                          ? `Add ${missingMMFiles.length} required force-field ${
+                              missingMMFiles.length === 1 ? "file" : "files"
+                            }.`
+                          : !mmDensityReady
+                            ? "Set the system density."
+                            : `${selectedMethodLabel} is ready.`
+                      : !setup.runner
+                        ? "Choose a calculator."
+                        : calculatorMissing
+                          ? `${selectedMethodLabel} was not detected.`
+                          : `${selectedMethodLabel} is ready.`}
                   </small>
                 </span>
               </li>
@@ -2051,7 +2576,9 @@ export default function App() {
                       setActiveStep(
                         item.code.startsWith("structure")
                           ? "system"
-                          : item.code.startsWith("runner") ||
+                          : item.code.startsWith("method") ||
+                              item.code.startsWith("mm.") ||
+                              item.code.startsWith("runner") ||
                               item.code.startsWith("calculator") ||
                               item.code.startsWith("pq.")
                             ? "method"

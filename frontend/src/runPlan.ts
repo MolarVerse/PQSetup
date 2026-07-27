@@ -1,5 +1,9 @@
 export const MIN_SAMPLING_RUNS = 1;
 export const MAX_SAMPLING_RUNS = 99;
+export const MIN_CONTINUED_SAMPLING_RUNS = 2;
+export const DEFAULT_CONTINUED_SAMPLING_RUNS = 3;
+
+export type SamplingOutputMode = "single" | "continued";
 
 export function clampSamplingRunCount(value: number): number {
   if (!Number.isFinite(value)) return MIN_SAMPLING_RUNS;
@@ -16,12 +20,47 @@ export function parseSamplingRunCountDraft(value: string): number | null {
   return parsed;
 }
 
+export function parseContinuedSamplingRunCountDraft(
+  value: string,
+): number | null {
+  const parsed = parseSamplingRunCountDraft(value);
+  if (parsed === null || parsed < MIN_CONTINUED_SAMPLING_RUNS) return null;
+  return parsed;
+}
+
 export function commitSamplingRunCountDraft(
   value: string,
   fallback: number,
 ): number {
   if (!value.trim()) return clampSamplingRunCount(fallback);
   return clampSamplingRunCount(Number(value));
+}
+
+export function commitContinuedSamplingRunCountDraft(
+  value: string,
+  fallback: number,
+): number {
+  const count = commitSamplingRunCountDraft(value, fallback);
+  return Math.max(MIN_CONTINUED_SAMPLING_RUNS, count);
+}
+
+export function samplingOutputMode(
+  samplingRunCount: number,
+): SamplingOutputMode {
+  return clampSamplingRunCount(samplingRunCount) === 1
+    ? "single"
+    : "continued";
+}
+
+export function samplingRunCountForMode(
+  mode: SamplingOutputMode,
+  continuedRunCount = DEFAULT_CONTINUED_SAMPLING_RUNS,
+): number {
+  if (mode === "single") return 1;
+  return Math.max(
+    MIN_CONTINUED_SAMPLING_RUNS,
+    clampSamplingRunCount(continuedRunCount),
+  );
 }
 
 export function samplingLabel(index: number): string {

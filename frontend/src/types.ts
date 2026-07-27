@@ -1,6 +1,13 @@
 export type Severity = "error" | "warning" | "info";
 export type Ensemble = "NPT" | "NVT" | "NVE" | "OPT";
 export type JobType = "mm-md" | "qm-md" | "qm-rpmd" | "mm-opt";
+export type MMForceFieldMode = "off" | "bonded" | "on";
+export type SetupFileRole =
+  | "moldescriptor"
+  | "guff"
+  | "topology"
+  | "parameter"
+  | "intra_nonbonded";
 export type PressureIsotropy =
   | "isotropic"
   | "xy"
@@ -19,6 +26,7 @@ export interface Diagnostic {
 export interface Atom {
   symbol: string;
   position: [number, number, number];
+  atom_name?: string | null;
   molecule_type: number;
   velocity: [number, number, number] | null;
   force: [number, number, number] | null;
@@ -145,8 +153,28 @@ export interface SimulationSetup {
   initialize_velocities: boolean;
   random_seed: number;
   runner: string | null;
+  mm_force_field: MMForceFieldMode;
+  density_g_cm3: number | null;
+  coulomb_cutoff_angstrom: number;
+  moldescriptor_file: string | null;
+  guff_file: string | null;
+  topology_file: string | null;
+  parameter_file: string | null;
+  intra_nonbonded_file: string | null;
   overwrite_output: boolean;
   extra_settings: Record<string, string | number | boolean>;
+}
+
+export interface SetupFile {
+  role: SetupFileRole;
+  name: string;
+  content: string;
+}
+
+export interface SetupFileReference {
+  role: SetupFileRole;
+  name: string;
+  content?: string | null;
 }
 
 export interface RenderResult {

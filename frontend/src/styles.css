@@ -745,6 +745,91 @@ kbd {
   font-weight: 700;
 }
 
+.interaction-model-fieldset,
+.mm-mode-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.interaction-model-fieldset > legend,
+.mm-mode-fieldset > legend {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.interaction-model-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.interaction-model-options label {
+  position: relative;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.interaction-model-options label + label {
+  border-left: 1px solid var(--border);
+}
+
+.interaction-model-options label:hover {
+  background: rgb(220 239 244 / 34%);
+}
+
+.interaction-model-options label.selected {
+  color: var(--accent-dark);
+  background: var(--surface-blue);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.interaction-model-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.interaction-model-options label:has(input:focus-visible) {
+  outline: 3px solid rgb(25 127 162 / 24%);
+  outline-offset: -3px;
+}
+
+.interaction-model-options span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.interaction-model-options strong {
+  font-size: 0.78rem;
+}
+
+.interaction-model-options small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.method-content {
+  margin-top: 22px;
+}
+
 .method-detail > div:first-child {
   display: flex;
   flex-direction: column;
@@ -795,6 +880,150 @@ kbd {
   font-size: 0.69rem;
   line-height: 1.45;
   text-align: right;
+}
+
+.mm-mode-list {
+  border-top: 1px solid var(--border);
+}
+
+.mm-mode-list label {
+  min-height: 61px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 9px 7px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.mm-mode-list label:hover {
+  background: rgb(220 239 244 / 34%);
+}
+
+.mm-mode-list label.selected {
+  background: #f4f9f9;
+}
+
+.mm-mode-list input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.mm-mode-list label:has(input:focus-visible) {
+  outline: 3px solid rgb(25 127 162 / 24%);
+  outline-offset: -3px;
+}
+
+.mm-mode-list label > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mm-mode-list strong {
+  font-size: 0.76rem;
+}
+
+.mm-mode-list small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.67rem;
+  line-height: 1.4;
+}
+
+.mm-settings {
+  margin-top: 18px;
+}
+
+.setup-files {
+  margin-top: 24px;
+}
+
+.setup-file-list {
+  border-top: 1px solid var(--border);
+}
+
+.setup-file-list label {
+  position: relative;
+  min-height: 57px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 7px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.setup-file-list label:hover {
+  background: rgb(220 239 244 / 34%);
+}
+
+.setup-file-list label.selected {
+  background: #f7faf8;
+}
+
+.setup-file-list label:has(input:focus-visible) {
+  outline: 3px solid rgb(25 127 162 / 24%);
+  outline-offset: -3px;
+}
+
+.setup-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.setup-file-list label > svg {
+  color: var(--muted);
+}
+
+.setup-file-list label.selected > svg {
+  color: var(--success);
+}
+
+.setup-file-list label > span:nth-of-type(1) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-file-list strong {
+  font-size: 0.74rem;
+}
+
+.setup-file-list small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.65rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-added,
+.file-optional,
+.file-required {
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.file-added {
+  color: var(--success);
+}
+
+.file-optional {
+  color: var(--muted);
+}
+
+.file-required {
+  color: var(--warning);
 }
 
 .calculator-list {
@@ -1288,27 +1517,103 @@ kbd {
   gap: 14px;
 }
 
-.sampling-length {
+.sampling-plan {
+  margin-bottom: 20px;
+  padding-bottom: 19px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sampling-plan > .section-rule-heading {
+  margin: 0;
+}
+
+.sampling-output-fieldset {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.sampling-output-fieldset legend {
+  margin-bottom: 7px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.sampling-output-modes {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.9fr);
-  align-items: start;
-  gap: 16px;
-  margin-top: 18px;
-  padding-top: 17px;
-  border-top: 1px solid var(--border);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.sampling-output-modes label {
+  min-width: 0;
+  min-height: 55px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px 11px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.sampling-output-modes label + label {
+  border-left: 1px solid var(--border);
+}
+
+.sampling-output-modes label.selected {
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+}
+
+.sampling-output-modes input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.sampling-output-modes label > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sampling-output-modes strong {
+  font-size: 0.73rem;
+  line-height: 1.25;
+}
+
+.sampling-output-modes small {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.59rem;
+}
+
+.sampling-output-description {
+  min-height: 1.4em;
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.4;
 }
 
 .sampling-length-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+  margin-top: 14px !important;
 }
 
 .sampling-total {
-  min-height: 61px;
+  min-height: 58px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
   gap: 12px;
+  margin-top: 12px;
   padding: 9px 12px;
   border-radius: 6px;
   background: var(--surface-muted);
@@ -1337,7 +1642,7 @@ kbd {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   gap: 12px;
-  margin-top: 15px;
+  margin-top: 12px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1759,6 +2064,53 @@ kbd {
   content: "·";
   margin-right: 9px;
   color: var(--border-strong);
+}
+
+.run-launcher {
+  margin-top: 18px;
+  padding: 14px 15px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-blue);
+}
+
+.run-launcher > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-launcher > div strong {
+  font-size: 0.76rem;
+}
+
+.run-launcher > div span {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.run-launcher pre {
+  overflow-x: auto;
+  margin: 10px 0 8px;
+  padding: 10px 11px;
+  border: 1px solid rgb(25 127 162 / 18%);
+  border-radius: 4px;
+  color: var(--ink);
+  background: rgb(255 255 255 / 74%);
+  font-size: 0.68rem;
+  line-height: 1.65;
+}
+
+.run-launcher p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.run-launcher p code {
+  color: var(--ink-soft);
+  font-size: inherit;
 }
 
 .generated-files {
@@ -2717,6 +3069,15 @@ kbd {
     text-align: left;
   }
 
+  .interaction-model-options {
+    grid-template-columns: 1fr;
+  }
+
+  .interaction-model-options label + label {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
   .calculator-option > label {
     grid-template-columns: 18px minmax(0, 1fr) auto;
     padding-right: 3px;
@@ -2730,6 +3091,15 @@ kbd {
 
   .calculator-warning {
     margin-left: 29px;
+  }
+
+  .run-launcher > div {
+    display: block;
+  }
+
+  .run-launcher > div span {
+    display: block;
+    margin-top: 3px;
   }
 
   .preset-tabs,
@@ -2775,10 +3145,6 @@ kbd {
   .sampling-length-grid,
   .coupling-grid,
   .schedule-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .sampling-length {
     grid-template-columns: 1fr;
   }
 

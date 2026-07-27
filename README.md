@@ -2,7 +2,7 @@
 
 PQSetup prepares validated, reproducible inputs for PQ simulations.
 
-It combines a guided run protocol, structure checks, calculator diagnostics,
+It combines a guided run protocol, structure checks, method diagnostics,
 and readable input previews in one local application.
 
 PQSetup currently targets the input schema of PQ v0.6.4. It detects and shows
@@ -35,6 +35,16 @@ pqsetup serve --no-browser
 Set a non-standard PQ executable with `PQ_EXECUTABLE` or
 `--pq-executable /path/to/PQ`.
 
+## Running a package
+
+```bash
+./run.sh
+PQ_EXECUTABLE=/path/to/PQ ./run.sh
+```
+
+The launcher runs `run-eq.in`, then each numbered sampling input. It writes
+logs to `run-logs/` and stops at the first failed or incomplete PQ run.
+
 ## Scientific behavior
 
 - The ambient NPT preset starts at 298.15 K and 1.01325 bar.
@@ -43,12 +53,18 @@ Set a non-standard PQ executable with `PQ_EXECUTABLE` or
 - NPT exposes both manostats, relaxation, compressibility, and cell response.
 - Sampling can follow an NVT equilibration and be split into linked runs.
 - Run-plan inputs use optional `run-eq.in`, then `run-01.in` through `run-99.in`.
-- Each protocol uses one PQ calculator.
+- Exported packages include `run.sh`, which logs every stage and stops unless
+  PQ reports normal completion.
+- Quantum-mechanical protocols use one calculator for the complete sequence.
+- Molecular mechanics supports GUFF, bonded + GUFF, and classical force fields.
+- MM packages include the selected molecule descriptor, GUFF, topology,
+  parameter, and intramolecular nonbonded files without modifying them.
 - Missing PQ or calculator installations warn without blocking input creation.
 - Velocity initialization is delegated to PQ through `init_velocities`.
 - Position perturbations are Gaussian, seeded, reversible, and revalidated.
 - Cell-less molecules receive a centered vacuum cell with 6 Å padding.
-- NPT requires a physical periodic cell; generated vacuum cells are rejected.
-- Non-zero molecule types are rejected until companion force-field files are supported.
+- QM NPT requires a physical periodic cell. MM can derive the cell from density.
+- Typed PQ restarts are preserved and validated for molecular mechanics.
+- MM cutoff validation accounts for the physical or density-derived cell size.
 - Collision checks use periodic minimum-image distances.
 - Calculator choices are limited to methods in the targeted PQ release.
