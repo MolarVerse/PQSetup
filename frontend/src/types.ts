@@ -145,7 +145,6 @@ export interface SimulationSetup {
   initialize_velocities: boolean;
   random_seed: number;
   runner: string | null;
-  runner_script: string | null;
   overwrite_output: boolean;
   extra_settings: Record<string, string | number | boolean>;
 }
@@ -154,11 +153,6 @@ export interface RenderResult {
   input_text: string;
   diagnostics: Diagnostic[];
   valid: boolean;
-}
-
-export interface CalculatorSelection {
-  runner_id: string;
-  runner_script: string | null;
 }
 
 export interface EquilibrationStage {
@@ -182,6 +176,8 @@ export interface PlannedInput {
   stage_label: string;
   stage_index: number;
   stage_count: number;
+  segment_index: number | null;
+  segment_count: number | null;
   calculator_id: string;
   calculator_label: string;
   input_text: string;

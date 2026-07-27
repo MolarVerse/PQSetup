@@ -46,11 +46,12 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
 
     @app.get("/api/bootstrap", response_model=Bootstrap)
     def bootstrap() -> Bootstrap:
+        pq = discover_pq(pq_executable)
         return Bootstrap(
             version=__version__,
             target_pq_release=TARGET_PQ_RELEASE,
-            pq=discover_pq(pq_executable),
-            runners=detect_runners(),
+            pq=pq,
+            runners=detect_runners(pq.executable if pq.found else None),
             presets=list_presets(),
         )
 
@@ -94,15 +95,16 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
 
     @app.post("/api/plan/render", response_model=PlanRenderResult)
     def render_plan(request: RunPlanRequest) -> PlanRenderResult:
+        pq = discover_pq(pq_executable)
         return render_run_plan(
             request,
-            pq=discover_pq(pq_executable),
-            runners=detect_runners(),
+            pq=pq,
+            runners=detect_runners(pq.executable if pq.found else None),
         )
 
     @app.post("/api/project/export")
     def export_project(request: ExportRequest) -> Response:
-        if plan_requested(request.calculators, request.equilibration):
+        if plan_requested(request.sampling_run_count, request.equilibration):
             return _export_plan(
                 request,
                 pq_executable=pq_executable,
@@ -240,11 +242,11 @@ def _export_plan(
     pq_executable: str | None,
 ) -> Response:
     pq = discover_pq(pq_executable)
-    runners = detect_runners()
+    runners = detect_runners(pq.executable if pq.found else None)
     plan_request = RunPlanRequest(
         setup=request.setup,
-        calculators=request.calculators,
         equilibration=request.equilibration,
+        sampling_run_count=request.sampling_run_count or 1,
     )
     rendered = render_run_plan(plan_request, pq=pq, runners=runners)
     if not rendered.valid:
@@ -294,28 +296,36 @@ def _export_plan(
             "stage": item.stage_id,
             "stage_index": item.stage_index,
             "stage_count": item.stage_count,
+            "segment_index": item.segment_index,
+            "segment_count": item.segment_count,
             "calculator": item.calculator_id,
             "start_file": item.start_file,
             "restart_file": item.restart_file,
         }
         for item in rendered.files
     ]
-    selected_ids = {item.calculator_id for item in rendered.files}
     aliases = {"mace": "mace_mp"}
     runner_by_id = {item.id: item for item in runners}
-    environment_calculators = []
-    for runner_id in sorted(selected_ids):
-        status = runner_by_id.get(aliases.get(runner_id, runner_id))
-        environment_calculators.append(
-            {
-                "id": runner_id,
-                "detected": bool(status and status.ready),
-                "version": status.version if status else None,
-            }
-        )
+    runner_id = request.setup.runner
+    status = (
+        runner_by_id.get(aliases.get(runner_id, runner_id))
+        if runner_id
+        else None
+    )
+    environment_calculator = {
+        "id": runner_id,
+        "detected": bool(status and status.installed),
+        "ready": bool(status and status.ready),
+        "version": status.version if status else None,
+        "detail": (
+            status.detail
+            if status
+            else "No environment status is available for this calculator."
+        ),
+    }
 
     manifest = {
-        "schema_version": 2,
+        "schema_version": 3,
         "project_name": project_name,
         "pqsetup_version": __version__,
         "target_pq_release": TARGET_PQ_RELEASE,
@@ -331,7 +341,7 @@ def _export_plan(
         "environment": {
             "pq_detected": pq.found,
             "pq_version": pq.version,
-            "calculators": environment_calculators,
+            "calculator": environment_calculator,
         },
         "diagnostics": [
             item.model_dump(mode="json")

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import re
 from typing import Literal
 
 from .input_writer import render_input, restart_filename
 from .models import (
-    CalculatorSelection,
     Diagnostic,
     EquilibrationStage,
     PlannedInput,
@@ -16,22 +14,23 @@ from .models import (
     SimulationSetup,
 )
 from .release import (
-    PQ_DEFAULT_RUNNER_SCRIPTS,
     PQ_QM_PROGRAMS,
     PQ_RUNNER_LABELS,
     TARGET_PQ_RELEASE,
 )
 
 
-_SLUG = re.compile(r"[^a-z0-9]+")
 _RUNNER_STATUS_ALIASES = {"mace": "mace_mp"}
+_UINT32_RANGE = 2**32
 
 
 def plan_requested(
-    calculators: list[CalculatorSelection],
+    sampling_run_count: int | None,
     equilibration: EquilibrationStage | None,
 ) -> bool:
-    return bool(calculators) or bool(equilibration and equilibration.enabled)
+    return sampling_run_count is not None or bool(
+        equilibration and equilibration.enabled
+    )
 
 
 def render_run_plan(
@@ -41,25 +40,42 @@ def render_run_plan(
     runners: list[RunnerStatus] | None = None,
 ) -> PlanRenderResult:
     diagnostics: list[Diagnostic] = []
-    selections = _selections(request)
-    if not selections:
+    runner_id = request.setup.runner
+    if not runner_id:
         return PlanRenderResult(
             files=[],
             diagnostics=[_error("runner.missing", "A QM calculator must be selected.")],
             valid=False,
         )
-
-    runner_ids = [selection.runner_id for selection in selections]
-    duplicates = sorted(
-        runner_id for runner_id in set(runner_ids) if runner_ids.count(runner_id) > 1
-    )
-    if duplicates:
-        diagnostics.append(
-            _error(
-                "runner.duplicate",
-                f"Select each calculator once: {', '.join(duplicates)}.",
-            )
+    if not 0 <= request.setup.random_seed < _UINT32_RANGE:
+        return PlanRenderResult(
+            files=[],
+            diagnostics=[
+                _error(
+                    "run.random_seed",
+                    "Random seed must be between 0 and 4294967295.",
+                )
+            ],
+            valid=False,
         )
+
+    restart_collision = _restart_collision(request)
+    if restart_collision:
+        return PlanRenderResult(
+            files=[],
+            diagnostics=[
+                _error(
+                    "input.restart_collision",
+                    (
+                        f"Start file '{request.setup.start_file}' conflicts with "
+                        f"generated restart '{restart_collision}'. Rename the "
+                        "structure or run."
+                    ),
+                )
+            ],
+            valid=False,
+        )
+
     if pq is not None and not pq.found:
         diagnostics.append(
             _warning(
@@ -69,105 +85,99 @@ def render_run_plan(
         )
 
     status_by_id = {status.id: status for status in runners or []}
-    files: list[PlannedInput] = []
-    multiple_calculators = len(selections) > 1
+    label = _runner_label(runner_id, status_by_id)
+    if runner_id not in PQ_QM_PROGRAMS:
+        diagnostics.append(
+            _error(
+                "runner.unknown",
+                f"{label} is not available in PQ {TARGET_PQ_RELEASE}.",
+            )
+        )
+    _append_runner_warning(
+        diagnostics,
+        runner_id=runner_id,
+        label=label,
+        statuses=status_by_id,
+        enabled=runners is not None,
+    )
+
     equilibration = request.equilibration
     has_equilibration = bool(equilibration and equilibration.enabled)
-    stage_count = 2 if has_equilibration else 1
+    stage_count = request.sampling_run_count + int(has_equilibration)
+    stage_index = 1
+    previous_restart = request.setup.start_file
+    files: list[PlannedInput] = []
 
-    for selection in selections:
-        runner_id = selection.runner_id
-        label = _runner_label(runner_id, status_by_id)
-        if runner_id not in PQ_QM_PROGRAMS:
-            diagnostics.append(
-                _error(
-                    "runner.unknown",
-                    (f"{label} is not available in PQ {TARGET_PQ_RELEASE}."),
-                )
-            )
-        _append_runner_warning(
-            diagnostics,
-            runner_id=runner_id,
-            label=label,
-            statuses=status_by_id,
-            enabled=runners is not None,
+    if has_equilibration and equilibration is not None:
+        equilibration_setup = _equilibration_setup(
+            request.setup,
+            equilibration,
+            file_prefix=f"{request.setup.file_prefix}-eq",
+            random_seed=_derived_seed(request.setup.random_seed, stage_index),
         )
+        equilibration_result = render_input(equilibration_setup)
+        diagnostics.extend(
+            _stage_diagnostics(
+                equilibration_result.diagnostics,
+                label,
+                "Equilibration",
+            )
+        )
+        files.append(
+            _planned_input(
+                setup=equilibration_setup,
+                result_text=equilibration_result.input_text,
+                name="run-eq.in",
+                stage_id="equilibration",
+                stage_label="NVT equilibration",
+                stage_index=stage_index,
+                stage_count=stage_count,
+                segment_index=None,
+                segment_count=None,
+                calculator_id=runner_id,
+                calculator_label=label,
+            )
+        )
+        previous_restart = restart_filename(equilibration_setup)
+        stage_index += 1
 
-        branch_prefix = request.setup.file_prefix
-        if multiple_calculators:
-            branch_prefix = f"{branch_prefix}-{_slug(runner_id)}"
-        runner_script = _runner_script(request.setup, selection)
-
-        if has_equilibration and equilibration is not None:
-            equilibration_setup = _equilibration_setup(
-                request.setup,
-                equilibration,
-                runner_id=runner_id,
-                runner_script=runner_script,
-                file_prefix=f"{branch_prefix}-equilibration",
-            )
-            equilibration_result = render_input(equilibration_setup)
-            diagnostics.extend(
-                _stage_diagnostics(
-                    equilibration_result.diagnostics,
-                    label,
-                    "Equilibration",
-                )
-            )
-            files.append(
-                _planned_input(
-                    setup=equilibration_setup,
-                    result_text=equilibration_result.input_text,
-                    name=f"01-{equilibration_setup.file_prefix}.in",
-                    stage_id="equilibration",
-                    stage_label="NVT equilibration",
-                    stage_index=1,
-                    stage_count=stage_count,
-                    calculator_id=runner_id,
-                    calculator_label=label,
-                )
-            )
-            sampling_setup = _sampling_setup(
-                request.setup,
-                runner_id=runner_id,
-                runner_script=runner_script,
-                file_prefix=f"{branch_prefix}-sampling",
-                start_file=restart_filename(equilibration_setup),
-                multiple_calculators=multiple_calculators,
-            )
-            sampling_name = f"02-{sampling_setup.file_prefix}.in"
-        else:
-            sampling_setup = _sampling_setup(
-                request.setup,
-                runner_id=runner_id,
-                runner_script=runner_script,
-                file_prefix=branch_prefix,
-                start_file=request.setup.start_file,
-                multiple_calculators=multiple_calculators,
-            )
-            sampling_name = f"{sampling_setup.file_prefix}.in"
-
+    for segment_index in range(1, request.sampling_run_count + 1):
+        segment_code = f"{segment_index:02d}"
+        sampling_setup = _sampling_setup(
+            request.setup,
+            file_prefix=f"{request.setup.file_prefix}-{segment_code}",
+            start_file=previous_restart,
+            initialize_velocities=(
+                request.setup.initialize_velocities if stage_index == 1 else False
+            ),
+            segment_index=segment_index,
+            random_seed=_derived_seed(request.setup.random_seed, stage_index),
+        )
         sampling_result = render_input(sampling_setup)
         diagnostics.extend(
             _stage_diagnostics(
                 sampling_result.diagnostics,
                 label,
-                "Sampling",
+                f"Sampling {segment_code}",
             )
         )
         files.append(
             _planned_input(
                 setup=sampling_setup,
                 result_text=sampling_result.input_text,
-                name=sampling_name,
+                name=f"run-{segment_code}.in",
                 stage_id="sampling",
-                stage_label="Sampling",
-                stage_index=stage_count,
+                stage_label=f"Sampling {segment_code}",
+                stage_index=stage_index,
                 stage_count=stage_count,
+                segment_index=segment_index,
+                segment_count=request.sampling_run_count,
                 calculator_id=runner_id,
                 calculator_label=label,
             )
         )
+        previous_restart = restart_filename(sampling_setup)
+        stage_index += 1
 
     return PlanRenderResult(
         files=files,
@@ -176,26 +186,12 @@ def render_run_plan(
     )
 
 
-def _selections(request: RunPlanRequest) -> list[CalculatorSelection]:
-    if request.calculators:
-        return request.calculators
-    if request.setup.runner:
-        return [
-            CalculatorSelection(
-                runner_id=request.setup.runner,
-                runner_script=request.setup.runner_script,
-            )
-        ]
-    return []
-
-
 def _equilibration_setup(
     setup: SimulationSetup,
     stage: EquilibrationStage,
     *,
-    runner_id: str,
-    runner_script: str | None,
     file_prefix: str,
+    random_seed: int,
 ) -> SimulationSetup:
     return setup.model_copy(
         deep=True,
@@ -219,8 +215,8 @@ def _equilibration_setup(
             "coupling_frequency_cm_inverse": (stage.coupling_frequency_cm_inverse),
             "manostat": None,
             "initialize_velocities": True,
-            "runner": runner_id,
-            "runner_script": runner_script,
+            "random_seed": random_seed,
+            "runner_script": None,
         },
     )
 
@@ -228,27 +224,30 @@ def _equilibration_setup(
 def _sampling_setup(
     setup: SimulationSetup,
     *,
-    runner_id: str,
-    runner_script: str | None,
     file_prefix: str,
     start_file: str,
-    multiple_calculators: bool,
+    initialize_velocities: bool,
+    segment_index: int,
+    random_seed: int,
 ) -> SimulationSetup:
-    restart_file = setup.restart_file
-    if multiple_calculators or start_file != setup.start_file:
-        restart_file = f"{file_prefix}.rst"
+    updates: dict[str, object] = {
+        "start_file": start_file,
+        "restart_file": f"{file_prefix}.rst",
+        "file_prefix": file_prefix,
+        "initialize_velocities": initialize_velocities,
+        "random_seed": random_seed,
+        "runner_script": None,
+    }
+    if segment_index > 1:
+        updates.update(
+            {
+                "start_temperature_k": None,
+                "temperature_ramp_steps": None,
+            }
+        )
     return setup.model_copy(
         deep=True,
-        update={
-            "start_file": start_file,
-            "restart_file": restart_file,
-            "file_prefix": file_prefix,
-            "initialize_velocities": (
-                False if start_file != setup.start_file else setup.initialize_velocities
-            ),
-            "runner": runner_id,
-            "runner_script": runner_script,
-        },
+        update=updates,
     )
 
 
@@ -261,6 +260,8 @@ def _planned_input(
     stage_label: str,
     stage_index: int,
     stage_count: int,
+    segment_index: int | None,
+    segment_count: int | None,
     calculator_id: str,
     calculator_label: str,
 ) -> PlannedInput:
@@ -270,23 +271,14 @@ def _planned_input(
         stage_label=stage_label,
         stage_index=stage_index,
         stage_count=stage_count,
+        segment_index=segment_index,
+        segment_count=segment_count,
         calculator_id=calculator_id,
         calculator_label=calculator_label,
         input_text=result_text,
         start_file=setup.start_file,
         restart_file=restart_filename(setup),
     )
-
-
-def _runner_script(
-    setup: SimulationSetup,
-    selection: CalculatorSelection,
-) -> str | None:
-    if selection.runner_script:
-        return selection.runner_script
-    if selection.runner_id == setup.runner and setup.runner_script:
-        return setup.runner_script
-    return PQ_DEFAULT_RUNNER_SCRIPTS.get(selection.runner_id)
 
 
 def _runner_label(
@@ -310,11 +302,18 @@ def _append_runner_warning(
         return
     status_id = _RUNNER_STATUS_ALIASES.get(runner_id, runner_id)
     status = statuses.get(status_id)
-    if status is None or not status.ready:
+    if status is None:
         diagnostics.append(
             _warning(
                 "runner.not_detected",
                 f"{label} was not detected. Its inputs can still be created.",
+            )
+        )
+    elif not status.ready:
+        diagnostics.append(
+            _warning(
+                "runner.incomplete" if status.installed else "runner.not_detected",
+                f"{status.detail} Inputs can still be created.",
             )
         )
 
@@ -332,8 +331,20 @@ def _stage_diagnostics(
     ]
 
 
-def _slug(value: str) -> str:
-    return _SLUG.sub("-", value.lower()).strip("-") or "calculator"
+def _derived_seed(base_seed: int, stage_index: int) -> int:
+    return (base_seed + stage_index - 1) % _UINT32_RANGE
+
+
+def _restart_collision(request: RunPlanRequest) -> str | None:
+    generated = [
+        f"{request.setup.file_prefix}-{index:02d}.rst"
+        for index in range(1, request.sampling_run_count + 1)
+    ]
+    if request.equilibration and request.equilibration.enabled:
+        generated.insert(0, f"{request.setup.file_prefix}-eq.rst")
+
+    start_file = request.setup.start_file.casefold()
+    return next((name for name in generated if name.casefold() == start_file), None)
 
 
 def _error(code: str, message: str) -> Diagnostic:

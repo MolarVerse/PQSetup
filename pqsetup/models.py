@@ -155,13 +155,6 @@ class RenderResult(BaseModel):
     valid: bool
 
 
-class CalculatorSelection(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    runner_id: str
-    runner_script: str | None = None
-
-
 class EquilibrationStage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -183,8 +176,8 @@ class RunPlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     setup: SimulationSetup
-    calculators: list[CalculatorSelection] = Field(default_factory=list)
     equilibration: EquilibrationStage | None = None
+    sampling_run_count: int = Field(default=1, ge=1, le=99)
 
 
 class PlannedInput(BaseModel):
@@ -193,6 +186,8 @@ class PlannedInput(BaseModel):
     stage_label: str
     stage_index: int
     stage_count: int
+    segment_index: int | None = None
+    segment_count: int | None = None
     calculator_id: str
     calculator_label: str
     input_text: str
@@ -225,12 +220,14 @@ class PreparationMetadata(BaseModel):
 
 
 class ExportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     setup: SimulationSetup
     structure: Structure
     project_name: str = "pq-run"
     preparation: PreparationMetadata | None = None
-    calculators: list[CalculatorSelection] = Field(default_factory=list)
     equilibration: EquilibrationStage | None = None
+    sampling_run_count: int | None = Field(default=None, ge=1, le=99)
 
 
 class DoctorReport(BaseModel):

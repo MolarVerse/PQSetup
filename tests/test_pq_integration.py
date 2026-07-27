@@ -9,12 +9,57 @@ import pytest
 
 from pqsetup.executable import discover_pq
 from pqsetup.input_writer import render_input
-from pqsetup.models import SimulationSetup
+from pqsetup.models import EquilibrationStage, RunPlanRequest, SimulationSetup
 from pqsetup.runners import detect_runners
+from pqsetup.run_plan import render_run_plan
 from pqsetup.structures import format_pq_restart, parse_structure_bytes
 
 
 DATA = Path(__file__).parent / "data"
+
+
+@pytest.mark.integration
+def test_continued_run_plan_executes_in_pq(tmp_path: Path) -> None:
+    pq = discover_pq()
+    runner = next(item for item in detect_runners() if item.id == "ase_xtb")
+    if not pq.found or not pq.executable:
+        pytest.skip("PQ is not available.")
+    if not runner.ready:
+        pytest.skip("ASE-XTB is not available.")
+
+    plan = render_run_plan(
+        RunPlanRequest(
+            setup=SimulationSetup(
+                ensemble="NVT",
+                runner="ase_xtb",
+                start_file="structure.rst",
+                file_prefix="water",
+                steps=1,
+                overwrite_output=True,
+            ),
+            equilibration=EquilibrationStage(enabled=True, steps=1),
+            sampling_run_count=2,
+        ),
+        pq=pq,
+        runners=[runner],
+    )
+    assert plan.valid
+    shutil.copyfile(DATA / "water.rst", tmp_path / "structure.rst")
+
+    for item in plan.files:
+        (tmp_path / item.name).write_text(item.input_text, encoding="utf-8")
+        result = subprocess.run(
+            [pq.executable, item.name],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        assert "PQ ended normally" in output
+        assert (tmp_path / item.restart_file).is_file()
 
 
 @pytest.mark.integration

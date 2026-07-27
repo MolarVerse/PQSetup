@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 import pqsetup.api
 from pqsetup.api import create_app
-from pqsetup.cli import build_parser, main
-from pqsetup.models import SimulationSetup
+from pqsetup.cli import _print_doctor, build_parser, main
+from pqsetup.models import DoctorReport, PQStatus, RunnerStatus, SimulationSetup
 from pqsetup.release import TARGET_PQ_RELEASE
 from pqsetup.structures import parse_structure_bytes
 from pqsetup.structures import perturb_structure
@@ -274,3 +274,33 @@ def test_pq_executable_option_works_before_or_after_serve() -> None:
     assert default_serve.pq_executable == "/tmp/PQ-custom"
     assert explicit_serve.command_pq_executable == "/tmp/PQ-other"
     assert parser.parse_args(["serve"]).port == 8888
+
+
+def test_doctor_reports_incomplete_setup_without_calling_it_missing(capsys) -> None:
+    _print_doctor(
+        DoctorReport(
+            pq=PQStatus(
+                found=True,
+                executable="/tools/PQ",
+                version="v0.6.4",
+                detail="Detected.",
+            ),
+            runners=[
+                RunnerStatus(
+                    id="dftbplus",
+                    label="DFTB+",
+                    supported=True,
+                    installed=True,
+                    ready=False,
+                    detail="DFTB+ detected. PQ script not found.",
+                )
+            ],
+            diagnostics=[],
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "PQ             detected" in output
+    assert "DFTB+          setup incomplete · DFTB+ detected." in output
+    assert "missing" not in output
+    assert "ready" not in output

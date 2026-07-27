@@ -37,11 +37,13 @@ Set a non-standard PQ executable with `PQ_EXECUTABLE` or
 
 ## Scientific behavior
 
-- Ambient NPT uses 298.15 K and 1.01325 bar.
+- The ambient NPT preset starts at 298.15 K and 1.01325 bar.
+- Coupling hints use PQ v0.6.4 defaults; compressibility remains material-specific.
 - NVT and NPT expose every thermostat and method-specific control in PQ v0.6.4.
 - NPT exposes both manostats, relaxation, compressibility, and cell response.
-- A sampling run can follow an NVT equilibration through linked restart files.
-- Multiple calculators create independent input sequences.
+- Sampling can follow an NVT equilibration and be split into linked runs.
+- Run-plan inputs use optional `run-eq.in`, then `run-01.in` through `run-99.in`.
+- Each protocol uses one PQ calculator.
 - Missing PQ or calculator installations warn without blocking input creation.
 - Velocity initialization is delegated to PQ through `init_velocities`.
 - Position perturbations are Gaussian, seeded, reversible, and revalidated.

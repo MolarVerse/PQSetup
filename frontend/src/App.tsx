@@ -12,7 +12,6 @@ import {
   Keyboard,
   Link2,
   LoaderCircle,
-  Plus,
   Search,
   Sparkles,
   Upload,
@@ -44,10 +43,16 @@ import {
   PRESSURE_ISOTROPIES,
   THERMOSTATS,
 } from "./conditionOptions";
+import {
+  commitSamplingRunCountDraft,
+  compactRunFileNames,
+  parseSamplingRunCountDraft,
+  samplingLabel,
+  samplingRunSummary,
+} from "./runPlan";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
-  CalculatorSelection,
   Diagnostic,
   Ensemble,
   EquilibrationStage,
@@ -59,7 +64,7 @@ import type {
 
 const STEPS = [
   { id: "system", label: "System", hint: "Structure" },
-  { id: "method", label: "Method", hint: "Calculators" },
+  { id: "method", label: "Method", hint: "Calculator" },
   { id: "conditions", label: "Conditions", hint: "Run plan" },
   { id: "prepare", label: "Prepare", hint: "Coordinates" },
   { id: "review", label: "Review", hint: "Inputs" },
@@ -143,7 +148,6 @@ const INITIAL_SETUP: SimulationSetup = {
   initialize_velocities: true,
   random_seed: 238917,
   runner: "ase_xtb",
-  runner_script: null,
   overwrite_output: false,
   extra_settings: {},
 };
@@ -161,12 +165,6 @@ const INITIAL_EQUILIBRATION: EquilibrationStage = {
   thermostat_friction_ps_inverse: 0.1,
   nh_chain_length: 3,
   coupling_frequency_cm_inverse: 1000,
-};
-
-const DEFAULT_RUNNER_SCRIPTS: Record<string, string> = {
-  dftbplus: "dftbplus_periodic_stress",
-  pyscf: "pyscf_hf.py",
-  turbomole: "turbomole_rimp2",
 };
 
 function formatError(error: unknown): string {
@@ -285,7 +283,11 @@ function TemperatureCoupling({
         </Field>
         {(value.thermostat === "berendsen" ||
           value.thermostat === "velocity_rescaling") && (
-          <Field label="Relaxation time" unit="ps">
+          <Field
+            label="Relaxation time"
+            unit="ps"
+            help="PQ default: 0.1 ps."
+          >
             <input
               type="number"
               min="0.000001"
@@ -302,7 +304,7 @@ function TemperatureCoupling({
           </Field>
         )}
         {value.thermostat === "langevin" && (
-          <Field label="Friction" unit="ps⁻¹">
+          <Field label="Friction" unit="ps⁻¹" help="PQ default: 0.1 ps⁻¹.">
             <input
               type="number"
               min="0"
@@ -318,7 +320,7 @@ function TemperatureCoupling({
         )}
         {value.thermostat === "nh-chain" && (
           <>
-            <Field label="Chain length">
+            <Field label="Chain length" help="PQ default: 3.">
               <input
                 type="number"
                 min="1"
@@ -329,7 +331,11 @@ function TemperatureCoupling({
                 }
               />
             </Field>
-            <Field label="Coupling frequency" unit="cm⁻¹">
+            <Field
+              label="Coupling frequency"
+              unit="cm⁻¹"
+              help="PQ default: 1000 cm⁻¹."
+            >
               <input
                 type="number"
                 min="0"
@@ -462,7 +468,11 @@ function PressureCoupling({
             ))}
           </select>
         </Field>
-        <Field label="Relaxation time" unit="ps">
+        <Field
+          label="Relaxation time"
+          unit="ps"
+          help="PQ default: 1 ps."
+        >
           <input
             type="number"
             min="0.000001"
@@ -477,7 +487,11 @@ function PressureCoupling({
             }
           />
         </Field>
-        <Field label="Compressibility" unit="bar⁻¹">
+        <Field
+          label="Compressibility"
+          unit="bar⁻¹"
+          help="PQ water default: 4.591 × 10⁻⁵ bar⁻¹; adjust for the material."
+        >
           <input
             type="number"
             min="0"
@@ -490,7 +504,7 @@ function PressureCoupling({
             }
           />
         </Field>
-        <Field label="Cell response">
+        <Field label="Cell response" help="PQ default: isotropic.">
           <select
             value={value.pressure_isotropy}
             onChange={(event) =>
@@ -552,11 +566,10 @@ export default function App() {
   const [preparation, setPreparation] =
     useState<PreparationMetadata | null>(null);
   const [setup, setSetup] = useState<SimulationSetup>(INITIAL_SETUP);
-  const [calculators, setCalculators] = useState<CalculatorSelection[]>([
-    { runner_id: "ase_xtb", runner_script: null },
-  ]);
   const [equilibration, setEquilibration] =
     useState<EquilibrationStage | null>(null);
+  const [samplingRunCount, setSamplingRunCount] = useState(1);
+  const [samplingRunCountDraft, setSamplingRunCountDraft] = useState("1");
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -575,6 +588,7 @@ export default function App() {
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
+  const generatedFileTabs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     setupMain.current?.scrollTo({ top: 0, left: 0 });
@@ -591,11 +605,6 @@ export default function App() {
           value.runners.find((runner) => runner.supported);
         if (preferred) {
           setSetup((existing) => ({ ...existing, runner: preferred.id }));
-          setCalculators((existing) =>
-            existing.some((item) => item.runner_id === preferred.id)
-              ? existing
-              : [{ runner_id: preferred.id, runner_script: null }],
-          );
         }
       })
       .catch((error) => {
@@ -610,21 +619,19 @@ export default function App() {
     const sequence = ++renderSequence.current;
     setRendering(true);
     const timeout = window.setTimeout(() => {
-      renderPlan(setup, calculators, equilibration)
+      renderPlan(setup, equilibration, samplingRunCount)
         .then((result) => {
           if (sequence !== renderSequence.current) return;
           setRendered(result);
           setSelectedFileKey((current) => {
             if (
               current &&
-              result.files.some(
-                (file) => `${file.calculator_id}:${file.name}` === current,
-              )
+              result.files.some((file) => file.name === current)
             ) {
               return current;
             }
             const first = result.files[0];
-            return first ? `${first.calculator_id}:${first.name}` : null;
+            return first?.name ?? null;
           });
         })
         .catch((error) => {
@@ -648,27 +655,29 @@ export default function App() {
         });
     }, 120);
     return () => window.clearTimeout(timeout);
-  }, [calculators, equilibration, setup]);
+  }, [equilibration, samplingRunCount, setup]);
 
-  const selectedRunnerStatuses = useMemo(
+  const selectedRunnerStatus = useMemo(
     () =>
-      calculators.map((calculator) => ({
-        selection: calculator,
-        status:
-          bootstrap?.runners.find(
-            (runner) => runner.id === calculator.runner_id,
-          ) ?? null,
-      })),
-    [bootstrap, calculators],
+      bootstrap?.runners.find((runner) => runner.id === setup.runner) ?? null,
+    [bootstrap, setup.runner],
   );
   const selectedFile = useMemo(
     () =>
-      rendered?.files.find(
-        (file) => `${file.calculator_id}:${file.name}` === selectedFileKey,
-      ) ??
+      rendered?.files.find((file) => file.name === selectedFileKey) ??
       rendered?.files[0] ??
       null,
     [rendered, selectedFileKey],
+  );
+  const selectedFileIndex =
+    rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
+  const selectedCalculatorLabel =
+    selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
+  const samplingTotalSteps =
+    setup.steps == null ? null : setup.steps * samplingRunCount;
+  const runFileNames = useMemo(
+    () => compactRunFileNames(Boolean(equilibration), samplingRunCount),
+    [equilibration, samplingRunCount],
   );
 
   const generatedCellNpt =
@@ -696,26 +705,21 @@ export default function App() {
   const errorCount = diagnostics.filter(
     (item) => item.severity === "error",
   ).length;
-  const missingCalculatorCount = selectedRunnerStatuses.filter(
-    ({ status }) => status && !status.ready,
-  ).length;
+  const calculatorMissing = Boolean(
+    bootstrap && setup.runner && !selectedRunnerStatus?.ready,
+  );
   const ready = Boolean(
     analysis.valid &&
       !generatedCellNpt &&
       rendered?.valid &&
-      calculators.length > 0 &&
+      setup.runner &&
       errorCount === 0,
   );
 
   const stepState = useMemo<Record<StepId, "ok" | "warn" | "idle">>(
     () => ({
       system: analysis.valid ? "ok" : "warn",
-      method:
-        calculators.length === 0
-          ? "warn"
-          : missingCalculatorCount
-            ? "warn"
-            : "ok",
+      method: !setup.runner || calculatorMissing ? "warn" : "ok",
       conditions: diagnostics.some(
         (item) =>
           item.severity === "error" &&
@@ -732,11 +736,11 @@ export default function App() {
     }),
     [
       analysis,
-      calculators.length,
+      calculatorMissing,
       diagnostics,
-      missingCalculatorCount,
       ready,
       rendered,
+      setup.runner,
     ],
   );
 
@@ -755,8 +759,8 @@ export default function App() {
         analysis.structure,
         setup.file_prefix,
         preparation,
-        calculators,
         equilibration,
+        samplingRunCount,
       );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -775,11 +779,11 @@ export default function App() {
     }
   }, [
     analysis.structure,
-    calculators,
     equilibration,
     exporting,
     preparation,
     ready,
+    samplingRunCount,
     setup,
   ]);
 
@@ -935,33 +939,20 @@ export default function App() {
     }));
   }
 
-  function toggleCalculator(runnerId: string) {
-    const selected = calculators.some((item) => item.runner_id === runnerId);
-    const next = selected
-      ? calculators.filter((item) => item.runner_id !== runnerId)
-      : [...calculators, { runner_id: runnerId, runner_script: null }];
-    setCalculators(next);
+  function chooseCalculator(runnerId: string) {
     setSetup((existing) => ({
       ...existing,
-      runner: next[0]?.runner_id ?? null,
-      runner_script: next[0]?.runner_script ?? null,
+      runner: runnerId,
     }));
   }
 
-  function updateCalculatorScript(runnerId: string, script: string) {
-    setCalculators((existing) =>
-      existing.map((item) =>
-        item.runner_id === runnerId
-          ? { ...item, runner_script: script || null }
-          : item,
-      ),
+  function commitSamplingRunCount() {
+    const count = commitSamplingRunCountDraft(
+      samplingRunCountDraft,
+      samplingRunCount,
     );
-    if (setup.runner === runnerId) {
-      setSetup((existing) => ({
-        ...existing,
-        runner_script: script || null,
-      }));
-    }
+    setSamplingRunCount(count);
+    setSamplingRunCountDraft(String(count));
   }
 
   function chooseProtocol(withEquilibration: boolean) {
@@ -1024,23 +1015,50 @@ export default function App() {
         <div className="header-status">
           {bootstrap ? (
             <>
-              <span className={bootstrap.pq.found ? "status-ready" : "status-missing"}>
-                <span aria-hidden="true" />
-                PQ{" "}
-                {bootstrap.pq.found
-                  ? bootstrap.pq.version ?? "detected"
-                  : "not found"}
+              <span
+                className={
+                  bootstrap.pq.found ? "status-ready" : "status-missing"
+                }
+                aria-label={`PQ ${
+                  bootstrap.pq.found
+                    ? bootstrap.pq.version ?? "detected"
+                    : "not found"
+                }`}
+                title={`PQ ${
+                  bootstrap.pq.found
+                    ? bootstrap.pq.version ?? "detected"
+                    : "not found"
+                }`}
+              >
+                <span className="status-dot" aria-hidden="true" />
+                <span className="status-text">
+                  PQ{" "}
+                  {bootstrap.pq.found
+                    ? bootstrap.pq.version ?? "detected"
+                    : "not found"}
+                </span>
               </span>
               <span className="version">
                 Schema {bootstrap.target_pq_release}
               </span>
             </>
           ) : bootstrapError ? (
-            <span className="status-missing">Backend unavailable</span>
+            <span
+              className="status-missing"
+              aria-label="Backend unavailable"
+              title="Backend unavailable"
+            >
+              <span className="status-dot" aria-hidden="true" />
+              <span className="status-text">Backend unavailable</span>
+            </span>
           ) : (
-            <span className="loading-label">
+            <span
+              className="loading-label"
+              aria-label="Checking system"
+              title="Checking system"
+            >
               <LoaderCircle size={15} className="spin" />
-              Checking system
+              <span className="status-text">Checking system</span>
             </span>
           )}
         </div>
@@ -1162,8 +1180,8 @@ export default function App() {
             <section className="step-panel">
               <StepHeading
                 eyebrow="02 · Method"
-                title="Choose calculators"
-                description="Select one or more PQ methods. Each calculator creates its own input sequence."
+                title="Choose the calculator"
+                description="PQ uses one calculator for the complete run sequence."
               />
               {bootstrap && (
                 <div className="compatibility-line" aria-label="PQ compatibility">
@@ -1177,29 +1195,26 @@ export default function App() {
                 </div>
               )}
               <div className="method-principle">
-                <strong>One calculator per input</strong>
+                <strong>One calculator</strong>
                 <span>
-                  Multiple selections create parallel variants of the same run
-                  protocol.
+                  The initial choice is a suggestion, not a PQ default. Select
+                  the method required by the study.
                 </span>
               </div>
               <div
                 className="calculator-list"
-                role="group"
-                aria-label="Calculators"
+                role="radiogroup"
+                aria-label="Calculator"
               >
                 {(bootstrap?.runners ?? [])
                   .filter((runner) => runner.supported)
                   .map((runner) => {
-                    const selection = calculators.find(
-                      (item) => item.runner_id === runner.id,
-                    );
-                    const selected = Boolean(selection);
-                    const needsScript = [
-                      "dftbplus",
-                      "pyscf",
-                      "turbomole",
-                    ].includes(runner.id);
+                    const selected = setup.runner === runner.id;
+                    const runnerState = runner.ready
+                      ? "ready"
+                      : runner.installed
+                        ? "incomplete"
+                        : "missing";
                     return (
                       <div
                         className={`calculator-option ${
@@ -1209,55 +1224,38 @@ export default function App() {
                       >
                         <label>
                           <input
-                            type="checkbox"
+                            type="radio"
+                            name="calculator"
                             checked={selected}
-                            onChange={() => toggleCalculator(runner.id)}
+                            onChange={() => chooseCalculator(runner.id)}
                           />
-                          <span className="calculator-check" aria-hidden="true">
-                            {selected && <Check size={12} />}
+                          <span className="calculator-radio" aria-hidden="true">
+                            {selected && <span />}
                           </span>
                           <span className="runner-name">
                             <strong>{runner.label}</strong>
                             <small>
-                              {runner.detail}
-                              {runner.version ? ` · ${runner.version}` : ""}
+                              {runner.version
+                                ? `Version ${runner.version}`
+                                : runner.detail}
                             </small>
                           </span>
                           <span
-                            className={`runner-state ${
-                              runner.ready ? "ready" : "missing"
-                            }`}
+                            className={`runner-state ${runnerState}`}
                           >
-                            {runner.ready ? "Ready" : "Not detected"}
+                            {runner.ready
+                              ? "Ready"
+                              : runner.installed
+                                ? "Setup incomplete"
+                                : "Not detected"}
                           </span>
                         </label>
                         {selected && !runner.ready && (
                           <div className="calculator-warning" role="status">
                             <CircleAlert size={14} aria-hidden="true" />
                             <span>
-                              Not detected on this system. PQSetup will still
-                              create the inputs; configure this calculator
-                              before running.
+                              {runner.detail} Inputs can still be created.
                             </span>
-                          </div>
-                        )}
-                        {selected && needsScript && (
-                          <div className="calculator-config">
-                            <Field
-                              label="Runner script"
-                              help={`Leave blank to use ${DEFAULT_RUNNER_SCRIPTS[runner.id]}.`}
-                            >
-                              <input
-                                value={selection?.runner_script ?? ""}
-                                placeholder={DEFAULT_RUNNER_SCRIPTS[runner.id]}
-                                onChange={(event) =>
-                                  updateCalculatorScript(
-                                    runner.id,
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                            </Field>
                           </div>
                         )}
                       </div>
@@ -1270,20 +1268,10 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <div className="batch-summary" aria-live="polite">
-                <strong>{calculators.length}</strong>{" "}
-                {calculators.length === 1 ? "calculator" : "calculators"}
-                <span aria-hidden="true">·</span>
-                <strong>{equilibration ? 2 : 1}</strong>{" "}
-                {equilibration ? "stages" : "stage"}
-                <span aria-hidden="true">·</span>
-                <strong>{calculators.length * (equilibration ? 2 : 1)}</strong>{" "}
-                input files
-              </div>
-              {calculators.length === 0 && (
+              {!setup.runner && (
                 <div className="inline-warning" role="alert">
                   <CircleAlert size={15} aria-hidden="true" />
-                  Select at least one calculator.
+                  Select a calculator.
                 </div>
               )}
             </section>
@@ -1294,42 +1282,38 @@ export default function App() {
               <StepHeading
                 eyebrow="03 · Conditions"
                 title="Build the run protocol"
-                description="Create one sampling run or continue from an NVT equilibration."
+                description="Optionally equilibrate, then create one or more linked sampling files."
               />
-              <div
-                className="protocol-choice"
-                role="radiogroup"
-                aria-label="Run protocol"
-              >
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!equilibration}
-                  className={!equilibration ? "selected" : ""}
-                  onClick={() => chooseProtocol(false)}
-                >
-                  <strong>Single sampling run</strong>
-                  <small>One input from the prepared structure.</small>
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={Boolean(equilibration)}
-                  className={equilibration ? "selected" : ""}
-                  onClick={() => chooseProtocol(true)}
-                >
-                  <strong>Equilibrate, then sample</strong>
-                  <small>Two continued inputs with an NVT first stage.</small>
-                </button>
-              </div>
               <div className="stage-timeline">
-                {equilibration && (
-                  <>
-                    <details className="protocol-stage equilibration-stage">
+                <section
+                  className={`optional-stage ${
+                    equilibration ? "enabled" : ""
+                  }`}
+                  aria-label="Equilibration"
+                >
+                  <header className="optional-stage-heading">
+                    <span className="stage-number stage-code">eq</span>
+                    <span className="stage-summary">
+                      <strong>Equilibration</strong>
+                      <small>Optional NVT preparation</small>
+                    </span>
+                    <label className="stage-toggle">
+                      <span>{equilibration ? "Included" : "Skip"}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(equilibration)}
+                        onChange={(event) => chooseProtocol(event.target.checked)}
+                      />
+                      <span className="stage-toggle-track" aria-hidden="true">
+                        <span />
+                      </span>
+                    </label>
+                  </header>
+                  {equilibration && (
+                    <details className="stage-settings">
                       <summary>
-                        <span className="stage-number">01</span>
-                        <span className="stage-summary">
-                          <strong>Equilibration</strong>
+                        <span>
+                          <strong>Equilibration settings</strong>
                           <small>NVT · fixed cell</small>
                         </span>
                         <span className="stage-duration">
@@ -1402,24 +1386,40 @@ export default function App() {
                         />
                       </div>
                     </details>
+                  )}
+                </section>
+                {equilibration && (
+                  <>
                     <div className="stage-connection">
                       <Link2 size={14} aria-hidden="true" />
-                      Sampling starts from the equilibration restart
+                      eq restart continues into sampling 01
                     </div>
                   </>
                 )}
 
                 <section className="protocol-stage sampling-stage">
                   <header className="sampling-heading">
-                    <span className="stage-number">
-                      {equilibration ? "02" : "01"}
+                    <span
+                      className={`stage-number ${
+                        samplingRunCount > 1 ? "stage-range" : ""
+                      }`}
+                    >
+                      {samplingRunCount > 1
+                        ? `01–${samplingLabel(samplingRunCount)}`
+                        : "01"}
                     </span>
                     <span className="stage-summary">
                       <strong>Sampling</strong>
-                      <small>{setup.ensemble} ensemble</small>
+                      <small>
+                        {samplingRunSummary(
+                          samplingRunCount,
+                          Boolean(equilibration),
+                        )}{" "}
+                        · {setup.ensemble}
+                      </small>
                     </span>
                     <span className="stage-duration">
-                      {durationLabel(setup.steps, setup.timestep_fs)}
+                      {durationLabel(samplingTotalSteps, setup.timestep_fs)}
                     </span>
                   </header>
                   <div className="stage-body">
@@ -1457,7 +1457,7 @@ export default function App() {
                       </p>
                     </fieldset>
 
-                    <div className="form-grid stage-primary-grid">
+                    <div className="form-grid sampling-condition-grid">
                       <Field
                         label={
                           setup.ensemble === "NVE"
@@ -1518,22 +1518,90 @@ export default function App() {
                           }
                         />
                       </Field>
-                      <Field label="Steps">
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={setup.steps ?? ""}
-                          onChange={(event) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              steps: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            }))
+                    </div>
+
+                    <div className="sampling-length">
+                      <div className="form-grid sampling-length-grid">
+                        <Field label="Steps per file">
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={setup.steps ?? ""}
+                            onChange={(event) =>
+                              setSetup((existing) => ({
+                                ...existing,
+                                steps: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }))
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label="Sampling files"
+                          help={
+                            equilibration
+                              ? "01 continues from eq; later files continue from the previous restart."
+                              : "01 starts from the prepared structure; later files continue from the previous restart."
                           }
-                        />
-                      </Field>
+                        >
+                          <input
+                            type="number"
+                            min="1"
+                            max="99"
+                            step="1"
+                            inputMode="numeric"
+                            value={samplingRunCountDraft}
+                            onChange={(event) => {
+                              const draft = event.target.value;
+                              setSamplingRunCountDraft(draft);
+                              const count = parseSamplingRunCountDraft(draft);
+                              if (count !== null) setSamplingRunCount(count);
+                            }}
+                            onBlur={commitSamplingRunCount}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.currentTarget.blur();
+                              }
+                            }}
+                          />
+                        </Field>
+                      </div>
+                      <div className="sampling-total" aria-live="polite">
+                        <span>
+                          <strong>
+                            {samplingTotalSteps?.toLocaleString() ?? "—"}
+                          </strong>
+                          total steps
+                        </span>
+                        <span>
+                          <strong>
+                            {durationLabel(
+                              samplingTotalSteps,
+                              setup.timestep_fs,
+                            )}
+                          </strong>
+                          total sampling time
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      className="filename-chain"
+                      aria-label={`Input sequence: ${runFileNames.join(" then ")}`}
+                    >
+                      <span>Files</span>
+                      <div>
+                        {runFileNames.map((name, index) => (
+                          <span key={`${name}-${index}`}>
+                            {index > 0 && (
+                              <ArrowRight size={12} aria-hidden="true" />
+                            )}
+                            {name === "…" ? <b>…</b> : <code>{name}</code>}
+                          </span>
+                        ))}
+                      </div>
                     </div>
 
                     {(setup.ensemble === "NVT" ||
@@ -1575,20 +1643,6 @@ export default function App() {
                     )}
                   </div>
                 </section>
-                <button
-                  type="button"
-                  className="add-stage"
-                  onClick={() => chooseProtocol(!equilibration)}
-                >
-                  {equilibration ? (
-                    "Remove equilibration"
-                  ) : (
-                    <>
-                      <Plus size={15} aria-hidden="true" />
-                      Add NVT equilibration
-                    </>
-                  )}
-                </button>
               </div>
             </section>
           )}
@@ -1715,7 +1769,7 @@ export default function App() {
               <StepHeading
                 eyebrow="05 · Review"
                 title="Review the inputs"
-                description="Check every calculator and continued stage before creating the run package."
+                description="Check the input sequence before creating the run package."
               />
               <div className="form-grid review-fields">
                 <Field label="Run name">
@@ -1747,64 +1801,102 @@ export default function App() {
                   {rendered?.files.length === 1 ? "input file" : "input files"}
                 </span>
                 <span>
-                  <strong>{calculators.length}</strong>{" "}
-                  {calculators.length === 1 ? "calculator" : "calculators"}
+                  <strong>{selectedCalculatorLabel}</strong> calculator
                 </span>
                 <span>
-                  <strong>{equilibration ? 2 : 1}</strong>{" "}
-                  {equilibration ? "stages" : "stage"}
+                  <strong>{samplingRunCount}</strong> sampling{" "}
+                  {samplingRunCount === 1 ? "file" : "files"}
+                  {equilibration ? " + eq" : ""}
                 </span>
               </div>
               {rendered && rendered.files.length > 0 && (
                 <div className="generated-files" aria-label="Generated inputs">
-                  {Array.from(
-                    new Map(
-                      rendered.files.map((file) => [
-                        file.calculator_id,
-                        file.calculator_label,
-                      ]),
-                    ),
-                  ).map(([calculatorId, calculatorLabel]) => (
-                    <section key={calculatorId}>
-                      <header>{calculatorLabel}</header>
-                      <div role="tablist" aria-label={`${calculatorLabel} files`}>
-                        {rendered.files
-                          .filter(
-                            (file) => file.calculator_id === calculatorId,
-                          )
-                          .map((file) => {
-                            const key = `${file.calculator_id}:${file.name}`;
-                            const active = selectedFileKey === key;
-                            return (
-                              <button
-                                type="button"
-                                role="tab"
-                                aria-selected={active}
-                                className={active ? "selected" : ""}
-                                key={key}
-                                onClick={() => setSelectedFileKey(key)}
-                              >
-                                <span className="file-sequence">
-                                  {file.stage_index > 1 ? (
-                                    <Link2 size={13} aria-hidden="true" />
-                                  ) : (
-                                    <span>{String(file.stage_index).padStart(2, "0")}</span>
-                                  )}
-                                </span>
-                                <span>
-                                  <strong>{file.name}</strong>
-                                  <small>{file.stage_label}</small>
-                                </span>
-                                <CheckCircle2 size={15} aria-hidden="true" />
-                              </button>
-                            );
-                          })}
-                      </div>
-                    </section>
-                  ))}
+                  <section>
+                    <header>{selectedCalculatorLabel}</header>
+                    <div
+                      role="tablist"
+                      aria-label={`${selectedCalculatorLabel} input files`}
+                    >
+                      {rendered.files.map((file, index) => {
+                        const key = file.name;
+                        const active = selectedFileKey === key;
+                        const fallbackSamplingIndex =
+                          rendered.files
+                            .filter((item) => item.stage_id === "sampling")
+                            .findIndex((item) => item.name === file.name) + 1;
+                        const sequenceLabel =
+                          file.stage_id === "equilibration"
+                            ? "eq"
+                            : samplingLabel(
+                                file.segment_index ?? fallbackSamplingIndex,
+                              );
+                        return (
+                          <button
+                            ref={(node) => {
+                              generatedFileTabs.current[index] = node;
+                            }}
+                            type="button"
+                            role="tab"
+                            id={`generated-file-tab-${index}`}
+                            aria-selected={active}
+                            aria-controls="generated-input-panel"
+                            tabIndex={active ? 0 : -1}
+                            className={active ? "selected" : ""}
+                            key={key}
+                            onClick={() => setSelectedFileKey(key)}
+                            onKeyDown={(event) => {
+                              let nextIndex = index;
+                              if (event.key === "ArrowRight") {
+                                nextIndex = (index + 1) % rendered.files.length;
+                              } else if (event.key === "ArrowLeft") {
+                                nextIndex =
+                                  (index - 1 + rendered.files.length) %
+                                  rendered.files.length;
+                              } else if (event.key === "Home") {
+                                nextIndex = 0;
+                              } else if (event.key === "End") {
+                                nextIndex = rendered.files.length - 1;
+                              } else {
+                                return;
+                              }
+
+                              event.preventDefault();
+                              setSelectedFileKey(rendered.files[nextIndex].name);
+                              const nextTab =
+                                generatedFileTabs.current[nextIndex];
+                              nextTab?.focus();
+                              nextTab?.scrollIntoView({
+                                block: "nearest",
+                                inline: "nearest",
+                              });
+                            }}
+                          >
+                            <span className="file-sequence">
+                              {sequenceLabel}
+                            </span>
+                            <span>
+                              <strong>{file.name}</strong>
+                              <small>{file.stage_label}</small>
+                            </span>
+                            <CheckCircle2 size={15} aria-hidden="true" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
                 </div>
               )}
-              <div className="input-preview">
+              <div
+                className="input-preview"
+                id="generated-input-panel"
+                role={rendered?.files.length ? "tabpanel" : undefined}
+                aria-labelledby={
+                  selectedFileIndex >= 0
+                    ? `generated-file-tab-${selectedFileIndex}`
+                    : undefined
+                }
+                tabIndex={rendered?.files.length ? 0 : undefined}
+              >
                 <div className="preview-title">
                   <span>
                     <FileCode2 size={16} />
@@ -1908,29 +2000,25 @@ export default function App() {
                 </span>
               </li>
               <li
-                className={
-                  calculators.length > 0 && missingCalculatorCount === 0
-                    ? "ok"
-                    : "warn"
-                }
+                className={setup.runner && !calculatorMissing ? "ok" : "warn"}
               >
                 <StatusDot
                   status={
-                    calculators.length > 0 && missingCalculatorCount === 0
+                    setup.runner && !calculatorMissing
                       ? "ok"
-                      : calculators.length
+                      : setup.runner
                         ? "warn"
                         : "idle"
                   }
                 />
                 <span>
-                  <strong>Calculators</strong>
+                  <strong>Calculator</strong>
                   <small>
-                    {calculators.length === 0
-                      ? "Choose at least one calculator."
-                      : missingCalculatorCount
-                        ? `${calculators.length} selected · ${missingCalculatorCount} not detected.`
-                        : `${calculators.length} selected and ready.`}
+                    {!setup.runner
+                      ? "Choose a calculator."
+                      : calculatorMissing
+                        ? `${selectedCalculatorLabel} was not detected.`
+                        : `${selectedCalculatorLabel} is ready.`}
                   </small>
                 </span>
               </li>

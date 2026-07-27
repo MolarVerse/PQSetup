@@ -74,11 +74,12 @@ def main(arguments: list[str] | None = None) -> int:
         )
         return 0
     if command == "doctor":
+        pq = discover_pq(
+            getattr(args, "command_pq_executable", None) or args.pq_executable
+        )
         report = DoctorReport(
-            pq=discover_pq(
-                getattr(args, "command_pq_executable", None) or args.pq_executable
-            ),
-            runners=detect_runners(),
+            pq=pq,
+            runners=detect_runners(pq.executable if pq.found else None),
             diagnostics=[],
         )
         if args.json:
@@ -106,20 +107,18 @@ def main(arguments: list[str] | None = None) -> int:
 
 
 def _print_doctor(report: DoctorReport) -> None:
-    marker = (
-        "ready"
-        if report.pq.found and report.pq.version
-        else "found"
-        if report.pq.found
-        else "missing"
-    )
+    marker = "detected" if report.pq.found else "not detected"
     executable = f" · {report.pq.executable}" if report.pq.executable else ""
     print(f"PQ             {marker}{executable}")
     for runner in report.runners:
         if not runner.supported:
             state = "unsupported"
+        elif runner.ready:
+            state = "detected"
+        elif runner.installed:
+            state = f"setup incomplete · {runner.detail}"
         else:
-            state = "ready" if runner.ready else "missing"
+            state = "not detected"
         print(f"{runner.label:14} {state}")
 
 

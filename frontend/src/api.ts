@@ -1,6 +1,5 @@
 import type {
   Bootstrap,
-  CalculatorSelection,
   EquilibrationStage,
   PlanRenderResult,
   PreparationMetadata,
@@ -71,14 +70,18 @@ export async function perturbFile(
 
 export async function renderPlan(
   setup: SimulationSetup,
-  calculators: CalculatorSelection[],
   equilibration: EquilibrationStage | null,
+  samplingRunCount: number,
 ): Promise<PlanRenderResult> {
   return readJson(
     await fetch("/api/plan/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ setup, calculators, equilibration }),
+      body: JSON.stringify({
+        setup,
+        equilibration,
+        sampling_run_count: samplingRunCount,
+      }),
     }),
   );
 }
@@ -88,8 +91,8 @@ export async function exportProject(
   structure: Structure,
   projectName: string,
   preparation: PreparationMetadata | null,
-  calculators: CalculatorSelection[],
   equilibration: EquilibrationStage | null,
+  samplingRunCount: number,
 ): Promise<Blob> {
   const response = await fetch("/api/project/export", {
     method: "POST",
@@ -99,8 +102,8 @@ export async function exportProject(
       structure,
       project_name: projectName,
       preparation,
-      calculators,
       equilibration,
+      sampling_run_count: samplingRunCount,
     }),
   });
   if (!response.ok) {
