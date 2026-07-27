@@ -1,6 +1,13 @@
 export type Severity = "error" | "warning" | "info";
 export type Ensemble = "NPT" | "NVT" | "NVE" | "OPT";
 export type JobType = "mm-md" | "qm-md" | "qm-rpmd" | "mm-opt";
+export type PressureIsotropy =
+  | "isotropic"
+  | "xy"
+  | "xz"
+  | "yz"
+  | "anisotropic"
+  | "full_anisotropic";
 
 export interface Diagnostic {
   code: string;
@@ -117,15 +124,24 @@ export interface SimulationSetup {
   job_type: JobType;
   ensemble: Ensemble;
   start_file: string;
+  restart_file: string | null;
   file_prefix: string;
   timestep_fs: number | null;
   steps: number | null;
   temperature_k: number | null;
+  start_temperature_k: number | null;
+  temperature_ramp_steps: number | null;
+  temperature_ramp_frequency: number;
   pressure_bar: number | null;
   thermostat: string | null;
   thermostat_relaxation_ps: number | null;
+  thermostat_friction_ps_inverse: number;
+  nh_chain_length: number;
+  coupling_frequency_cm_inverse: number;
   manostat: string | null;
   manostat_relaxation_ps: number | null;
+  compressibility_bar_inverse: number;
+  pressure_isotropy: PressureIsotropy;
   initialize_velocities: boolean;
   random_seed: number;
   runner: string | null;
@@ -136,6 +152,45 @@ export interface SimulationSetup {
 
 export interface RenderResult {
   input_text: string;
+  diagnostics: Diagnostic[];
+  valid: boolean;
+}
+
+export interface CalculatorSelection {
+  runner_id: string;
+  runner_script: string | null;
+}
+
+export interface EquilibrationStage {
+  enabled: boolean;
+  steps: number;
+  timestep_fs: number;
+  temperature_k: number;
+  start_temperature_k: number | null;
+  temperature_ramp_steps: number | null;
+  temperature_ramp_frequency: number;
+  thermostat: string;
+  thermostat_relaxation_ps: number;
+  thermostat_friction_ps_inverse: number;
+  nh_chain_length: number;
+  coupling_frequency_cm_inverse: number;
+}
+
+export interface PlannedInput {
+  name: string;
+  stage_id: "equilibration" | "sampling";
+  stage_label: string;
+  stage_index: number;
+  stage_count: number;
+  calculator_id: string;
+  calculator_label: string;
+  input_text: string;
+  start_file: string;
+  restart_file: string;
+}
+
+export interface PlanRenderResult {
+  files: PlannedInput[];
   diagnostics: Diagnostic[];
   valid: boolean;
 }

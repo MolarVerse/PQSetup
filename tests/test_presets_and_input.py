@@ -151,13 +151,16 @@ def test_required_output_names_cannot_be_empty() -> None:
     }
 
 
-def test_native_external_runner_requires_a_script() -> None:
-    missing = setup_from_preset("ambient-nvt", runner="dftbplus")
+def test_native_external_runner_uses_default_or_custom_script() -> None:
+    default = setup_from_preset("ambient-nvt", runner="dftbplus")
     configured = setup_from_preset(
         "ambient-nvt",
         runner="dftbplus",
         runner_script="run-dftbplus",
     )
 
-    assert {item.code for item in validate_setup(missing)} == {"runner.script"}
+    default_result = render_input(default)
+    assert default_result.valid
+    assert "qm_script = dftbplus_periodic_stress;" in default_result.input_text
     assert render_input(configured).valid
+    assert "qm_script = run-dftbplus;" in render_input(configured).input_text

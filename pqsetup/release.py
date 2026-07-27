@@ -28,3 +28,31 @@ PQ_MANOSTATS = frozenset(
         "stochastic_rescaling",
     }
 )
+
+PQ_PRESSURE_ISOTROPIES = frozenset(
+    {
+        "isotropic",
+        "xy",
+        "xz",
+        "yz",
+        "anisotropic",
+        "full_anisotropic",
+    }
+)
+
+PQ_RUNNER_LABELS = {
+    "dftbplus": "DFTB+",
+    "ase_dftbplus": "ASE · DFTB+",
+    "ase_xtb": "ASE · xTB",
+    "pyscf": "PySCF",
+    "turbomole": "Turbomole",
+    "mace": "MACE-MP",
+    "mace_mp": "MACE-MP",
+    "mace_off": "MACE-OFF",
+}
+
+PQ_DEFAULT_RUNNER_SCRIPTS = {
+    "dftbplus": "dftbplus_periodic_stress",
+    "pyscf": "pyscf_hf.py",
+    "turbomole": "turbomole_rimp2",
+}

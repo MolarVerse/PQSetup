@@ -2,8 +2,8 @@
 
 PQSetup prepares validated, reproducible inputs for PQ simulations.
 
-It combines guided scientific presets, structure checks, runner diagnostics,
-and a readable input preview in one local application.
+It combines a guided run protocol, structure checks, calculator diagnostics,
+and readable input previews in one local application.
 
 PQSetup currently targets the input schema of PQ v0.6.4. It detects and shows
 the version of the selected PQ executable separately.
@@ -38,8 +38,11 @@ Set a non-standard PQ executable with `PQ_EXECUTABLE` or
 ## Scientific behavior
 
 - Ambient NPT uses 298.15 K and 1.01325 bar.
-- NVT and NPT expose every thermostat available in PQ v0.6.4.
-- NPT exposes both PQ v0.6.4 manostats.
+- NVT and NPT expose every thermostat and method-specific control in PQ v0.6.4.
+- NPT exposes both manostats, relaxation, compressibility, and cell response.
+- A sampling run can follow an NVT equilibration through linked restart files.
+- Multiple calculators create independent input sequences.
+- Missing PQ or calculator installations warn without blocking input creation.
 - Velocity initialization is delegated to PQ through `init_velocities`.
 - Position perturbations are Gaussian, seeded, reversible, and revalidated.
 - Cell-less molecules receive a centered vacuum cell with 6 Å padding.

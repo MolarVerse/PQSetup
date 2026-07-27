@@ -2,15 +2,17 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   CircleHelp,
   CircleDashed,
   Download,
   FileCode2,
-  FlaskConical,
   Keyboard,
+  Link2,
   LoaderCircle,
+  Plus,
   Search,
   Sparkles,
   Upload,
@@ -33,28 +35,34 @@ import {
   exportProject,
   getBootstrap,
   perturbFile,
-  renderInput,
+  renderPlan,
 } from "./api";
 import CommandPalette, { type Command } from "./CommandPalette";
 import ChemicalFormula from "./ChemicalFormula";
-import { MANOSTATS, THERMOSTATS } from "./conditionOptions";
+import {
+  MANOSTATS,
+  PRESSURE_ISOTROPIES,
+  THERMOSTATS,
+} from "./conditionOptions";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
+  CalculatorSelection,
   Diagnostic,
+  Ensemble,
+  EquilibrationStage,
+  PlanRenderResult,
   PreparationMetadata,
-  Preset,
-  RenderResult,
   SimulationSetup,
   StructureAnalysis,
 } from "./types";
 
 const STEPS = [
   { id: "system", label: "System", hint: "Structure" },
-  { id: "method", label: "Method", hint: "Calculator" },
-  { id: "conditions", label: "Conditions", hint: "Ensemble" },
+  { id: "method", label: "Method", hint: "Calculators" },
+  { id: "conditions", label: "Conditions", hint: "Run plan" },
   { id: "prepare", label: "Prepare", hint: "Coordinates" },
-  { id: "review", label: "Review", hint: "Input" },
+  { id: "review", label: "Review", hint: "Inputs" },
 ] as const;
 
 type StepId = (typeof STEPS)[number]["id"];
@@ -114,15 +122,24 @@ const INITIAL_SETUP: SimulationSetup = {
   job_type: "qm-md",
   ensemble: "NVT",
   start_file: "water-example.rst",
+  restart_file: null,
   file_prefix: "water-nvt",
   timestep_fs: 0.5,
   steps: 1000,
   temperature_k: 298.15,
+  start_temperature_k: null,
+  temperature_ramp_steps: null,
+  temperature_ramp_frequency: 1,
   pressure_bar: null,
   thermostat: "velocity_rescaling",
   thermostat_relaxation_ps: 0.1,
+  thermostat_friction_ps_inverse: 0.1,
+  nh_chain_length: 3,
+  coupling_frequency_cm_inverse: 1000,
   manostat: null,
   manostat_relaxation_ps: 1,
+  compressibility_bar_inverse: 4.591e-5,
+  pressure_isotropy: "isotropic",
   initialize_velocities: true,
   random_seed: 238917,
   runner: "ase_xtb",
@@ -131,15 +148,53 @@ const INITIAL_SETUP: SimulationSetup = {
   extra_settings: {},
 };
 
+const INITIAL_EQUILIBRATION: EquilibrationStage = {
+  enabled: true,
+  steps: 5000,
+  timestep_fs: 0.5,
+  temperature_k: 298.15,
+  start_temperature_k: null,
+  temperature_ramp_steps: null,
+  temperature_ramp_frequency: 1,
+  thermostat: "berendsen",
+  thermostat_relaxation_ps: 0.1,
+  thermostat_friction_ps_inverse: 0.1,
+  nh_chain_length: 3,
+  coupling_frequency_cm_inverse: 1000,
+};
+
+const DEFAULT_RUNNER_SCRIPTS: Record<string, string> = {
+  dftbplus: "dftbplus_periodic_stress",
+  pyscf: "pyscf_hf.py",
+  turbomole: "turbomole_rimp2",
+};
+
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
-function runNameForEnsemble(current: string, ensemble: string): string {
-  if (!/-(npt|nvt|nve|opt)$/i.test(current)) return current;
-  return current.replace(
-    /-(npt|nvt|nve|opt)$/i,
-    `-${ensemble.toLowerCase()}`,
+function durationLabel(steps: number | null, timestep: number | null): string {
+  if (!steps || !timestep) return "Duration incomplete";
+  const femtoseconds = steps * timestep;
+  if (femtoseconds >= 1000) {
+    return `${(femtoseconds / 1000).toLocaleString(undefined, {
+      maximumFractionDigits: 3,
+    })} ps`;
+  }
+  return `${femtoseconds.toLocaleString()} fs`;
+}
+
+function thermostatDescription(value: string | null): string {
+  return (
+    THERMOSTATS.find((option) => option.value === value)?.description ??
+    "Choose how temperature is coupled."
+  );
+}
+
+function manostatDescription(value: string | null): string {
+  return (
+    MANOSTATS.find((option) => option.value === value)?.description ??
+    "Choose how pressure is coupled."
   );
 }
 
@@ -186,6 +241,280 @@ function Field({
   );
 }
 
+type ThermostatSettings = Pick<
+  SimulationSetup,
+  | "thermostat"
+  | "thermostat_relaxation_ps"
+  | "thermostat_friction_ps_inverse"
+  | "nh_chain_length"
+  | "coupling_frequency_cm_inverse"
+>;
+
+type TemperatureScheduleSettings = Pick<
+  SimulationSetup,
+  | "start_temperature_k"
+  | "temperature_ramp_steps"
+  | "temperature_ramp_frequency"
+>;
+
+function TemperatureCoupling({
+  value,
+  onChange,
+}: {
+  value: ThermostatSettings;
+  onChange: (patch: Partial<ThermostatSettings>) => void;
+}) {
+  return (
+    <section className="coupling-section" aria-label="Temperature coupling">
+      <div className="section-rule-heading">
+        <strong>Temperature coupling</strong>
+        <span>Thermostat</span>
+      </div>
+      <div className="form-grid coupling-grid">
+        <Field label="Thermostat">
+          <select
+            value={value.thermostat ?? "velocity_rescaling"}
+            onChange={(event) => onChange({ thermostat: event.target.value })}
+          >
+            {THERMOSTATS.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {(value.thermostat === "berendsen" ||
+          value.thermostat === "velocity_rescaling") && (
+          <Field label="Relaxation time" unit="ps">
+            <input
+              type="number"
+              min="0.000001"
+              step="0.01"
+              value={value.thermostat_relaxation_ps ?? ""}
+              onChange={(event) =>
+                onChange({
+                  thermostat_relaxation_ps: event.target.value
+                    ? Number(event.target.value)
+                    : null,
+                })
+              }
+            />
+          </Field>
+        )}
+        {value.thermostat === "langevin" && (
+          <Field label="Friction" unit="ps⁻¹">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={value.thermostat_friction_ps_inverse}
+              onChange={(event) =>
+                onChange({
+                  thermostat_friction_ps_inverse: Number(event.target.value),
+                })
+              }
+            />
+          </Field>
+        )}
+        {value.thermostat === "nh-chain" && (
+          <>
+            <Field label="Chain length">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={value.nh_chain_length}
+                onChange={(event) =>
+                  onChange({ nh_chain_length: Number(event.target.value) })
+                }
+              />
+            </Field>
+            <Field label="Coupling frequency" unit="cm⁻¹">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={value.coupling_frequency_cm_inverse}
+                onChange={(event) =>
+                  onChange({
+                    coupling_frequency_cm_inverse: Number(event.target.value),
+                  })
+                }
+              />
+            </Field>
+          </>
+        )}
+      </div>
+      <p className="coupling-description">
+        {thermostatDescription(value.thermostat)}
+      </p>
+    </section>
+  );
+}
+
+function TemperatureSchedule({
+  value,
+  onChange,
+}: {
+  value: TemperatureScheduleSettings;
+  onChange: (patch: Partial<TemperatureScheduleSettings>) => void;
+}) {
+  return (
+    <details className="schedule-settings">
+      <summary>
+        <span>
+          <strong>Temperature schedule</strong>
+          <small>
+            {value.start_temperature_k == null
+              ? "Constant target temperature"
+              : `${value.start_temperature_k} K → target`}
+          </small>
+        </span>
+        <ChevronDown size={16} aria-hidden="true" />
+      </summary>
+      <div className="form-grid schedule-grid">
+        <Field
+          label="Start temperature"
+          unit="K"
+          help="Leave blank to start at the target temperature."
+        >
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={value.start_temperature_k ?? ""}
+            onChange={(event) =>
+              onChange({
+                start_temperature_k: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+          />
+        </Field>
+        <Field label="Ramp steps" help="0 uses the full stage.">
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={value.temperature_ramp_steps ?? ""}
+            onChange={(event) =>
+              onChange({
+                temperature_ramp_steps: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+          />
+        </Field>
+        <Field label="Ramp frequency" unit="steps">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={value.temperature_ramp_frequency}
+            onChange={(event) =>
+              onChange({
+                temperature_ramp_frequency: Number(event.target.value),
+              })
+            }
+          />
+        </Field>
+      </div>
+    </details>
+  );
+}
+
+type ManostatSettings = Pick<
+  SimulationSetup,
+  | "manostat"
+  | "manostat_relaxation_ps"
+  | "compressibility_bar_inverse"
+  | "pressure_isotropy"
+>;
+
+function PressureCoupling({
+  value,
+  onChange,
+}: {
+  value: ManostatSettings;
+  onChange: (patch: Partial<ManostatSettings>) => void;
+}) {
+  return (
+    <section className="coupling-section" aria-label="Pressure coupling">
+      <div className="section-rule-heading">
+        <strong>Pressure coupling</strong>
+        <span>Manostat</span>
+      </div>
+      <div className="form-grid coupling-grid pressure-grid">
+        <Field
+          label="Manostat"
+          info="PQ calls this a manostat. It is essentially a barostat: the pressure-coupling method that adjusts the simulation cell."
+        >
+          <select
+            value={value.manostat ?? "stochastic_rescaling"}
+            onChange={(event) => onChange({ manostat: event.target.value })}
+          >
+            {MANOSTATS.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Relaxation time" unit="ps">
+          <input
+            type="number"
+            min="0.000001"
+            step="0.01"
+            value={value.manostat_relaxation_ps ?? ""}
+            onChange={(event) =>
+              onChange({
+                manostat_relaxation_ps: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+          />
+        </Field>
+        <Field label="Compressibility" unit="bar⁻¹">
+          <input
+            type="number"
+            min="0"
+            step="0.000001"
+            value={value.compressibility_bar_inverse}
+            onChange={(event) =>
+              onChange({
+                compressibility_bar_inverse: Number(event.target.value),
+              })
+            }
+          />
+        </Field>
+        <Field label="Cell response">
+          <select
+            value={value.pressure_isotropy}
+            onChange={(event) =>
+              onChange({
+                pressure_isotropy:
+                  event.target.value as SimulationSetup["pressure_isotropy"],
+              })
+            }
+          >
+            {PRESSURE_ISOTROPIES.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
+      <p className="coupling-description">
+        {manostatDescription(value.manostat)}
+      </p>
+    </section>
+  );
+}
+
 function StepHeading({
   eyebrow,
   title,
@@ -223,7 +552,13 @@ export default function App() {
   const [preparation, setPreparation] =
     useState<PreparationMetadata | null>(null);
   const [setup, setSetup] = useState<SimulationSetup>(INITIAL_SETUP);
-  const [rendered, setRendered] = useState<RenderResult | null>(null);
+  const [calculators, setCalculators] = useState<CalculatorSelection[]>([
+    { runner_id: "ase_xtb", runner_script: null },
+  ]);
+  const [equilibration, setEquilibration] =
+    useState<EquilibrationStage | null>(null);
+  const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
+  const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
@@ -236,9 +571,14 @@ export default function App() {
     message: string;
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const setupMain = useRef<HTMLElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
+
+  useEffect(() => {
+    setupMain.current?.scrollTo({ top: 0, left: 0 });
+  }, [activeStep]);
 
   useEffect(() => {
     let current = true;
@@ -247,10 +587,15 @@ export default function App() {
         if (!current) return;
         setBootstrap(value);
         const preferred =
-          value.runners.find((runner) => runner.id === "ase_xtb" && runner.ready) ??
-          value.runners.find((runner) => runner.ready && runner.supported);
+          value.runners.find((runner) => runner.id === "ase_xtb") ??
+          value.runners.find((runner) => runner.supported);
         if (preferred) {
           setSetup((existing) => ({ ...existing, runner: preferred.id }));
+          setCalculators((existing) =>
+            existing.some((item) => item.runner_id === preferred.id)
+              ? existing
+              : [{ runner_id: preferred.id, runner_script: null }],
+          );
         }
       })
       .catch((error) => {
@@ -265,14 +610,27 @@ export default function App() {
     const sequence = ++renderSequence.current;
     setRendering(true);
     const timeout = window.setTimeout(() => {
-      renderInput(setup)
+      renderPlan(setup, calculators, equilibration)
         .then((result) => {
-          if (sequence === renderSequence.current) setRendered(result);
+          if (sequence !== renderSequence.current) return;
+          setRendered(result);
+          setSelectedFileKey((current) => {
+            if (
+              current &&
+              result.files.some(
+                (file) => `${file.calculator_id}:${file.name}` === current,
+              )
+            ) {
+              return current;
+            }
+            const first = result.files[0];
+            return first ? `${first.calculator_id}:${first.name}` : null;
+          });
         })
         .catch((error) => {
           if (sequence === renderSequence.current) {
             setRendered({
-              input_text: "",
+              files: [],
               valid: false,
               diagnostics: [
                 {
@@ -290,12 +648,27 @@ export default function App() {
         });
     }, 120);
     return () => window.clearTimeout(timeout);
-  }, [setup]);
+  }, [calculators, equilibration, setup]);
 
-  const selectedRunner = useMemo(
+  const selectedRunnerStatuses = useMemo(
     () =>
-      bootstrap?.runners.find((runner) => runner.id === setup.runner) ?? null,
-    [bootstrap, setup.runner],
+      calculators.map((calculator) => ({
+        selection: calculator,
+        status:
+          bootstrap?.runners.find(
+            (runner) => runner.id === calculator.runner_id,
+          ) ?? null,
+      })),
+    [bootstrap, calculators],
+  );
+  const selectedFile = useMemo(
+    () =>
+      rendered?.files.find(
+        (file) => `${file.calculator_id}:${file.name}` === selectedFileKey,
+      ) ??
+      rendered?.files[0] ??
+      null,
+    [rendered, selectedFileKey],
   );
 
   const generatedCellNpt =
@@ -320,27 +693,35 @@ export default function App() {
     [analysis.diagnostics, generatedCellNpt, rendered?.diagnostics],
   );
 
+  const errorCount = diagnostics.filter(
+    (item) => item.severity === "error",
+  ).length;
+  const missingCalculatorCount = selectedRunnerStatuses.filter(
+    ({ status }) => status && !status.ready,
+  ).length;
   const ready = Boolean(
-    bootstrap?.pq.found &&
-      analysis.valid &&
+    analysis.valid &&
       !generatedCellNpt &&
       rendered?.valid &&
-      (setup.ensemble === "OPT" || selectedRunner?.ready),
+      calculators.length > 0 &&
+      errorCount === 0,
   );
 
   const stepState = useMemo<Record<StepId, "ok" | "warn" | "idle">>(
     () => ({
       system: analysis.valid ? "ok" : "warn",
       method:
-        setup.ensemble === "OPT"
-          ? "ok"
-          : selectedRunner?.ready
-            ? "ok"
-            : selectedRunner
-              ? "warn"
-              : "idle",
-      conditions: diagnostics.some((item) =>
-        item.code.startsWith("conditions."),
+        calculators.length === 0
+          ? "warn"
+          : missingCalculatorCount
+            ? "warn"
+            : "ok",
+      conditions: diagnostics.some(
+        (item) =>
+          item.severity === "error" &&
+          (item.code.startsWith("conditions.") ||
+            item.code.startsWith("run.") ||
+            item.code.startsWith("plan.")),
       )
         ? "warn"
         : rendered
@@ -349,7 +730,14 @@ export default function App() {
       prepare: analysis.collisions.length ? "warn" : "ok",
       review: ready ? "ok" : rendered ? "warn" : "idle",
     }),
-    [analysis, diagnostics, ready, rendered, selectedRunner, setup.ensemble],
+    [
+      analysis,
+      calculators.length,
+      diagnostics,
+      missingCalculatorCount,
+      ready,
+      rendered,
+    ],
   );
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
@@ -367,6 +755,8 @@ export default function App() {
         analysis.structure,
         setup.file_prefix,
         preparation,
+        calculators,
+        equilibration,
       );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -383,7 +773,15 @@ export default function App() {
     } finally {
       setExporting(false);
     }
-  }, [analysis.structure, exporting, preparation, ready, setup]);
+  }, [
+    analysis.structure,
+    calculators,
+    equilibration,
+    exporting,
+    preparation,
+    ready,
+    setup,
+  ]);
 
   const commands = useMemo<Command[]>(
     () => [
@@ -537,31 +935,69 @@ export default function App() {
     }));
   }
 
-  function applyPreset(preset: Preset) {
-    const preferredRunner =
-      preset.runner ??
-      setup.runner ??
-      bootstrap?.runners.find(
-        (runner) => runner.id === "ase_xtb" && runner.ready,
-      )?.id ??
-      null;
+  function toggleCalculator(runnerId: string) {
+    const selected = calculators.some((item) => item.runner_id === runnerId);
+    const next = selected
+      ? calculators.filter((item) => item.runner_id !== runnerId)
+      : [...calculators, { runner_id: runnerId, runner_script: null }];
+    setCalculators(next);
     setSetup((existing) => ({
       ...existing,
-      preset_id: preset.id,
-      job_type: preset.job_type,
-      ensemble: preset.ensemble,
-      temperature_k: preset.temperature_k,
-      pressure_bar: preset.pressure_bar,
-      timestep_fs: preset.timestep_fs,
-      steps: preset.steps,
-      file_prefix: runNameForEnsemble(
-        existing.file_prefix,
-        preset.ensemble,
+      runner: next[0]?.runner_id ?? null,
+      runner_script: next[0]?.runner_script ?? null,
+    }));
+  }
+
+  function updateCalculatorScript(runnerId: string, script: string) {
+    setCalculators((existing) =>
+      existing.map((item) =>
+        item.runner_id === runnerId
+          ? { ...item, runner_script: script || null }
+          : item,
       ),
-      thermostat: preset.thermostat,
-      manostat: preset.manostat,
-      initialize_velocities: preset.ensemble !== "OPT",
-      runner: preset.ensemble === "OPT" ? null : preferredRunner,
+    );
+    if (setup.runner === runnerId) {
+      setSetup((existing) => ({
+        ...existing,
+        runner_script: script || null,
+      }));
+    }
+  }
+
+  function chooseProtocol(withEquilibration: boolean) {
+    setEquilibration(
+      withEquilibration
+        ? {
+            ...INITIAL_EQUILIBRATION,
+            timestep_fs: setup.timestep_fs ?? INITIAL_EQUILIBRATION.timestep_fs,
+            temperature_k:
+              setup.temperature_k ?? INITIAL_EQUILIBRATION.temperature_k,
+          }
+        : null,
+    );
+  }
+
+  function updateEquilibration(patch: Partial<EquilibrationStage>) {
+    setEquilibration((existing) =>
+      existing ? { ...existing, ...patch } : existing,
+    );
+  }
+
+  function chooseSamplingEnsemble(ensemble: Exclude<Ensemble, "OPT">) {
+    setSetup((existing) => ({
+      ...existing,
+      preset_id: null,
+      ensemble,
+      thermostat:
+        ensemble === "NVE"
+          ? null
+          : existing.thermostat ?? "velocity_rescaling",
+      manostat:
+        ensemble === "NPT"
+          ? existing.manostat ?? "stochastic_rescaling"
+          : null,
+      pressure_bar:
+        ensemble === "NPT" ? existing.pressure_bar ?? 1.01325 : null,
     }));
   }
 
@@ -643,7 +1079,7 @@ export default function App() {
           </div>
         </nav>
 
-        <main className="setup-main">
+        <main className="setup-main" ref={setupMain}>
           {notice && (
             <div className={`notice ${notice.kind}`} role="status">
               {notice.kind === "error" ? (
@@ -726,8 +1162,8 @@ export default function App() {
             <section className="step-panel">
               <StepHeading
                 eyebrow="02 · Method"
-                title="Select the calculator"
-                description="Choose a guided method. Other PQ methods remain visible as read-only environment checks."
+                title="Choose calculators"
+                description="Select one or more PQ methods. Each calculator creates its own input sequence."
               />
               {bootstrap && (
                 <div className="compatibility-line" aria-label="PQ compatibility">
@@ -740,134 +1176,115 @@ export default function App() {
                   </span>
                 </div>
               )}
-              {setup.ensemble === "OPT" ? (
-                <div className="empty-method">
-                  <FlaskConical size={25} />
-                  <div>
-                    <strong>Molecular mechanics optimization</strong>
-                    <p>
-                      The selected workflow uses PQ force-field settings rather
-                      than a QM calculator.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div
-                    className="runner-list"
-                    role="radiogroup"
-                    aria-label="Calculator"
-                  >
-                    {(bootstrap?.runners ?? [])
-                      .filter((runner) => runner.id === "ase_xtb")
-                      .map((runner) => (
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={setup.runner === runner.id}
-                          disabled={!runner.ready}
-                          className={setup.runner === runner.id ? "selected" : ""}
-                          key={runner.id}
-                          onClick={() =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              runner: runner.id,
-                              runner_script: null,
-                            }))
-                          }
-                        >
-                          <span className="radio-dot" />
+              <div className="method-principle">
+                <strong>One calculator per input</strong>
+                <span>
+                  Multiple selections create parallel variants of the same run
+                  protocol.
+                </span>
+              </div>
+              <div
+                className="calculator-list"
+                role="group"
+                aria-label="Calculators"
+              >
+                {(bootstrap?.runners ?? [])
+                  .filter((runner) => runner.supported)
+                  .map((runner) => {
+                    const selection = calculators.find(
+                      (item) => item.runner_id === runner.id,
+                    );
+                    const selected = Boolean(selection);
+                    const needsScript = [
+                      "dftbplus",
+                      "pyscf",
+                      "turbomole",
+                    ].includes(runner.id);
+                    return (
+                      <div
+                        className={`calculator-option ${
+                          selected ? "selected" : ""
+                        }`}
+                        key={runner.id}
+                      >
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleCalculator(runner.id)}
+                          />
+                          <span className="calculator-check" aria-hidden="true">
+                            {selected && <Check size={12} />}
+                          </span>
                           <span className="runner-name">
-                            <strong>
-                              ASE · xTB (DFTB+)
-                            </strong>
-                            <small>{runner.detail}</small>
+                            <strong>{runner.label}</strong>
+                            <small>
+                              {runner.detail}
+                              {runner.version ? ` · ${runner.version}` : ""}
+                            </small>
                           </span>
                           <span
                             className={`runner-state ${
                               runner.ready ? "ready" : "missing"
                             }`}
                           >
-                            {runner.ready ? "Ready" : "Missing"}
+                            {runner.ready ? "Ready" : "Not detected"}
                           </span>
-                        </button>
-                      ))}
-                    {!bootstrap && (
-                      <div className="runner-loading">
-                        <LoaderCircle className="spin" size={18} />
-                        Detecting calculators
+                        </label>
+                        {selected && !runner.ready && (
+                          <div className="calculator-warning" role="status">
+                            <CircleAlert size={14} aria-hidden="true" />
+                            <span>
+                              Not detected on this system. PQSetup will still
+                              create the inputs; configure this calculator
+                              before running.
+                            </span>
+                          </div>
+                        )}
+                        {selected && needsScript && (
+                          <div className="calculator-config">
+                            <Field
+                              label="Runner script"
+                              help={`Leave blank to use ${DEFAULT_RUNNER_SCRIPTS[runner.id]}.`}
+                            >
+                              <input
+                                value={selection?.runner_script ?? ""}
+                                placeholder={DEFAULT_RUNNER_SCRIPTS[runner.id]}
+                                onChange={(event) =>
+                                  updateCalculatorScript(
+                                    runner.id,
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </Field>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    );
+                  })}
+                {!bootstrap && (
+                  <div className="runner-loading">
+                    <LoaderCircle className="spin" size={18} />
+                    Detecting calculators
                   </div>
-                  {bootstrap && (
-                    <details className="detected-runners">
-                      <summary>
-                        <span>Other PQ methods</span>
-                        <span>
-                          {
-                            bootstrap.runners.filter(
-                              (runner) =>
-                                runner.id !== "ase_xtb" && runner.installed,
-                            ).length
-                          }{" "}
-                          detected
-                        </span>
-                      </summary>
-                      <ul>
-                        {bootstrap.runners
-                          .filter((runner) => runner.id !== "ase_xtb")
-                          .map((runner) => (
-                            <li key={runner.id}>
-                              <span>
-                                <strong>{runner.label}</strong>
-                                <small>
-                                  {runner.supported
-                                    ? "Guided setup is not available yet."
-                                    : runner.detail}
-                                </small>
-                              </span>
-                              <span
-                                className={`runner-state ${
-                                  !runner.supported
-                                    ? "unsupported"
-                                    : runner.installed
-                                      ? "ready"
-                                      : "missing"
-                                }`}
-                              >
-                                {!runner.supported
-                                  ? "Unsupported"
-                                  : runner.installed
-                                    ? "Detected"
-                                    : "Missing"}
-                              </span>
-                            </li>
-                          ))}
-                      </ul>
-                    </details>
-                  )}
-                  {selectedRunner && (
-                    <div className="method-detail">
-                      <div>
-                        <span className="eyebrow">Selected method</span>
-                        <strong>{selectedRunner.label}</strong>
-                        <small>
-                          {selectedRunner.executable ??
-                            "Python or PQ build integration"}
-                          {selectedRunner.version
-                            ? ` · ${selectedRunner.version}`
-                            : ""}
-                        </small>
-                      </div>
-                      {selectedRunner.id === "ase_xtb" && (
-                        <p className="method-explanation">
-                          Uses ASE with DFTB+’s xTB Hamiltonian. GFN2-xTB is
-                          selected by default.
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </>
+                )}
+              </div>
+              <div className="batch-summary" aria-live="polite">
+                <strong>{calculators.length}</strong>{" "}
+                {calculators.length === 1 ? "calculator" : "calculators"}
+                <span aria-hidden="true">·</span>
+                <strong>{equilibration ? 2 : 1}</strong>{" "}
+                {equilibration ? "stages" : "stage"}
+                <span aria-hidden="true">·</span>
+                <strong>{calculators.length * (equilibration ? 2 : 1)}</strong>{" "}
+                input files
+              </div>
+              {calculators.length === 0 && (
+                <div className="inline-warning" role="alert">
+                  <CircleAlert size={15} aria-hidden="true" />
+                  Select at least one calculator.
+                </div>
               )}
             </section>
           )}
@@ -876,158 +1293,303 @@ export default function App() {
             <section className="step-panel">
               <StepHeading
                 eyebrow="03 · Conditions"
-                title="Set the simulation"
-                description="Start from a conservative scientific preset, then change only what the run needs."
+                title="Build the run protocol"
+                description="Create one sampling run or continue from an NVT equilibration."
               />
-              <div className="preset-tabs" role="radiogroup" aria-label="Preset">
-                {(bootstrap?.presets ?? []).map((preset) => (
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={setup.preset_id === preset.id}
-                    className={setup.preset_id === preset.id ? "selected" : ""}
-                    key={preset.id}
-                    onClick={() => applyPreset(preset)}
-                  >
-                    <strong>{preset.name}</strong>
-                    <small>{preset.description}</small>
-                  </button>
-                ))}
+              <div
+                className="protocol-choice"
+                role="radiogroup"
+                aria-label="Run protocol"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!equilibration}
+                  className={!equilibration ? "selected" : ""}
+                  onClick={() => chooseProtocol(false)}
+                >
+                  <strong>Single sampling run</strong>
+                  <small>One input from the prepared structure.</small>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={Boolean(equilibration)}
+                  className={equilibration ? "selected" : ""}
+                  onClick={() => chooseProtocol(true)}
+                >
+                  <strong>Equilibrate, then sample</strong>
+                  <small>Two continued inputs with an NVT first stage.</small>
+                </button>
               </div>
-              <div className="form-grid">
-                {setup.ensemble !== "OPT" && (
+              <div className="stage-timeline">
+                {equilibration && (
                   <>
-                    <Field label="Temperature" unit="K">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={setup.temperature_k ?? ""}
-                        onChange={(event) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            temperature_k: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          }))
-                        }
-                      />
-                    </Field>
-                    {setup.ensemble === "NPT" && (
+                    <details className="protocol-stage equilibration-stage">
+                      <summary>
+                        <span className="stage-number">01</span>
+                        <span className="stage-summary">
+                          <strong>Equilibration</strong>
+                          <small>NVT · fixed cell</small>
+                        </span>
+                        <span className="stage-duration">
+                          {durationLabel(
+                            equilibration.steps,
+                            equilibration.timestep_fs,
+                          )}
+                        </span>
+                        <ChevronDown size={17} aria-hidden="true" />
+                      </summary>
+                      <div className="stage-body">
+                        <div className="form-grid stage-primary-grid">
+                          <Field label="Target temperature" unit="K">
+                            <input
+                              type="number"
+                              min="0.000001"
+                              step="0.01"
+                              value={equilibration.temperature_k}
+                              onChange={(event) =>
+                                updateEquilibration({
+                                  temperature_k: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="Timestep" unit="fs">
+                            <input
+                              type="number"
+                              min="0.000001"
+                              step="0.1"
+                              value={equilibration.timestep_fs}
+                              onChange={(event) =>
+                                updateEquilibration({
+                                  timestep_fs: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                          <Field label="Steps">
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={equilibration.steps}
+                              onChange={(event) =>
+                                updateEquilibration({
+                                  steps: Number(event.target.value),
+                                })
+                              }
+                            />
+                          </Field>
+                        </div>
+                        <TemperatureCoupling
+                          value={equilibration}
+                          onChange={(patch) =>
+                            updateEquilibration({
+                              ...patch,
+                              thermostat:
+                                patch.thermostat ??
+                                equilibration.thermostat,
+                              thermostat_relaxation_ps:
+                                patch.thermostat_relaxation_ps ??
+                                equilibration.thermostat_relaxation_ps,
+                            })
+                          }
+                        />
+                        <TemperatureSchedule
+                          value={equilibration}
+                          onChange={updateEquilibration}
+                        />
+                      </div>
+                    </details>
+                    <div className="stage-connection">
+                      <Link2 size={14} aria-hidden="true" />
+                      Sampling starts from the equilibration restart
+                    </div>
+                  </>
+                )}
+
+                <section className="protocol-stage sampling-stage">
+                  <header className="sampling-heading">
+                    <span className="stage-number">
+                      {equilibration ? "02" : "01"}
+                    </span>
+                    <span className="stage-summary">
+                      <strong>Sampling</strong>
+                      <small>{setup.ensemble} ensemble</small>
+                    </span>
+                    <span className="stage-duration">
+                      {durationLabel(setup.steps, setup.timestep_fs)}
+                    </span>
+                  </header>
+                  <div className="stage-body">
+                    <fieldset className="ensemble-fieldset">
+                      <legend>Sampling ensemble</legend>
+                      <div role="radiogroup" aria-label="Sampling ensemble">
+                        {(
+                          [
+                            ["NVE", "Energy"],
+                            ["NVT", "Temperature"],
+                            ["NPT", "Temperature + pressure"],
+                          ] as const
+                        ).map(([ensemble, controlled]) => (
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={setup.ensemble === ensemble}
+                            className={
+                              setup.ensemble === ensemble ? "selected" : ""
+                            }
+                            key={ensemble}
+                            onClick={() => chooseSamplingEnsemble(ensemble)}
+                          >
+                            <strong>{ensemble}</strong>
+                            <small>{controlled}</small>
+                          </button>
+                        ))}
+                      </div>
+                      <p>
+                        {setup.ensemble === "NVE"
+                          ? "Fixed particle number, volume, and total energy."
+                          : setup.ensemble === "NVT"
+                            ? "Fixed particle number and volume with temperature coupling."
+                            : "Fixed particle number with temperature and pressure coupling."}
+                      </p>
+                    </fieldset>
+
+                    <div className="form-grid stage-primary-grid">
                       <Field
-                        label="Pressure"
-                        unit="bar"
-                        help="1 atm is serialized as 1.01325 bar."
+                        label={
+                          setup.ensemble === "NVE"
+                            ? "Initial temperature"
+                            : "Target temperature"
+                        }
+                        unit="K"
                       >
                         <input
                           type="number"
-                          min="0"
-                          step="0.00001"
-                          value={setup.pressure_bar ?? ""}
+                          min="0.000001"
+                          step="0.01"
+                          value={setup.temperature_k ?? ""}
                           onChange={(event) =>
                             setSetup((existing) => ({
                               ...existing,
-                              pressure_bar: event.target.value
+                              temperature_k: event.target.value
                                 ? Number(event.target.value)
                                 : null,
                             }))
                           }
                         />
                       </Field>
-                    )}
-                    <Field label="Timestep" unit="fs">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={setup.timestep_fs ?? ""}
-                        onChange={(event) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            timestep_fs: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          }))
-                        }
-                      />
-                    </Field>
-                    <Field label="Steps">
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={setup.steps ?? ""}
-                        onChange={(event) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            steps: event.target.value
-                              ? Number(event.target.value)
-                              : null,
-                          }))
-                        }
-                      />
-                    </Field>
+                      {setup.ensemble === "NPT" && (
+                        <Field
+                          label="Target pressure"
+                          unit="bar"
+                          help="1 atm = 1.01325 bar; negative values model tension."
+                        >
+                          <input
+                            type="number"
+                            step="0.00001"
+                            value={setup.pressure_bar ?? ""}
+                            onChange={(event) =>
+                              setSetup((existing) => ({
+                                ...existing,
+                                pressure_bar: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }))
+                            }
+                          />
+                        </Field>
+                      )}
+                      <Field label="Timestep" unit="fs">
+                        <input
+                          type="number"
+                          min="0.000001"
+                          step="0.1"
+                          value={setup.timestep_fs ?? ""}
+                          onChange={(event) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              timestep_fs: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                        />
+                      </Field>
+                      <Field label="Steps">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={setup.steps ?? ""}
+                          onChange={(event) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              steps: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                        />
+                      </Field>
+                    </div>
+
                     {(setup.ensemble === "NVT" ||
                       setup.ensemble === "NPT") && (
-                      <Field
-                        label="Thermostat"
-                        help="Controls how the system exchanges heat with the target temperature."
-                      >
-                        <select
-                          value={setup.thermostat ?? "velocity_rescaling"}
-                          onChange={(event) =>
+                      <>
+                        <TemperatureCoupling
+                          value={setup}
+                          onChange={(patch) =>
                             setSetup((existing) => ({
                               ...existing,
                               preset_id: null,
-                              thermostat: event.target.value,
+                              ...patch,
                             }))
                           }
-                        >
-                          {THERMOSTATS.map((option) => (
-                            <option value={option.value} key={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
+                        />
+                        <TemperatureSchedule
+                          value={setup}
+                          onChange={(patch) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              preset_id: null,
+                              ...patch,
+                            }))
+                          }
+                        />
+                      </>
                     )}
                     {setup.ensemble === "NPT" && (
-                      <Field
-                        label="Manostat"
-                        info="“Manostat” is an older name for a pressure regulator: mano- refers to pressure measurement and -stat to holding steady. Most MD software says “barostat”; PQ’s input keyword is manostat."
-                        help="Controls how the periodic cell responds to the target pressure."
-                      >
-                        <select
-                          value={setup.manostat ?? "stochastic_rescaling"}
-                          onChange={(event) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              preset_id: null,
-                              manostat: event.target.value,
-                            }))
-                          }
-                        >
-                          {MANOSTATS.map((option) => (
-                            <option value={option.value} key={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
+                      <PressureCoupling
+                        value={setup}
+                        onChange={(patch) =>
+                          setSetup((existing) => ({
+                            ...existing,
+                            preset_id: null,
+                            ...patch,
+                          }))
+                        }
+                      />
                     )}
-                  </>
-                )}
+                  </div>
+                </section>
+                <button
+                  type="button"
+                  className="add-stage"
+                  onClick={() => chooseProtocol(!equilibration)}
+                >
+                  {equilibration ? (
+                    "Remove equilibration"
+                  ) : (
+                    <>
+                      <Plus size={15} aria-hidden="true" />
+                      Add NVT equilibration
+                    </>
+                  )}
+                </button>
               </div>
-              {setup.ensemble !== "OPT" && (
-                <p className="simulated-time">
-                  {setup.ensemble} run ·{" "}
-                  <strong>
-                    {setup.steps && setup.timestep_fs
-                      ? `${(setup.steps * setup.timestep_fs).toLocaleString()} fs`
-                      : "duration incomplete"}
-                  </strong>
-                </p>
-              )}
             </section>
           )}
 
@@ -1152,8 +1714,8 @@ export default function App() {
             <section className="step-panel review-panel">
               <StepHeading
                 eyebrow="05 · Review"
-                title="Review the run"
-                description="The package contains the PQ input, prepared restart, and a reproducibility manifest."
+                title="Review the inputs"
+                description="Check every calculator and continued stage before creating the run package."
               />
               <div className="form-grid review-fields">
                 <Field label="Run name">
@@ -1179,19 +1741,93 @@ export default function App() {
                   />
                 </Field>
               </div>
+              <div className="review-summary" aria-live="polite">
+                <span>
+                  <strong>{rendered?.files.length ?? 0}</strong>{" "}
+                  {rendered?.files.length === 1 ? "input file" : "input files"}
+                </span>
+                <span>
+                  <strong>{calculators.length}</strong>{" "}
+                  {calculators.length === 1 ? "calculator" : "calculators"}
+                </span>
+                <span>
+                  <strong>{equilibration ? 2 : 1}</strong>{" "}
+                  {equilibration ? "stages" : "stage"}
+                </span>
+              </div>
+              {rendered && rendered.files.length > 0 && (
+                <div className="generated-files" aria-label="Generated inputs">
+                  {Array.from(
+                    new Map(
+                      rendered.files.map((file) => [
+                        file.calculator_id,
+                        file.calculator_label,
+                      ]),
+                    ),
+                  ).map(([calculatorId, calculatorLabel]) => (
+                    <section key={calculatorId}>
+                      <header>{calculatorLabel}</header>
+                      <div role="tablist" aria-label={`${calculatorLabel} files`}>
+                        {rendered.files
+                          .filter(
+                            (file) => file.calculator_id === calculatorId,
+                          )
+                          .map((file) => {
+                            const key = `${file.calculator_id}:${file.name}`;
+                            const active = selectedFileKey === key;
+                            return (
+                              <button
+                                type="button"
+                                role="tab"
+                                aria-selected={active}
+                                className={active ? "selected" : ""}
+                                key={key}
+                                onClick={() => setSelectedFileKey(key)}
+                              >
+                                <span className="file-sequence">
+                                  {file.stage_index > 1 ? (
+                                    <Link2 size={13} aria-hidden="true" />
+                                  ) : (
+                                    <span>{String(file.stage_index).padStart(2, "0")}</span>
+                                  )}
+                                </span>
+                                <span>
+                                  <strong>{file.name}</strong>
+                                  <small>{file.stage_label}</small>
+                                </span>
+                                <CheckCircle2 size={15} aria-hidden="true" />
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              )}
               <div className="input-preview">
                 <div className="preview-title">
                   <span>
                     <FileCode2 size={16} />
-                    {setup.file_prefix || "run"}.in
+                    {selectedFile?.name ?? "Preparing inputs…"}
                   </span>
                   {rendering && <LoaderCircle className="spin" size={15} />}
                 </div>
+                {selectedFile && (
+                  <div className="preview-continuation">
+                    <span>
+                      Starts from <strong>{selectedFile.start_file}</strong>
+                    </span>
+                    <ArrowRight size={13} aria-hidden="true" />
+                    <span>
+                      writes <strong>{selectedFile.restart_file}</strong>
+                    </span>
+                  </div>
+                )}
                 <pre>
                   <code>
-                    {rendered?.input_text ||
+                    {selectedFile?.input_text ||
                       rendered?.diagnostics[0]?.message ||
-                      "Preparing input…"}
+                      "Preparing inputs…"}
                   </code>
                 </pre>
               </div>
@@ -1206,7 +1842,11 @@ export default function App() {
                 ) : (
                   <Download size={18} />
                 )}
-                {exporting ? "Creating package…" : "Create run package"}
+                {exporting
+                  ? "Creating package…"
+                  : `Create package · ${rendered?.files.length ?? 0} ${
+                      rendered?.files.length === 1 ? "input" : "inputs"
+                    }`}
                 <span>Ctrl Enter</span>
               </button>
             </section>
@@ -1245,7 +1885,7 @@ export default function App() {
                 </h2>
               </div>
               <span className={`preflight-score ${ready ? "ready" : ""}`}>
-                {diagnostics.filter((item) => item.severity === "error").length}
+                {errorCount}
               </span>
             </div>
             <ul className="preflight-list">
@@ -1269,26 +1909,28 @@ export default function App() {
               </li>
               <li
                 className={
-                  setup.ensemble === "OPT" || selectedRunner?.ready
+                  calculators.length > 0 && missingCalculatorCount === 0
                     ? "ok"
                     : "warn"
                 }
               >
                 <StatusDot
                   status={
-                    setup.ensemble === "OPT" || selectedRunner?.ready
+                    calculators.length > 0 && missingCalculatorCount === 0
                       ? "ok"
-                      : selectedRunner
+                      : calculators.length
                         ? "warn"
                         : "idle"
                   }
                 />
                 <span>
-                  <strong>Method</strong>
+                  <strong>Calculators</strong>
                   <small>
-                    {setup.ensemble === "OPT"
-                      ? "Molecular mechanics optimization."
-                      : selectedRunner?.detail ?? "Choose a calculator."}
+                    {calculators.length === 0
+                      ? "Choose at least one calculator."
+                      : missingCalculatorCount
+                        ? `${calculators.length} selected · ${missingCalculatorCount} not detected.`
+                        : `${calculators.length} selected and ready.`}
                   </small>
                 </span>
               </li>
@@ -1297,10 +1939,12 @@ export default function App() {
                   status={rendered?.valid ? "ok" : rendered ? "warn" : "idle"}
                 />
                 <span>
-                  <strong>PQ input</strong>
+                  <strong>PQ inputs</strong>
                   <small>
                     {rendered?.valid
-                      ? "All required settings are present."
+                      ? `${rendered.files.length} input ${
+                          rendered.files.length === 1 ? "file" : "files"
+                        } ready.`
                       : rendering
                         ? "Validating…"
                         : "Input settings need attention."}
@@ -1319,7 +1963,9 @@ export default function App() {
                       setActiveStep(
                         item.code.startsWith("structure")
                           ? "system"
-                          : item.code.startsWith("runner")
+                          : item.code.startsWith("runner") ||
+                              item.code.startsWith("calculator") ||
+                              item.code.startsWith("pq.")
                             ? "method"
                             : "conditions",
                       )
@@ -1343,7 +1989,7 @@ export default function App() {
               ) : (
                 <Download size={17} />
               )}
-              Create run
+              Create package
             </button>
           </section>
         </aside>

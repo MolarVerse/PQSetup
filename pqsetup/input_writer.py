@@ -6,8 +6,11 @@ from pathlib import Path
 
 from .models import Diagnostic, RenderResult, SimulationSetup
 from .release import (
+    PQ_DEFAULT_RUNNER_SCRIPTS,
     PQ_MANOSTATS,
+    PQ_PRESSURE_ISOTROPIES,
     PQ_QM_PROGRAMS,
+    PQ_RUNNER_LABELS,
     PQ_THERMOSTATS,
     TARGET_PQ_RELEASE,
 )
@@ -26,15 +29,24 @@ _GENERATED_KEYS = {
     "nstep",
     "timestep",
     "start_file",
+    "restart_file",
     "file_prefix",
     "random_seed",
     "init_velocities",
     "thermostat",
     "temp",
+    "start_temp",
+    "temp_ramp_steps",
+    "temp_ramp_frequency",
     "t_relaxation",
+    "friction",
+    "nh_chain_length",
+    "coupling_frequency",
     "manostat",
     "pressure",
     "p_relaxation",
+    "compressibility",
+    "isotropy",
     "qm_prog",
     "qm_script",
     "overwrite_output",
@@ -48,12 +60,9 @@ def render_input(setup: SimulationSetup) -> RenderResult:
         return RenderResult(input_text="", diagnostics=diagnostics, valid=False)
 
     lines = [
-        "# ╭─ PQSetup · simulation input ───────────────────────────────╮",
-        f"# │  Written by PQSetup · target {TARGET_PQ_RELEASE:<30}│",
-        "# │  Review these settings before starting the simulation.     │",
-        "# ╰────────────────────────────────────────────────────────────╯",
+        *_header(setup),
         "",
-        "# ── Run ───────────────────────────────────────────────────────",
+        "# ── Dynamics ──────────────────────────────────────────────────",
         f"jobtype = {setup.job_type};",
     ]
     if setup.ensemble != "OPT":
@@ -66,8 +75,9 @@ def render_input(setup: SimulationSetup) -> RenderResult:
     lines.extend(
         [
             "",
-            "# ── Files ─────────────────────────────────────────────────────",
+            "# ── Files and continuation ────────────────────────────────────",
             f"start_file = {setup.start_file};",
+            f"restart_file = {restart_filename(setup)};",
             f"file_prefix = {setup.file_prefix};",
         ]
     )
@@ -94,11 +104,26 @@ def render_input(setup: SimulationSetup) -> RenderResult:
                 f"thermostat = {setup.thermostat};",
             ]
         )
+        if setup.start_temperature_k is not None:
+            lines.append(f"start_temp = {_number(setup.start_temperature_k)};")
+            if setup.temperature_ramp_steps is not None:
+                lines.append(f"temp_ramp_steps = {setup.temperature_ramp_steps};")
+            lines.append(f"temp_ramp_frequency = {setup.temperature_ramp_frequency};")
         if (
             setup.thermostat in {"berendsen", "velocity_rescaling"}
             and setup.thermostat_relaxation_ps is not None
         ):
             lines.append(f"t_relaxation = {_number(setup.thermostat_relaxation_ps)};")
+        elif setup.thermostat == "langevin":
+            lines.append(f"friction = {_number(setup.thermostat_friction_ps_inverse)};")
+        elif setup.thermostat == "nh-chain":
+            lines.extend(
+                [
+                    f"nh-chain_length = {setup.nh_chain_length};",
+                    "coupling_frequency = "
+                    f"{_number(setup.coupling_frequency_cm_inverse)};",
+                ]
+            )
     if setup.ensemble == "NPT":
         lines.extend(
             [
@@ -110,6 +135,12 @@ def render_input(setup: SimulationSetup) -> RenderResult:
         )
         if setup.manostat_relaxation_ps is not None:
             lines.append(f"p_relaxation = {_number(setup.manostat_relaxation_ps)};")
+        lines.extend(
+            [
+                f"compressibility = {_number(setup.compressibility_bar_inverse)};",
+                f"isotropy = {setup.pressure_isotropy};",
+            ]
+        )
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
@@ -120,8 +151,11 @@ def render_input(setup: SimulationSetup) -> RenderResult:
                 f"qm_prog = {runner_name};",
             ]
         )
-        if setup.runner_script:
-            lines.append(f"qm_script = {setup.runner_script};")
+        runner_script = setup.runner_script or PQ_DEFAULT_RUNNER_SCRIPTS.get(
+            setup.runner
+        )
+        if runner_script:
+            lines.append(f"qm_script = {runner_script};")
         if (
             setup.runner == "ase_xtb"
             and "xtb_method" not in setup.extra_settings
@@ -162,6 +196,10 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         diagnostics.append(_error("input.file_prefix", "Run name is required."))
     if len(setup.start_file) > 255:
         diagnostics.append(_error("input.start_file", "Start filename is too long."))
+    if setup.restart_file and len(setup.restart_file) > 255:
+        diagnostics.append(
+            _error("input.restart_file", "Restart filename is too long.")
+        )
     if len(setup.file_prefix) > 128:
         diagnostics.append(_error("input.file_prefix", "Run name is too long."))
     if setup.ensemble != "OPT":
@@ -185,6 +223,60 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     "Temperature must be finite and positive.",
                 )
             )
+    if setup.start_temperature_k is not None and not _nonnegative_finite(
+        setup.start_temperature_k
+    ):
+        diagnostics.append(
+            _error(
+                "conditions.start_temperature",
+                "Starting temperature must be finite and non-negative.",
+            )
+        )
+    if setup.temperature_ramp_steps is not None and setup.start_temperature_k is None:
+        diagnostics.append(
+            _error(
+                "conditions.ramp_steps",
+                "A temperature ramp needs a starting temperature.",
+            )
+        )
+    if setup.temperature_ramp_steps is not None and setup.temperature_ramp_steps < 0:
+        diagnostics.append(
+            _error(
+                "conditions.ramp_steps",
+                "Temperature ramp steps must be non-negative.",
+            )
+        )
+    if (
+        setup.temperature_ramp_steps is not None
+        and setup.steps is not None
+        and setup.temperature_ramp_steps > setup.steps
+    ):
+        diagnostics.append(
+            _error(
+                "conditions.ramp_steps",
+                "Temperature ramp steps cannot exceed the run length.",
+            )
+        )
+    if setup.temperature_ramp_frequency <= 0:
+        diagnostics.append(
+            _error(
+                "conditions.ramp_frequency",
+                "Temperature ramp frequency must be positive.",
+            )
+        )
+    elif setup.start_temperature_k is not None:
+        effective_ramp_steps = setup.temperature_ramp_steps or setup.steps
+        if (
+            effective_ramp_steps is not None
+            and effective_ramp_steps > 0
+            and setup.temperature_ramp_frequency > effective_ramp_steps
+        ):
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_frequency",
+                    "Temperature ramp frequency cannot exceed the ramp length.",
+                )
+            )
     if setup.ensemble in {"NVT", "NPT"}:
         if not setup.thermostat:
             diagnostics.append(
@@ -200,12 +292,50 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     f"Thermostat is not supported by PQ {TARGET_PQ_RELEASE}.",
                 )
             )
+        elif setup.thermostat in {"berendsen", "velocity_rescaling"}:
+            if not _positive_finite(setup.thermostat_relaxation_ps):
+                diagnostics.append(
+                    _error(
+                        "conditions.t_relaxation",
+                        "Thermostat relaxation time must be finite and positive.",
+                    )
+                )
+        elif setup.thermostat == "langevin":
+            if not _nonnegative_finite(setup.thermostat_friction_ps_inverse):
+                diagnostics.append(
+                    _error(
+                        "conditions.friction",
+                        "Langevin friction must be finite and non-negative.",
+                    )
+                )
+        elif setup.thermostat == "nh-chain":
+            if setup.nh_chain_length <= 0:
+                diagnostics.append(
+                    _error(
+                        "conditions.nh_chain_length",
+                        "Nose-Hoover chain length must be positive.",
+                    )
+                )
+            if not _nonnegative_finite(setup.coupling_frequency_cm_inverse):
+                diagnostics.append(
+                    _error(
+                        "conditions.coupling_frequency",
+                        "Coupling frequency must be finite and non-negative.",
+                    )
+                )
+            elif setup.coupling_frequency_cm_inverse == 0:
+                diagnostics.append(
+                    _warning(
+                        "conditions.coupling_frequency",
+                        "A zero coupling frequency disables Nose-Hoover coupling.",
+                    )
+                )
     if setup.ensemble == "NPT":
-        if not _positive_finite(setup.pressure_bar):
+        if not _finite(setup.pressure_bar):
             diagnostics.append(
                 _error(
                     "conditions.pressure",
-                    "Pressure must be finite and positive.",
+                    "Pressure must be finite.",
                 )
             )
         if not setup.manostat:
@@ -217,6 +347,27 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     f"Manostat is not supported by PQ {TARGET_PQ_RELEASE}.",
                 )
             )
+        if not _positive_finite(setup.manostat_relaxation_ps):
+            diagnostics.append(
+                _error(
+                    "conditions.p_relaxation",
+                    "Manostat relaxation time must be finite and positive.",
+                )
+            )
+        if not _nonnegative_finite(setup.compressibility_bar_inverse):
+            diagnostics.append(
+                _error(
+                    "conditions.compressibility",
+                    "Compressibility must be finite and non-negative.",
+                )
+            )
+        if setup.pressure_isotropy not in PQ_PRESSURE_ISOTROPIES:
+            diagnostics.append(
+                _error(
+                    "conditions.pressure_isotropy",
+                    f"Pressure isotropy is not supported by PQ {TARGET_PQ_RELEASE}.",
+                )
+            )
     if setup.random_seed < 0 or setup.random_seed > 4_294_967_295:
         diagnostics.append(
             _error(
@@ -226,6 +377,7 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         )
     for name, token_value in {
         "start_file": setup.start_file,
+        "restart_file": setup.restart_file,
         "file_prefix": setup.file_prefix,
         "runner_script": setup.runner_script,
     }.items():
@@ -260,6 +412,21 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                 "Start file must use the PQ restart format (.rst).",
             )
         )
+    if setup.restart_file:
+        if Path(setup.restart_file).name != setup.restart_file:
+            diagnostics.append(
+                _error(
+                    "input.restart_file",
+                    "Restart file must be a filename, not a path.",
+                )
+            )
+        if Path(setup.restart_file).suffix.lower() != ".rst":
+            diagnostics.append(
+                _error(
+                    "input.restart_file",
+                    "Restart file must use the PQ restart format (.rst).",
+                )
+            )
     if setup.job_type.startswith("qm-"):
         if not setup.runner:
             diagnostics.append(
@@ -275,6 +442,7 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         elif (
             setup.runner in _EXTERNAL_RUNNERS
             and not setup.runner_script
+            and setup.runner not in PQ_DEFAULT_RUNNER_SCRIPTS
             and "qm_script_full_path" not in setup.extra_settings
             and "qm-script-full-path" not in setup.extra_settings
         ):
@@ -391,8 +559,46 @@ def _positive_finite(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0.0
 
 
+def _finite(value: float | None) -> bool:
+    return value is not None and math.isfinite(value)
+
+
+def _nonnegative_finite(value: float | None) -> bool:
+    return value is not None and math.isfinite(value) and value >= 0.0
+
+
 def _error(code: str, message: str) -> Diagnostic:
     return Diagnostic(code=code, severity="error", message=message)
+
+
+def _warning(code: str, message: str) -> Diagnostic:
+    return Diagnostic(code=code, severity="warning", message=message)
+
+
+def restart_filename(setup: SimulationSetup) -> str:
+    return setup.restart_file or f"{setup.file_prefix}.rst"
+
+
+def _header(setup: SimulationSetup) -> list[str]:
+    width = 62
+    title = "─ PQSetup · simulation input "
+    top = title + "─" * (width - len(title))
+
+    def row(value: str) -> str:
+        content = value if len(value) <= width - 2 else f"{value[: width - 3]}…"
+        return f"# │ {content:<{width - 2}} │"
+
+    method = PQ_RUNNER_LABELS.get(setup.runner or "", setup.runner or setup.job_type)
+    transition = f"{setup.start_file} → {restart_filename(setup)}"
+
+    return [
+        f"# ╭{top}╮",
+        row(f"       ●          {setup.ensemble} · {method}"),
+        row(f"      ╱ ╲         {transition}"),
+        row(f"     ●───●        Written by PQSetup · target {TARGET_PQ_RELEASE}"),
+        f"# ╰{'─' * width}╯",
+        "# Generated deterministically. Review paths and resources before running.",
+    ]
 
 
 def _number(value: float | None) -> str:

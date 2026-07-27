@@ -18,7 +18,7 @@ DATA = Path(__file__).parent / "data"
 
 
 @pytest.mark.integration
-def test_generated_ase_xtb_input_runs_in_pq(tmp_path: Path) -> None:
+def test_unicode_header_runs_in_pq(tmp_path: Path) -> None:
     pq = discover_pq()
     runner = next(item for item in detect_runners() if item.id == "ase_xtb")
     if not pq.found or not pq.executable:
@@ -36,6 +36,8 @@ def test_generated_ase_xtb_input_runs_in_pq(tmp_path: Path) -> None:
     )
     rendered = render_input(setup)
     assert rendered.valid
+    assert rendered.input_text.startswith("# ╭─ PQSetup")
+    assert "╰─" in rendered.input_text
     shutil.copyfile(DATA / "water.rst", tmp_path / "structure.rst")
     input_path = tmp_path / "run.in"
     input_path.write_text(rendered.input_text, encoding="utf-8")

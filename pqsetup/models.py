@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 Severity = Literal["error", "warning", "info"]
 Ensemble = Literal["NPT", "NVT", "NVE", "OPT"]
 JobType = Literal["mm-md", "qm-md", "qm-rpmd", "mm-opt"]
+PressureIsotropy = Literal[
+    "isotropic",
+    "xy",
+    "xz",
+    "yz",
+    "anisotropic",
+    "full_anisotropic",
+]
 
 
 class Diagnostic(BaseModel):
@@ -115,15 +123,24 @@ class SimulationSetup(BaseModel):
     job_type: JobType = "qm-md"
     ensemble: Ensemble = "NVT"
     start_file: str = "structure.rst"
+    restart_file: str | None = None
     file_prefix: str = "pq-run"
     timestep_fs: float | None = 0.5
     steps: int | None = 1000
     temperature_k: float | None = 298.15
+    start_temperature_k: float | None = None
+    temperature_ramp_steps: int | None = None
+    temperature_ramp_frequency: int = 1
     pressure_bar: float | None = None
     thermostat: str | None = "velocity_rescaling"
     thermostat_relaxation_ps: float | None = 0.1
+    thermostat_friction_ps_inverse: float = 0.1
+    nh_chain_length: int = 3
+    coupling_frequency_cm_inverse: float = 1000.0
     manostat: str | None = None
     manostat_relaxation_ps: float | None = 1.0
+    compressibility_bar_inverse: float = 4.591e-5
+    pressure_isotropy: PressureIsotropy = "isotropic"
     initialize_velocities: bool = True
     random_seed: int = 238917
     runner: str | None = "ase_xtb"
@@ -134,6 +151,57 @@ class SimulationSetup(BaseModel):
 
 class RenderResult(BaseModel):
     input_text: str
+    diagnostics: list[Diagnostic]
+    valid: bool
+
+
+class CalculatorSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runner_id: str
+    runner_script: str | None = None
+
+
+class EquilibrationStage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    steps: int = 5000
+    timestep_fs: float = 0.5
+    temperature_k: float = 298.15
+    start_temperature_k: float | None = None
+    temperature_ramp_steps: int | None = None
+    temperature_ramp_frequency: int = 1
+    thermostat: str = "berendsen"
+    thermostat_relaxation_ps: float = 0.1
+    thermostat_friction_ps_inverse: float = 0.1
+    nh_chain_length: int = 3
+    coupling_frequency_cm_inverse: float = 1000.0
+
+
+class RunPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    setup: SimulationSetup
+    calculators: list[CalculatorSelection] = Field(default_factory=list)
+    equilibration: EquilibrationStage | None = None
+
+
+class PlannedInput(BaseModel):
+    name: str
+    stage_id: Literal["equilibration", "sampling"]
+    stage_label: str
+    stage_index: int
+    stage_count: int
+    calculator_id: str
+    calculator_label: str
+    input_text: str
+    start_file: str
+    restart_file: str
+
+
+class PlanRenderResult(BaseModel):
+    files: list[PlannedInput]
     diagnostics: list[Diagnostic]
     valid: bool
 
@@ -161,6 +229,8 @@ class ExportRequest(BaseModel):
     structure: Structure
     project_name: str = "pq-run"
     preparation: PreparationMetadata | None = None
+    calculators: list[CalculatorSelection] = Field(default_factory=list)
+    equilibration: EquilibrationStage | None = None
 
 
 class DoctorReport(BaseModel):
