@@ -5,6 +5,12 @@ import re
 from pathlib import Path
 
 from .models import Diagnostic, RenderResult, SimulationSetup
+from .release import (
+    PQ_MANOSTATS,
+    PQ_QM_PROGRAMS,
+    PQ_THERMOSTATS,
+    TARGET_PQ_RELEASE,
+)
 from .structures import analyze_structure, parse_structure_bytes
 
 
@@ -12,9 +18,8 @@ _KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _RUNNER_INPUT_NAMES = {
     "ase_dftbplus": "ase-dftbplus",
     "ase_xtb": "ase-xtb",
-    "mace_mp": "mace-mp",
-    "mace_off": "mace-off",
-    "mace_cpp": "mace-cpp",
+    "mace_mp": "mace",
+    "mace_off": "mace_off",
 }
 _GENERATED_KEYS = {
     "jobtype",
@@ -34,18 +39,6 @@ _GENERATED_KEYS = {
     "qm_script",
     "overwrite_output",
 }
-_SUPPORTED_RUNNERS = {
-    "dftbplus",
-    "ase_dftbplus",
-    "ase_xtb",
-    "pyscf",
-    "turbomole",
-    "fennol",
-    "mace",
-    "mace_mp",
-    "mace_off",
-    "mace_cpp",
-}
 _EXTERNAL_RUNNERS = {"dftbplus", "pyscf", "turbomole"}
 
 
@@ -54,7 +47,15 @@ def render_input(setup: SimulationSetup) -> RenderResult:
     if any(item.severity == "error" for item in diagnostics):
         return RenderResult(input_text="", diagnostics=diagnostics, valid=False)
 
-    lines = [f"jobtype = {setup.job_type};"]
+    lines = [
+        "# ╭─ PQSetup · simulation input ───────────────────────────────╮",
+        f"# │  Written by PQSetup · target {TARGET_PQ_RELEASE:<30}│",
+        "# │  Review these settings before starting the simulation.     │",
+        "# ╰────────────────────────────────────────────────────────────╯",
+        "",
+        "# ── Run ───────────────────────────────────────────────────────",
+        f"jobtype = {setup.job_type};",
+    ]
     if setup.ensemble != "OPT":
         lines.extend(
             [
@@ -65,6 +66,7 @@ def render_input(setup: SimulationSetup) -> RenderResult:
     lines.extend(
         [
             "",
+            "# ── Files ─────────────────────────────────────────────────────",
             f"start_file = {setup.start_file};",
             f"file_prefix = {setup.file_prefix};",
         ]
@@ -73,7 +75,12 @@ def render_input(setup: SimulationSetup) -> RenderResult:
         lines.append("overwrite_output = on;")
 
     if setup.ensemble != "OPT":
-        lines.append("")
+        lines.extend(
+            [
+                "",
+                "# ── Initial state ─────────────────────────────────────────────",
+            ]
+        )
         if setup.initialize_velocities or setup.ensemble in {"NVT", "NPT"}:
             lines.append(f"temp = {_number(setup.temperature_k)};")
         if setup.initialize_velocities:
@@ -83,15 +90,20 @@ def render_input(setup: SimulationSetup) -> RenderResult:
         lines.extend(
             [
                 "",
+                "# ── Temperature coupling ──────────────────────────────────────",
                 f"thermostat = {setup.thermostat};",
             ]
         )
-        if setup.thermostat_relaxation_ps is not None:
+        if (
+            setup.thermostat in {"berendsen", "velocity_rescaling"}
+            and setup.thermostat_relaxation_ps is not None
+        ):
             lines.append(f"t_relaxation = {_number(setup.thermostat_relaxation_ps)};")
     if setup.ensemble == "NPT":
         lines.extend(
             [
                 "",
+                "# ── Pressure coupling ─────────────────────────────────────────",
                 f"manostat = {setup.manostat};",
                 f"pressure = {_number(setup.pressure_bar)};",
             ]
@@ -101,7 +113,13 @@ def render_input(setup: SimulationSetup) -> RenderResult:
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
-        lines.extend(["", f"qm_prog = {runner_name};"])
+        lines.extend(
+            [
+                "",
+                "# ── Electronic structure ──────────────────────────────────────",
+                f"qm_prog = {runner_name};",
+            ]
+        )
         if setup.runner_script:
             lines.append(f"qm_script = {setup.runner_script};")
         if (
@@ -111,7 +129,12 @@ def render_input(setup: SimulationSetup) -> RenderResult:
         ):
             lines.append("xtb_method = gfn2-xtb;")
     if setup.extra_settings:
-        lines.append("")
+        lines.extend(
+            [
+                "",
+                "# ── Additional settings ───────────────────────────────────────",
+            ]
+        )
         for key in sorted(setup.extra_settings):
             lines.append(f"{key} = {_value(setup.extra_settings[key])};")
     return RenderResult(
@@ -162,13 +185,21 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     "Temperature must be finite and positive.",
                 )
             )
-    if setup.ensemble in {"NVT", "NPT"} and not setup.thermostat:
-        diagnostics.append(
-            _error(
-                "conditions.thermostat",
-                f"{setup.ensemble} needs a thermostat.",
+    if setup.ensemble in {"NVT", "NPT"}:
+        if not setup.thermostat:
+            diagnostics.append(
+                _error(
+                    "conditions.thermostat",
+                    f"{setup.ensemble} needs a thermostat.",
+                )
             )
-        )
+        elif setup.thermostat not in PQ_THERMOSTATS:
+            diagnostics.append(
+                _error(
+                    "conditions.thermostat",
+                    f"Thermostat is not supported by PQ {TARGET_PQ_RELEASE}.",
+                )
+            )
     if setup.ensemble == "NPT":
         if not _positive_finite(setup.pressure_bar):
             diagnostics.append(
@@ -179,6 +210,13 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
             )
         if not setup.manostat:
             diagnostics.append(_error("conditions.manostat", "NPT needs a manostat."))
+        elif setup.manostat not in PQ_MANOSTATS:
+            diagnostics.append(
+                _error(
+                    "conditions.manostat",
+                    f"Manostat is not supported by PQ {TARGET_PQ_RELEASE}.",
+                )
+            )
     if setup.random_seed < 0 or setup.random_seed > 4_294_967_295:
         diagnostics.append(
             _error(
@@ -227,16 +265,12 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
             diagnostics.append(
                 _error("runner.missing", "A QM runner must be selected.")
             )
-        elif setup.runner == "g16":
+        elif setup.runner not in PQ_QM_PROGRAMS:
             diagnostics.append(
                 _error(
-                    "runner.unsupported",
-                    "Gaussian 16 is not supported by PQ.",
+                    "runner.unknown",
+                    f"The selected runner is not available in PQ {TARGET_PQ_RELEASE}.",
                 )
-            )
-        elif setup.runner not in _SUPPORTED_RUNNERS:
-            diagnostics.append(
-                _error("runner.unknown", "The selected runner is unknown.")
             )
         elif (
             setup.runner in _EXTERNAL_RUNNERS

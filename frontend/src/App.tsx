@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  CircleHelp,
   CircleDashed,
   Download,
   FileCode2,
@@ -15,13 +16,16 @@ import {
   Upload,
 } from "lucide-react";
 import {
+  cloneElement,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type DragEvent,
+  type ReactElement,
   type ReactNode,
 } from "react";
 import {
@@ -32,6 +36,8 @@ import {
   renderInput,
 } from "./api";
 import CommandPalette, { type Command } from "./CommandPalette";
+import ChemicalFormula from "./ChemicalFormula";
+import { MANOSTATS, THERMOSTATS } from "./conditionOptions";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
@@ -129,26 +135,54 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
+function runNameForEnsemble(current: string, ensemble: string): string {
+  if (!/-(npt|nvt|nve|opt)$/i.test(current)) return current;
+  return current.replace(
+    /-(npt|nvt|nve|opt)$/i,
+    `-${ensemble.toLowerCase()}`,
+  );
+}
+
 function Field({
   label,
   unit,
   help,
+  info,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   unit?: string;
   help?: string;
-  children: ReactNode;
+  info?: string;
+  children: ReactElement<{ id?: string }>;
 }) {
+  const fieldId = useId();
+  const infoId = useId();
+
   return (
-    <label className="field">
+    <div className="field">
       <span className="field-label">
-        {label}
-        {unit && <span className="unit">{unit}</span>}
+        <label htmlFor={fieldId}>{label}</label>
+        <span className="field-label-tools">
+          {unit && <span className="unit">{unit}</span>}
+          {info && (
+            <button
+              type="button"
+              className="info-affordance"
+              aria-label={info}
+              aria-describedby={infoId}
+            >
+              <CircleHelp size={14} aria-hidden="true" />
+              <span className="info-tooltip" id={infoId} role="tooltip">
+                {info}
+              </span>
+            </button>
+          )}
+        </span>
       </span>
-      {children}
+      {cloneElement(children, { id: fieldId })}
       {help && <span className="field-help">{help}</span>}
-    </label>
+    </div>
   );
 }
 
@@ -505,6 +539,7 @@ export default function App() {
 
   function applyPreset(preset: Preset) {
     const preferredRunner =
+      preset.runner ??
       setup.runner ??
       bootstrap?.runners.find(
         (runner) => runner.id === "ase_xtb" && runner.ready,
@@ -519,6 +554,10 @@ export default function App() {
       pressure_bar: preset.pressure_bar,
       timestep_fs: preset.timestep_fs,
       steps: preset.steps,
+      file_prefix: runNameForEnsemble(
+        existing.file_prefix,
+        preset.ensemble,
+      ),
       thermostat: preset.thermostat,
       manostat: preset.manostat,
       initialize_velocities: preset.ensemble !== "OPT",
@@ -551,9 +590,14 @@ export default function App() {
             <>
               <span className={bootstrap.pq.found ? "status-ready" : "status-missing"}>
                 <span aria-hidden="true" />
-                PQ {bootstrap.pq.found ? "found" : "not found"}
+                PQ{" "}
+                {bootstrap.pq.found
+                  ? bootstrap.pq.version ?? "detected"
+                  : "not found"}
               </span>
-              <span className="version">v{bootstrap.version}</span>
+              <span className="version">
+                Schema {bootstrap.target_pq_release}
+              </span>
             </>
           ) : bootstrapError ? (
             <span className="status-missing">Backend unavailable</span>
@@ -660,7 +704,7 @@ export default function App() {
                   <span className="eyebrow">{isExample ? "Example" : "Current"}</span>
                   <strong>{analysis.structure.source_name}</strong>
                   <small>
-                    {analysis.summary.formula} ·{" "}
+                    <ChemicalFormula formula={analysis.summary.formula} /> ·{" "}
                     {analysis.summary.atom_count.toLocaleString()} atoms
                   </small>
                 </div>
@@ -685,6 +729,17 @@ export default function App() {
                 title="Select the calculator"
                 description="Choose a guided method. Other PQ methods remain visible as read-only environment checks."
               />
+              {bootstrap && (
+                <div className="compatibility-line" aria-label="PQ compatibility">
+                  <span>
+                    Installed <strong>{bootstrap.pq.version ?? "unknown"}</strong>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    Target schema <strong>{bootstrap.target_pq_release}</strong>
+                  </span>
+                </div>
+              )}
               {setup.ensemble === "OPT" ? (
                 <div className="empty-method">
                   <FlaskConical size={25} />
@@ -912,32 +967,66 @@ export default function App() {
                         }
                       />
                     </Field>
+                    {(setup.ensemble === "NVT" ||
+                      setup.ensemble === "NPT") && (
+                      <Field
+                        label="Thermostat"
+                        help="Controls how the system exchanges heat with the target temperature."
+                      >
+                        <select
+                          value={setup.thermostat ?? "velocity_rescaling"}
+                          onChange={(event) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              preset_id: null,
+                              thermostat: event.target.value,
+                            }))
+                          }
+                        >
+                          {THERMOSTATS.map((option) => (
+                            <option value={option.value} key={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
+                    {setup.ensemble === "NPT" && (
+                      <Field
+                        label="Manostat"
+                        info="“Manostat” is an older name for a pressure regulator: mano- refers to pressure measurement and -stat to holding steady. Most MD software says “barostat”; PQ’s input keyword is manostat."
+                        help="Controls how the periodic cell responds to the target pressure."
+                      >
+                        <select
+                          value={setup.manostat ?? "stochastic_rescaling"}
+                          onChange={(event) =>
+                            setSetup((existing) => ({
+                              ...existing,
+                              preset_id: null,
+                              manostat: event.target.value,
+                            }))
+                          }
+                        >
+                          {MANOSTATS.map((option) => (
+                            <option value={option.value} key={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
                   </>
                 )}
               </div>
               {setup.ensemble !== "OPT" && (
-                <div className="condition-summary">
-                  <div>
-                    <span>Ensemble</span>
-                    <strong>{setup.ensemble}</strong>
-                  </div>
-                  <div>
-                    <span>Thermostat</span>
-                    <strong>{setup.thermostat ?? "None"}</strong>
-                  </div>
-                  <div>
-                    <span>Manostat</span>
-                    <strong>{setup.manostat ?? "None"}</strong>
-                  </div>
-                  <div>
-                    <span>Simulated time</span>
-                    <strong>
-                      {setup.steps && setup.timestep_fs
-                        ? `${(setup.steps * setup.timestep_fs).toLocaleString()} fs`
-                        : "—"}
-                    </strong>
-                  </div>
-                </div>
+                <p className="simulated-time">
+                  {setup.ensemble} run ·{" "}
+                  <strong>
+                    {setup.steps && setup.timestep_fs
+                      ? `${(setup.steps * setup.timestep_fs).toLocaleString()} fs`
+                      : "duration incomplete"}
+                  </strong>
+                </p>
               )}
             </section>
           )}

@@ -19,3 +19,12 @@ def test_ase_xtb_uses_dftbplus_backend(monkeypatch) -> None:
     assert statuses["ase_xtb"].installed
     assert statuses["ase_xtb"].executable == "/tools/dftb+"
     assert statuses["ase_xtb"].detail == "Uses DFTB+ with its xTB Hamiltonian."
+    assert set(statuses) == {
+        "dftbplus",
+        "ase_dftbplus",
+        "ase_xtb",
+        "pyscf",
+        "turbomole",
+        "mace_mp",
+        "mace_off",
+    }

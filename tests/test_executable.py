@@ -26,7 +26,28 @@ def test_custom_executable_name_and_version_are_supported(
     assert status.executable == str(executable.resolve())
     assert status.version == "2.4.0"
     assert status.source == "option"
-    assert "capability metadata are available" in status.detail
+    assert "PQ 2.4.0 is ready" in status.detail
+
+
+def test_version_is_read_from_the_pq_startup_banner(tmp_path: Path) -> None:
+    executable = tmp_path / "PQ-custom"
+    executable.write_text(
+        """#!/bin/sh
+if [ "$1" = "--capabilities=json" ]; then
+  printf '%s\n' 'Invalid flag: --capabilities=json'
+else
+  printf '%s\n' '         Version:       v0.6.4-a1b2c3d4'
+fi
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    status = discover_pq(str(executable))
+
+    assert status.found
+    assert status.version == "v0.6.4-a1b2c3d4"
+    assert status.detail == "PQ v0.6.4-a1b2c3d4 is ready."
 
 
 def test_configured_executable_precedes_environment(

@@ -5,6 +5,9 @@ PQSetup prepares validated, reproducible inputs for PQ simulations.
 It combines guided scientific presets, structure checks, runner diagnostics,
 and a readable input preview in one local application.
 
+PQSetup currently targets the input schema of PQ v0.6.4. It detects and shows
+the version of the selected PQ executable separately.
+
 ## Development
 
 Requires Python 3.11 or newer and Node.js 20 or newer.
@@ -35,10 +38,12 @@ Set a non-standard PQ executable with `PQ_EXECUTABLE` or
 ## Scientific behavior
 
 - Ambient NPT uses 298.15 K and 1.01325 bar.
+- NVT and NPT expose every thermostat available in PQ v0.6.4.
+- NPT exposes both PQ v0.6.4 manostats.
 - Velocity initialization is delegated to PQ through `init_velocities`.
 - Position perturbations are Gaussian, seeded, reversible, and revalidated.
 - Cell-less molecules receive a centered vacuum cell with 6 Å padding.
 - NPT requires a physical periodic cell; generated vacuum cells are rejected.
 - Non-zero molecule types are rejected until companion force-field files are supported.
 - Collision checks use periodic minimum-image distances.
-- Runner probes do not start a calculation.
+- Calculator choices are limited to methods in the targeted PQ release.

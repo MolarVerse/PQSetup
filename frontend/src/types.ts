@@ -101,10 +101,12 @@ export interface Preset {
   steps: number | null;
   thermostat: string | null;
   manostat: string | null;
+  runner: string | null;
 }
 
 export interface Bootstrap {
   version: string;
+  target_pq_release: string;
   pq: PQStatus;
   runners: RunnerStatus[];
   presets: Preset[];

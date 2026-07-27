@@ -11,6 +11,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import ChemicalFormula from "./ChemicalFormula";
 import type { Atom, StructureAnalysis } from "./types";
 
 interface StructureViewerProps {
@@ -384,7 +385,9 @@ export default function StructureViewer({
       <dl className="structure-facts">
         <div>
           <dt>Formula</dt>
-          <dd>{analysis.summary.formula || "—"}</dd>
+          <dd>
+            <ChemicalFormula formula={analysis.summary.formula} />
+          </dd>
         </div>
         <div>
           <dt>Cell</dt>

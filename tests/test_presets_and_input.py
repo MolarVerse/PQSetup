@@ -3,6 +3,7 @@ from __future__ import annotations
 from pqsetup.input_writer import render_input, validate_setup
 from pqsetup.models import SimulationSetup
 from pqsetup.presets import list_presets
+from pqsetup.release import PQ_MANOSTATS, PQ_THERMOSTATS, TARGET_PQ_RELEASE
 
 
 def setup_from_preset(preset_id: str, **overrides: object) -> SimulationSetup:
@@ -29,6 +30,9 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "nstep = 1000;" in result.input_text
     assert "qm_prog = ase-xtb;" in result.input_text
     assert "xtb_method = gfn2-xtb;" in result.input_text
+    assert result.input_text.startswith("# ╭─ PQSetup · simulation input")
+    assert f"Written by PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
+    assert "# ── Pressure coupling" in result.input_text
 
 
 def test_nvt_and_nve_have_no_pressure_coupling() -> None:
@@ -69,7 +73,7 @@ def test_incomplete_mm_optimization_package_is_rejected() -> None:
     assert {item.code for item in result.diagnostics} == {"workflow.unsupported"}
 
 
-def test_unsupported_and_unknown_runners_fail_without_probing(
+def test_unreleased_and_unknown_runners_fail_without_probing(
     monkeypatch,
 ) -> None:
     def fail_probe() -> None:
@@ -77,10 +81,40 @@ def test_unsupported_and_unknown_runners_fail_without_probing(
 
     monkeypatch.setattr("pqsetup.runners.detect_runners", fail_probe)
     gaussian = setup_from_preset("ambient-nvt", runner="g16")
+    mace_cpp = setup_from_preset("ambient-nvt", runner="mace_cpp")
     unknown = setup_from_preset("ambient-nvt", runner="other")
 
-    assert {item.code for item in validate_setup(gaussian)} == {"runner.unsupported"}
+    assert {item.code for item in validate_setup(gaussian)} == {"runner.unknown"}
+    assert {item.code for item in validate_setup(mace_cpp)} == {"runner.unknown"}
     assert {item.code for item in validate_setup(unknown)} == {"runner.unknown"}
+
+
+def test_every_released_thermostat_is_rendered_safely() -> None:
+    for thermostat in PQ_THERMOSTATS:
+        result = render_input(setup_from_preset("ambient-nvt", thermostat=thermostat))
+
+        assert result.valid
+        assert f"thermostat = {thermostat};" in result.input_text
+        if thermostat in {"langevin", "nh-chain"}:
+            assert "t_relaxation" not in result.input_text
+
+
+def test_every_released_manostat_is_rendered_safely() -> None:
+    for manostat in PQ_MANOSTATS:
+        result = render_input(setup_from_preset("ambient-npt", manostat=manostat))
+
+        assert result.valid
+        assert f"manostat = {manostat};" in result.input_text
+
+
+def test_unreleased_coupling_values_are_rejected() -> None:
+    thermostat = setup_from_preset("ambient-nvt", thermostat="future-coupler")
+    manostat = setup_from_preset("ambient-npt", manostat="future-coupler")
+
+    assert {item.code for item in validate_setup(thermostat)} == {
+        "conditions.thermostat"
+    }
+    assert {item.code for item in validate_setup(manostat)} == {"conditions.manostat"}
 
 
 def test_input_tokens_reject_paths_spaces_and_injection() -> None:

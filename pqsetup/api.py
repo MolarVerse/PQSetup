@@ -22,6 +22,7 @@ from .models import (
     StructureAnalysis,
 )
 from .presets import list_presets
+from .release import TARGET_PQ_RELEASE
 from .runners import detect_runners
 from .structures import (
     analyze_structure,
@@ -44,6 +45,7 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
     def bootstrap() -> Bootstrap:
         return Bootstrap(
             version=__version__,
+            target_pq_release=TARGET_PQ_RELEASE,
             pq=discover_pq(pq_executable),
             runners=detect_runners(),
             presets=list_presets(),
@@ -135,6 +137,7 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             "schema_version": 1,
             "project_name": project_name,
             "pqsetup_version": __version__,
+            "target_pq_release": TARGET_PQ_RELEASE,
             "setup": request.setup.model_dump(mode="json"),
             "files": {
                 "input": {

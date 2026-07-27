@@ -11,6 +11,7 @@ import pqsetup.api
 from pqsetup.api import create_app
 from pqsetup.cli import build_parser, main
 from pqsetup.models import SimulationSetup
+from pqsetup.release import TARGET_PQ_RELEASE
 from pqsetup.structures import parse_structure_bytes
 from pqsetup.structures import perturb_structure
 
@@ -24,15 +25,17 @@ def test_bootstrap_reports_pq_runners_and_presets() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["pq"]["found"]
+    assert payload["pq"]["version"] == "v0.6.4-5a09e6a1"
+    assert payload["target_pq_release"] == TARGET_PQ_RELEASE
     assert {item["id"] for item in payload["presets"]} == {
         "ambient-npt",
         "ambient-nvt",
         "nve",
     }
-    assert (
-        next(item for item in payload["runners"] if item["id"] == "g16")["supported"]
-        is False
-    )
+    runner_ids = {item["id"] for item in payload["runners"]}
+    assert "g16" not in runner_ids
+    assert "fennol" not in runner_ids
+    assert "mace_cpp" not in runner_ids
 
 
 def test_analyze_and_perturb_upload_end_to_end() -> None:
@@ -150,6 +153,7 @@ def test_render_and_export_project() -> None:
         manifest = json.loads(archive.read("pqproject.json"))
         assert manifest["project_name"] == "water-run"
         assert manifest["schema_version"] == 1
+        assert manifest["target_pq_release"] == TARGET_PQ_RELEASE
         assert manifest["structure"]["velocities"] == "initialized_by_pq"
         assert manifest["files"]["structure"]["name"] == "structure.rst"
         assert "atoms" not in manifest["structure"]

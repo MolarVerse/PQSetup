@@ -140,6 +140,7 @@ class RenderResult(BaseModel):
 
 class Bootstrap(BaseModel):
     version: str
+    target_pq_release: str
     pq: PQStatus
     runners: list[RunnerStatus]
     presets: list[Preset]

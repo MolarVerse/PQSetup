@@ -73,7 +73,6 @@ def _status(
 def _detect_runners() -> tuple[RunnerStatus, ...]:
     dftb = _binary(("dftb+",))
     turbomole = _binary(("ridft", "dscf"))
-    g16 = _binary(("g16", "g09"))
     ase_ready = _module("ase")
     mace_ready = _module("mace")
     return (
@@ -102,27 +101,8 @@ def _detect_runners() -> tuple[RunnerStatus, ...]:
             installed=bool(turbomole) or bool(os.environ.get("TURBODIR")),
             executable=turbomole,
         ),
-        _status("fennol", "FeNNol", installed=_module("fennol")),
         _status("mace_mp", "MACE-MP", installed=mace_ready),
         _status("mace_off", "MACE-OFF", installed=mace_ready),
-        _status(
-            "mace_cpp",
-            "MACE.cpp",
-            installed=False,
-            detail="Check support in the selected PQ build.",
-        ),
-        _status(
-            "g16",
-            "Gaussian 16",
-            installed=bool(g16),
-            executable=g16,
-            supported=False,
-            detail=(
-                "Installed, but unsupported by PQ."
-                if g16
-                else "Not installed and unsupported by PQ."
-            ),
-        ),
     )
 
 

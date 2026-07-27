@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .models import PQStatus
+
+
+_VERSION_LINE = re.compile(r"^\s*Version:\s*(\S+)", re.MULTILINE)
 
 
 def default_config_path() -> Path:
@@ -37,14 +42,19 @@ def _candidate_status(candidate: str, source: str) -> PQStatus | None:
         version=version,
         source=source,
         detail=(
-            "PQ executable and capability metadata are available."
+            f"PQ {version} is ready."
             if version
-            else "PQ executable found; capability metadata is unavailable."
+            else "PQ executable found; version unavailable."
         ),
     )
 
 
 def _probe_version(path: Path) -> str | None:
+    version = _probe_capabilities(path)
+    return version or _probe_banner(path)
+
+
+def _probe_capabilities(path: Path) -> str | None:
     try:
         result = subprocess.run(
             [str(path), "--capabilities=json"],
@@ -63,6 +73,25 @@ def _probe_version(path: Path) -> str | None:
         version = payload.get("version")
         return str(version) if version else None
     return None
+
+
+def _probe_banner(path: Path) -> str | None:
+    try:
+        with tempfile.TemporaryDirectory(prefix="pqsetup-version-") as directory:
+            probe = Path(directory) / "version-probe.in"
+            probe.write_text("jobtype = qm-md;\n", encoding="utf-8")
+            result = subprocess.run(
+                [str(path), probe.name],
+                cwd=directory,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = _VERSION_LINE.search(f"{result.stdout}\n{result.stderr}")
+    return match.group(1) if match else None
 
 
 def discover_pq(

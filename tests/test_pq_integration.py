@@ -55,6 +55,62 @@ def test_generated_ase_xtb_input_runs_in_pq(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize(
+    ("ensemble", "thermostat", "manostat"),
+    [
+        ("NVT", "berendsen", None),
+        ("NVT", "velocity_rescaling", None),
+        ("NVT", "langevin", None),
+        ("NVT", "nh-chain", None),
+        ("NPT", "velocity_rescaling", "berendsen"),
+        ("NPT", "velocity_rescaling", "stochastic_rescaling"),
+    ],
+)
+def test_every_released_coupling_runs_in_pq(
+    tmp_path: Path,
+    ensemble: Literal["NVT", "NPT"],
+    thermostat: str,
+    manostat: str | None,
+) -> None:
+    pq = discover_pq()
+    runner = next(item for item in detect_runners() if item.id == "ase_xtb")
+    if not pq.found or not pq.executable:
+        pytest.skip("PQ is not available.")
+    if not runner.ready:
+        pytest.skip("ASE-XTB is not available.")
+
+    setup = SimulationSetup(
+        ensemble=ensemble,
+        thermostat=thermostat,
+        manostat=manostat,
+        pressure_bar=1.01325 if ensemble == "NPT" else None,
+        runner="ase_xtb",
+        start_file="structure.rst",
+        file_prefix="coupling-smoke",
+        steps=1,
+        overwrite_output=True,
+    )
+    rendered = render_input(setup)
+    assert rendered.valid
+    shutil.copyfile(DATA / "water.rst", tmp_path / "structure.rst")
+    input_path = tmp_path / "run.in"
+    input_path.write_text(rendered.input_text, encoding="utf-8")
+
+    result = subprocess.run(
+        [pq.executable, input_path.name],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "PQ ended normally" in output
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize("ensemble", ["NVT", "NVE"])
 def test_generated_vacuum_cell_runs_in_pq(
     tmp_path: Path,
