@@ -4,10 +4,15 @@ import math
 import re
 from pathlib import Path
 
+from .external_qm import selected_external_qm_script
 from .mm import MM_FILE_FIELDS, mm_method_label, required_mm_file_roles
-from .models import Diagnostic, RenderResult, SimulationSetup
+from .models import (
+    Diagnostic,
+    ExternalQMCapabilities,
+    RenderResult,
+    SimulationSetup,
+)
 from .release import (
-    PQ_DEFAULT_RUNNER_SCRIPTS,
     PQ_MANOSTATS,
     PQ_PRESSURE_ISOTROPIES,
     PQ_QM_PROGRAMS,
@@ -59,13 +64,18 @@ _GENERATED_KEYS = {
     "topology_file",
     "parameter_file",
     "intra_nonbonded_file",
+    "dftb_file",
     "overwrite_output",
 }
 _EXTERNAL_RUNNERS = {"dftbplus", "pyscf", "turbomole"}
 
 
-def render_input(setup: SimulationSetup) -> RenderResult:
-    diagnostics = validate_setup(setup)
+def render_input(
+    setup: SimulationSetup,
+    *,
+    external_qm: ExternalQMCapabilities | None = None,
+) -> RenderResult:
+    diagnostics = validate_setup(setup, external_qm=external_qm)
     if any(item.severity == "error" for item in diagnostics):
         return RenderResult(input_text="", diagnostics=diagnostics, valid=False)
 
@@ -180,13 +190,8 @@ def render_input(setup: SimulationSetup) -> RenderResult:
                     f"parameter_file = {setup.parameter_file};",
                 ]
             )
-        if (
-            setup.mm_force_field in {"bonded", "on"}
-            and setup.intra_nonbonded_file
-        ):
-            lines.append(
-                f"intra-nonbonded_file = {setup.intra_nonbonded_file};"
-            )
+        if setup.mm_force_field in {"bonded", "on"} and setup.intra_nonbonded_file:
+            lines.append(f"intra-nonbonded_file = {setup.intra_nonbonded_file};")
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
@@ -197,11 +202,22 @@ def render_input(setup: SimulationSetup) -> RenderResult:
                 f"qm_prog = {runner_name};",
             ]
         )
-        runner_script = setup.runner_script or PQ_DEFAULT_RUNNER_SCRIPTS.get(
-            setup.runner
+        runner_script, _ = selected_external_qm_script(
+            setup.runner,
+            setup.runner_script,
+            external_qm,
         )
         if runner_script:
-            lines.append(f"qm_script = {runner_script};")
+            lines.append(f"qm_script = {runner_script.name};")
+        if setup.ensemble == "NPT":
+            lines.append(
+                "moldescriptor_file = "
+                f"{setup.moldescriptor_file or 'moldescriptor.dat'};"
+            )
+        if setup.runner == "dftbplus":
+            lines.append(
+                f"dftb_file = {setup.dftb_template_file or 'dftb_in.template'};"
+            )
         if (
             setup.runner == "ase_xtb"
             and "xtb_method" not in setup.extra_settings
@@ -224,7 +240,11 @@ def render_input(setup: SimulationSetup) -> RenderResult:
     )
 
 
-def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
+def validate_setup(
+    setup: SimulationSetup,
+    *,
+    external_qm: ExternalQMCapabilities | None = None,
+) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     if setup.ensemble == "OPT":
         diagnostics.append(
@@ -240,9 +260,9 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         diagnostics.append(_error("input.start_file", "Start file is required."))
     if not setup.file_prefix:
         diagnostics.append(_error("input.file_prefix", "Run name is required."))
-    if len(setup.start_file) > 255:
+    if _utf8_too_long(setup.start_file, 255):
         diagnostics.append(_error("input.start_file", "Start filename is too long."))
-    if setup.restart_file and len(setup.restart_file) > 255:
+    if setup.restart_file and _utf8_too_long(setup.restart_file, 255):
         diagnostics.append(
             _error("input.restart_file", "Restart filename is too long.")
         )
@@ -346,6 +366,16 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                         "Thermostat relaxation time must be finite and positive.",
                     )
                 )
+            elif (
+                _positive_finite(setup.timestep_fs)
+                and setup.thermostat_relaxation_ps * 1000 < setup.timestep_fs
+            ):
+                diagnostics.append(
+                    _error(
+                        "conditions.t_relaxation",
+                        "Thermostat relaxation time cannot be shorter than the timestep.",
+                    )
+                )
         elif setup.thermostat == "langevin":
             if not _nonnegative_finite(setup.thermostat_friction_ps_inverse):
                 diagnostics.append(
@@ -400,6 +430,16 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     "Manostat relaxation time must be finite and positive.",
                 )
             )
+        elif (
+            _positive_finite(setup.timestep_fs)
+            and setup.manostat_relaxation_ps * 1000 < setup.timestep_fs
+        ):
+            diagnostics.append(
+                _error(
+                    "conditions.p_relaxation",
+                    "Manostat relaxation time cannot be shorter than the timestep.",
+                )
+            )
         if not _nonnegative_finite(setup.compressibility_bar_inverse):
             diagnostics.append(
                 _error(
@@ -431,6 +471,8 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
         "topology_file": setup.topology_file,
         "parameter_file": setup.parameter_file,
         "intra_nonbonded_file": setup.intra_nonbonded_file,
+        "dftb_template_file": setup.dftb_template_file,
+        "turbomole_define_template_file": setup.turbomole_define_template_file,
     }.items():
         if token_value and (
             any(character in token_value for character in ";\n\r#\x00\\")
@@ -442,22 +484,26 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     f"{name.replace('_', ' ').capitalize()} contains an invalid character.",
                 )
             )
-    for field_name in MM_FILE_FIELDS.values():
-        filename = getattr(setup, field_name)
-        if filename and Path(filename).name != filename:
-            diagnostics.append(
-                _error(
-                    f"mm.{field_name}",
-                    f"{field_name.replace('_', ' ').capitalize()} must be a filename.",
+    if setup.job_type == "mm-md":
+        for field_name in MM_FILE_FIELDS.values():
+            filename = getattr(setup, field_name)
+            if filename and Path(filename).name != filename:
+                diagnostics.append(
+                    _error(
+                        f"mm.{field_name}",
+                        (
+                            f"{field_name.replace('_', ' ').capitalize()} "
+                            "must be a filename."
+                        ),
+                    )
                 )
-            )
-        if filename and len(filename) > 255:
-            diagnostics.append(
-                _error(
-                    f"mm.{field_name}",
-                    f"{field_name.replace('_', ' ').capitalize()} is too long.",
+            if filename and _utf8_too_long(filename, 255):
+                diagnostics.append(
+                    _error(
+                        f"mm.{field_name}",
+                        f"{field_name.replace('_', ' ').capitalize()} is too long.",
+                    )
                 )
-            )
     if setup.start_file and Path(setup.start_file).name != setup.start_file:
         diagnostics.append(
             _error(
@@ -529,19 +575,41 @@ def validate_setup(setup: SimulationSetup) -> list[Diagnostic]:
                     f"The selected runner is not available in PQ {TARGET_PQ_RELEASE}.",
                 )
             )
-        elif (
-            setup.runner in _EXTERNAL_RUNNERS
-            and not setup.runner_script
-            and setup.runner not in PQ_DEFAULT_RUNNER_SCRIPTS
-            and "qm_script_full_path" not in setup.extra_settings
-            and "qm-script-full-path" not in setup.extra_settings
-        ):
-            diagnostics.append(
-                _error(
-                    "runner.script",
-                    f"{setup.runner} needs a QM runner script.",
-                )
+        elif setup.runner in _EXTERNAL_RUNNERS:
+            _, script_error = selected_external_qm_script(
+                setup.runner,
+                setup.runner_script,
+                external_qm,
             )
+            has_full_path = (
+                "qm_script_full_path" in setup.extra_settings
+                or "qm-script-full-path" in setup.extra_settings
+            )
+            if script_error and (setup.runner_script or not has_full_path):
+                diagnostics.append(_error("runner.script", script_error))
+        for field_name in (
+            "moldescriptor_file",
+            "dftb_template_file",
+            "turbomole_define_template_file",
+        ):
+            filename = getattr(setup, field_name)
+            if filename and Path(filename).name != filename:
+                diagnostics.append(
+                    _error(
+                        f"qm.{field_name}",
+                        (
+                            f"{field_name.replace('_', ' ').capitalize()} "
+                            "must be a filename."
+                        ),
+                    )
+                )
+            if filename and _utf8_too_long(filename, 255):
+                diagnostics.append(
+                    _error(
+                        f"qm.{field_name}",
+                        f"{field_name.replace('_', ' ').capitalize()} is too long.",
+                    )
+                )
     for key, value in setup.extra_settings.items():
         normalized = key.replace("-", "_").lower()
         if not _KEY.fullmatch(key):
@@ -647,6 +715,13 @@ def validate_input_file(path: Path) -> list[Diagnostic]:
 
 def _positive_finite(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0.0
+
+
+def _utf8_too_long(value: str, limit: int) -> bool:
+    try:
+        return len(value.encode("utf-8")) > limit
+    except UnicodeEncodeError:
+        return True
 
 
 def _finite(value: float | None) -> bool:

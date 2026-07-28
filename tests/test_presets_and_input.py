@@ -151,16 +151,22 @@ def test_required_output_names_cannot_be_empty() -> None:
     }
 
 
-def test_native_external_runner_uses_default_or_custom_script() -> None:
+def test_native_external_runner_uses_only_advertised_scripts() -> None:
     default = setup_from_preset("ambient-nvt", runner="dftbplus")
     configured = setup_from_preset(
         "ambient-nvt",
-        runner="dftbplus",
-        runner_script="run-dftbplus",
+        runner="pyscf",
+        runner_script="pyscf_mp2.py",
+    )
+    arbitrary = setup_from_preset(
+        "ambient-nvt",
+        runner="pyscf",
+        runner_script="custom.py",
     )
 
     default_result = render_input(default)
     assert default_result.valid
     assert "qm_script = dftbplus_periodic_stress;" in default_result.input_text
     assert render_input(configured).valid
-    assert "qm_script = run-dftbplus;" in render_input(configured).input_text
+    assert "qm_script = pyscf_mp2.py;" in render_input(configured).input_text
+    assert not render_input(arbitrary).valid

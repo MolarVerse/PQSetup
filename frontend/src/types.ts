@@ -7,7 +7,9 @@ export type SetupFileRole =
   | "guff"
   | "topology"
   | "parameter"
-  | "intra_nonbonded";
+  | "intra_nonbonded"
+  | "dftb_template"
+  | "turbomole_define_template";
 export type PressureIsotropy =
   | "isotropic"
   | "xy"
@@ -96,12 +98,32 @@ export interface RunnerStatus {
   detail: string;
 }
 
+export interface ExternalQMScript {
+  name: string;
+  label: string;
+  required_file_keywords: string[];
+  required_working_files: string[];
+}
+
+export interface ExternalQMProgram {
+  recommended_script: string | null;
+  scripts: ExternalQMScript[];
+}
+
+export interface ExternalQMCapabilities {
+  script_mode: "bundled_or_full_path" | "full_path_only";
+  programs: Record<string, ExternalQMProgram>;
+}
+
 export interface PQStatus {
   found: boolean;
   executable: string | null;
   version: string | null;
   source: string | null;
   detail: string;
+  external_qm: ExternalQMCapabilities | null;
+  validation_available: boolean;
+  validation_scopes: ("portable" | "installed")[];
 }
 
 export interface Preset {
@@ -153,6 +175,7 @@ export interface SimulationSetup {
   initialize_velocities: boolean;
   random_seed: number;
   runner: string | null;
+  runner_script: string | null;
   mm_force_field: MMForceFieldMode;
   density_g_cm3: number | null;
   coulomb_cutoff_angstrom: number;
@@ -161,6 +184,8 @@ export interface SimulationSetup {
   topology_file: string | null;
   parameter_file: string | null;
   intra_nonbonded_file: string | null;
+  dftb_template_file: string | null;
+  turbomole_define_template_file: string | null;
   overwrite_output: boolean;
   extra_settings: Record<string, string | number | boolean>;
 }

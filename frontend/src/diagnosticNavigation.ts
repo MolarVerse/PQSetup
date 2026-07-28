@@ -7,9 +7,11 @@ export function diagnosticStep(code: string): DiagnosticStep {
   if (
     code.startsWith("method.") ||
     code.startsWith("mm.") ||
+    code.startsWith("qm.") ||
     code.startsWith("runner.") ||
     code.startsWith("calculator.") ||
-    code.startsWith("pq.")
+    code.startsWith("pq.") ||
+    code.startsWith("environment.pq")
   ) {
     return "method";
   }

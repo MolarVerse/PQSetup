@@ -8,8 +8,8 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-from .models import RunnerStatus
-from .release import PQ_DEFAULT_RUNNER_SCRIPTS
+from .external_qm import advertised_script_names, external_qm_config
+from .models import ExternalQMCapabilities, RunnerStatus
 
 
 def _binary(candidates: tuple[str, ...]) -> str | None:
@@ -97,14 +97,20 @@ def _pq_script_directories(pq_executable: str | None) -> tuple[Path, ...]:
 def _pq_script(
     pq_executable: str | None,
     runner_id: str,
+    script_names: tuple[str, ...] | None = None,
 ) -> Path | None:
-    script_name = PQ_DEFAULT_RUNNER_SCRIPTS.get(runner_id)
-    if not script_name:
+    names = (
+        advertised_script_names(None).get(runner_id, ())
+        if script_names is None
+        else script_names
+    )
+    if not names:
         return None
     return next(
         (
             candidate
             for directory in _pq_script_directories(pq_executable)
+            for script_name in names
             if (candidate := directory / script_name).is_file()
         ),
         None,
@@ -117,10 +123,15 @@ def _external_detail(
     detected: bool,
     pq_checked: bool,
     script_found: bool,
+    script_mode: str,
 ) -> str:
-    dependency_state = f"{dependency} detected." if detected else f"{dependency} not detected."
+    dependency_state = (
+        f"{dependency} detected." if detected else f"{dependency} not detected."
+    )
     if not pq_checked:
         return f"{dependency_state} PQ script not checked."
+    if script_mode == "full_path_only":
+        return f"{dependency_state} PQ requires a full QM script path."
     script_state = (
         "PQ script found."
         if script_found
@@ -130,29 +141,55 @@ def _external_detail(
 
 
 @lru_cache(maxsize=8)
-def _detect_runners(pq_executable: str | None = None) -> tuple[RunnerStatus, ...]:
+def _detect_runners(
+    pq_executable: str | None = None,
+    external_scripts: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
+    script_mode: str = "bundled_or_full_path",
+) -> tuple[RunnerStatus, ...]:
     dftb = _binary(("dftb+",))
     turbomole = _binary(("ridft", "dscf"))
     ase_ready = _module("ase")
     pyscf_ready = _module("pyscf")
     mace_ready = _module("mace")
     pq_checked = pq_executable is not None
-    dftb_script = _pq_script(pq_executable, "dftbplus")
-    pyscf_script = _pq_script(pq_executable, "pyscf")
-    turbomole_script = _pq_script(pq_executable, "turbomole")
+    scripts = (
+        advertised_script_names(None)
+        if external_scripts is None
+        else dict(external_scripts)
+    )
+    dftb_script = _pq_script(
+        pq_executable,
+        "dftbplus",
+        scripts.get("dftbplus", ()),
+    )
+    pyscf_script = _pq_script(
+        pq_executable,
+        "pyscf",
+        scripts.get("pyscf", ()),
+    )
+    turbomole_script = _pq_script(
+        pq_executable,
+        "turbomole",
+        scripts.get("turbomole", ()),
+    )
     turbomole_ready = bool(turbomole) or bool(os.environ.get("TURBODIR"))
+    bundled_scripts_supported = script_mode == "bundled_or_full_path"
     return (
         _status(
             "dftbplus",
             "DFTB+",
             installed=bool(dftb),
-            ready=bool(dftb) and (bool(dftb_script) if pq_checked else True),
+            ready=bool(dftb)
+            and (
+                bundled_scripts_supported and bool(dftb_script) if pq_checked else True
+            ),
             executable=dftb,
             detail=_external_detail(
                 "DFTB+",
                 detected=bool(dftb),
                 pq_checked=pq_checked,
                 script_found=bool(dftb_script),
+                script_mode=script_mode,
             ),
         ),
         _status(
@@ -181,12 +218,16 @@ def _detect_runners(pq_executable: str | None = None) -> tuple[RunnerStatus, ...
             "pyscf",
             "PySCF",
             installed=pyscf_ready,
-            ready=pyscf_ready and (bool(pyscf_script) if pq_checked else True),
+            ready=pyscf_ready
+            and (
+                bundled_scripts_supported and bool(pyscf_script) if pq_checked else True
+            ),
             detail=_external_detail(
                 "PySCF",
                 detected=pyscf_ready,
                 pq_checked=pq_checked,
                 script_found=bool(pyscf_script),
+                script_mode=script_mode,
             ),
         ),
         _status(
@@ -194,13 +235,18 @@ def _detect_runners(pq_executable: str | None = None) -> tuple[RunnerStatus, ...
             "Turbomole",
             installed=turbomole_ready,
             ready=turbomole_ready
-            and (bool(turbomole_script) if pq_checked else True),
+            and (
+                bundled_scripts_supported and bool(turbomole_script)
+                if pq_checked
+                else True
+            ),
             executable=turbomole,
             detail=_external_detail(
                 "Turbomole",
                 detected=turbomole_ready,
                 pq_checked=pq_checked,
                 script_found=bool(turbomole_script),
+                script_mode=script_mode,
             ),
         ),
         _status(
@@ -218,6 +264,15 @@ def _detect_runners(pq_executable: str | None = None) -> tuple[RunnerStatus, ...
     )
 
 
-def detect_runners(pq_executable: str | Path | None = None) -> list[RunnerStatus]:
+def detect_runners(
+    pq_executable: str | Path | None = None,
+    *,
+    external_qm: ExternalQMCapabilities | None = None,
+) -> list[RunnerStatus]:
     context = str(Path(pq_executable).expanduser()) if pq_executable else None
-    return [status.model_copy(deep=True) for status in _detect_runners(context)]
+    config = external_qm_config(external_qm)
+    scripts = tuple(sorted(advertised_script_names(external_qm).items()))
+    return [
+        status.model_copy(deep=True)
+        for status in _detect_runners(context, scripts, config.script_mode)
+    ]

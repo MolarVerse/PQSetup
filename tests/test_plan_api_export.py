@@ -11,20 +11,31 @@ from fastapi.testclient import TestClient
 
 import pqsetup.api
 from pqsetup.api import create_app
-from pqsetup.models import PQStatus, RunnerStatus, SimulationSetup
+from pqsetup.models import (
+    PQStatus,
+    PQValidationResult,
+    RunnerStatus,
+    SimulationSetup,
+)
 from pqsetup.structures import parse_structure_bytes
 
 
 DATA = Path(__file__).parent / "data"
 
 
-def _pq(*, found: bool = True) -> PQStatus:
+def _pq(
+    *,
+    found: bool = True,
+    validation_available: bool = False,
+) -> PQStatus:
     return PQStatus(
         found=found,
         executable="/tools/PQ" if found else None,
         version="v0.6.4" if found else None,
         source="test" if found else None,
         detail="Ready." if found else "Not found.",
+        validation_available=validation_available,
+        validation_scopes=(["portable", "installed"] if validation_available else []),
     )
 
 
@@ -188,6 +199,122 @@ def test_plan_export_manifest_and_archive_are_self_consistent(monkeypatch) -> No
             assert current["start_file"] == previous["restart_file"]
 
 
+def test_export_validates_only_distinct_generated_shapes(monkeypatch) -> None:
+    discoveries = 0
+
+    def discover(_: str | None) -> PQStatus:
+        nonlocal discoveries
+        discoveries += 1
+        return _pq(validation_available=True)
+
+    validated: list[str] = []
+
+    def validate(
+        _: str,
+        input_file: Path,
+        *,
+        scope: str,
+    ) -> PQValidationResult:
+        validated.append(input_file.name)
+        assert scope == "portable"
+        assert (input_file.parent / "run-eq.in").is_file()
+        assert (input_file.parent / "run-05.in").is_file()
+        assert (input_file.parent / "structure.rst").is_file()
+        return PQValidationResult(
+            schema="pq.validation",
+            schema_version=1,
+            valid=True,
+            input=input_file.name,
+            scope="portable",
+            diagnostics=(
+                [
+                    {
+                        "severity": "warning",
+                        "message": "Review this setting.",
+                        "file": input_file.name,
+                        "line": 8,
+                    }
+                ]
+                if input_file.name == "run-eq.in"
+                else []
+            ),
+        )
+
+    monkeypatch.setattr(pqsetup.api, "discover_pq", discover)
+    monkeypatch.setattr(pqsetup.api, "detect_runners", lambda _: [_runner()])
+    monkeypatch.setattr(pqsetup.api, "validate_pq_input", validate)
+    client = TestClient(create_app())
+    payload = _project_payload(sampling_run_count=5)
+
+    plan = client.post(
+        "/api/plan/render",
+        json={
+            "setup": payload["setup"],
+            "equilibration": payload["equilibration"],
+            "sampling_run_count": payload["sampling_run_count"],
+        },
+    )
+    assert plan.status_code == 200
+    assert validated == []
+
+    response = client.post("/api/project/export", json=payload)
+
+    assert response.status_code == 200, response.text
+    assert discoveries == 1
+    assert validated == ["run-eq.in", "run-01.in", "run-02.in"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        manifest = json.loads(archive.read("pqproject.json"))
+    results = manifest["validation"]["results"]
+    assert [item["input"] for item in results] == validated
+    assert results[0]["diagnostics"][0]["line"] == 8
+
+
+def test_export_returns_pq_diagnostics_without_losing_location(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        pqsetup.api,
+        "discover_pq",
+        lambda _: _pq(validation_available=True),
+    )
+    monkeypatch.setattr(pqsetup.api, "detect_runners", lambda _: [_runner()])
+    monkeypatch.setattr(
+        pqsetup.api,
+        "validate_pq_input",
+        lambda _, input_file, *, scope: PQValidationResult(
+            schema="pq.validation",
+            schema_version=1,
+            valid=False,
+            input=input_file.name,
+            scope=scope,
+            diagnostics=[
+                {
+                    "severity": "error",
+                    "message": "nstep must be at least 1",
+                    "file": input_file.name,
+                    "line": 17,
+                }
+            ],
+        ),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/api/project/export",
+        json=_project_payload(sampling_run_count=1, equilibration=False),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == [
+        {
+            "severity": "error",
+            "message": "nstep must be at least 1",
+            "file": "run-01.in",
+            "line": 17,
+        }
+    ]
+
+
 def test_missing_environment_is_recorded_as_warning(monkeypatch) -> None:
     client = _client(monkeypatch, pq_found=False, installed=False)
 
@@ -196,14 +323,18 @@ def test_missing_environment_is_recorded_as_warning(monkeypatch) -> None:
     assert response.status_code == 200
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         manifest = json.loads(archive.read("pqproject.json"))
-    warnings = {
-        item["code"]: item["severity"] for item in manifest["diagnostics"]
-    }
+    warnings = {item["code"]: item["severity"] for item in manifest["diagnostics"]}
     assert warnings["environment.pq_not_detected"] == "warning"
     assert warnings["runner.not_detected"] == "warning"
     assert not manifest["environment"]["pq_detected"]
     assert not manifest["environment"]["calculator"]["detected"]
     assert not manifest["environment"]["calculator"]["ready"]
+    assert manifest["validation"] == {
+        "status": "not_run",
+        "scope": "portable",
+        "detail": "Not found.",
+        "results": [],
+    }
 
 
 def test_manifest_distinguishes_detection_from_incomplete_setup(monkeypatch) -> None:

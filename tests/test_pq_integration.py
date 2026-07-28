@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import io
+import json
+import os
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 from typing import Literal
 
 import pytest
+from fastapi.testclient import TestClient
 
+from pqsetup.api import create_app
 from pqsetup.executable import discover_pq
 from pqsetup.input_writer import render_input
 from pqsetup.models import EquilibrationStage, RunPlanRequest, SimulationSetup
@@ -16,6 +22,51 @@ from pqsetup.structures import format_pq_restart, parse_structure_bytes
 
 
 DATA = Path(__file__).parent / "data"
+WATER_MOLDESCRIPTOR = """\
+WATER_TYPE 1
+H2O 3 0.0
+O 0 -0.65966
+H 1 0.32983
+H 1 0.32983
+"""
+
+
+@pytest.mark.integration
+def test_export_uses_real_pq_input_validation() -> None:
+    executable = os.environ.get("PQ_REAL_EXECUTABLE")
+    if not executable:
+        pytest.skip("Set PQ_REAL_EXECUTABLE to test PQ input validation.")
+    pq = discover_pq(executable)
+    if not pq.supports_validation("portable"):
+        pytest.skip("The selected PQ does not advertise portable validation.")
+
+    structure = parse_structure_bytes(
+        "water.rst",
+        (DATA / "water.rst").read_bytes(),
+    )
+    setup = SimulationSetup(
+        ensemble="NVT",
+        runner="ase_xtb",
+        start_file="structure.rst",
+        file_prefix="water-validation",
+        steps=1,
+    )
+
+    response = TestClient(create_app(pq_executable=executable)).post(
+        "/api/project/export",
+        json={
+            "setup": setup.model_dump(mode="json"),
+            "structure": structure.model_dump(mode="json"),
+            "project_name": "water-validation",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        manifest = json.loads(archive.read("pqproject.json"))
+    assert manifest["validation"]["pq_version"] == pq.version
+    assert manifest["validation"]["scope"] == "portable"
+    assert manifest["validation"]["results"][0]["valid"]
 
 
 @pytest.mark.integration
@@ -136,10 +187,16 @@ def test_every_released_coupling_runs_in_pq(
         file_prefix="coupling-smoke",
         steps=1,
         overwrite_output=True,
+        moldescriptor_file=("moldescriptor.dat" if ensemble == "NPT" else None),
     )
     rendered = render_input(setup)
     assert rendered.valid
     shutil.copyfile(DATA / "water.rst", tmp_path / "structure.rst")
+    if ensemble == "NPT":
+        (tmp_path / "moldescriptor.dat").write_text(
+            WATER_MOLDESCRIPTOR,
+            encoding="utf-8",
+        )
     input_path = tmp_path / "run.in"
     input_path.write_text(rendered.input_text, encoding="utf-8")
 

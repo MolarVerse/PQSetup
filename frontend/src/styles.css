@@ -1112,6 +1112,76 @@ kbd {
   line-height: 1.45;
 }
 
+.electronic-method-fieldset {
+  min-width: 0;
+  margin: 18px 0 0;
+  padding: 15px 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.electronic-method-fieldset legend {
+  padding: 0;
+  color: var(--ink);
+  font-size: 0.73rem;
+  font-weight: 750;
+}
+
+.electronic-method-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.electronic-method-options label {
+  position: relative;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 680;
+  text-align: center;
+}
+
+.electronic-method-options label:hover {
+  background: rgb(220 239 244 / 34%);
+}
+
+.electronic-method-options label.selected {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  background: #f4f9f9;
+}
+
+.electronic-method-options input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.electronic-method-options label:has(input:focus-visible) {
+  outline: 3px solid rgb(25 127 162 / 24%);
+  outline-offset: 2px;
+}
+
+.electronic-method-fieldset > p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.electronic-method-fieldset .inline-warning {
+  margin-top: 8px;
+}
+
 .review-summary {
   display: flex;
   align-items: center;

@@ -9,10 +9,10 @@ from pathlib import Path
 
 import uvicorn
 
-from .api import create_app
 from .executable import discover_pq
 from .input_writer import validate_input_file
 from .models import DoctorReport
+from .pq_validation import PQValidationError, validate_pq_input
 from .runners import detect_runners
 
 
@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     validate = subcommands.add_parser("validate", help="Check an existing PQ input.")
     validate.add_argument("input_file", type=Path)
     validate.add_argument("--json", action="store_true")
+    validate.add_argument(
+        "--pq-executable",
+        dest="command_pq_executable",
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
@@ -57,6 +62,8 @@ def main(arguments: list[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     command = args.command or "serve"
     if command == "serve":
+        from .api import create_app
+
         host = getattr(args, "host", "127.0.0.1")
         port = getattr(args, "port", 8888)
         no_browser = getattr(args, "no_browser", False)
@@ -79,7 +86,14 @@ def main(arguments: list[str] | None = None) -> int:
         )
         report = DoctorReport(
             pq=pq,
-            runners=detect_runners(pq.executable if pq.found else None),
+            runners=(
+                detect_runners(
+                    pq.executable if pq.found else None,
+                    external_qm=pq.external_qm,
+                )
+                if pq.external_qm is not None
+                else detect_runners(pq.executable if pq.found else None)
+            ),
             diagnostics=[],
         )
         if args.json:
@@ -89,19 +103,86 @@ def main(arguments: list[str] | None = None) -> int:
         return 0 if report.pq.found else 1
     if command == "validate":
         diagnostics = validate_input_file(args.input_file)
+        core_diagnostics = []
+        core_valid = True
+        core_checked = False
+        validation_note: str | None = None
+        validation_error = False
+        if not any(item.severity == "error" for item in diagnostics):
+            pq = discover_pq(
+                getattr(args, "command_pq_executable", None) or args.pq_executable
+            )
+            if pq.found and pq.executable and pq.supports_validation("installed"):
+                try:
+                    result = validate_pq_input(
+                        pq.executable,
+                        args.input_file,
+                        scope="installed",
+                    )
+                except PQValidationError as error:
+                    print(
+                        f"PQ input validation could not be completed: {error}",
+                        file=sys.stderr,
+                    )
+                    return 2
+                core_checked = True
+                core_diagnostics = result.diagnostics
+                core_valid = result.valid
+            elif not pq.found:
+                validation_note = f"PQ validation was not run: {pq.detail}"
+                validation_error = pq.source in {
+                    "option",
+                    "config",
+                    "environment",
+                }
+            else:
+                validation_note = (
+                    "PQ validation was not run: installed PQ does not "
+                    "advertise installed validation."
+                )
         if args.json:
+            environment_diagnostic = (
+                [
+                    {
+                        "code": "environment.pq_validation_not_run",
+                        "severity": ("error" if validation_error else "warning"),
+                        "message": validation_note,
+                        "atom_indices": [],
+                    }
+                ]
+                if validation_note
+                else []
+            )
             print(
                 json.dumps(
-                    [item.model_dump(mode="json") for item in diagnostics],
+                    [
+                        *(item.model_dump(mode="json") for item in diagnostics),
+                        *(item.model_dump(mode="json") for item in core_diagnostics),
+                        *environment_diagnostic,
+                    ],
                     indent=2,
                 )
             )
-        elif diagnostics:
-            for item in diagnostics:
-                print(f"{item.severity.upper():7} {item.message}")
+        elif diagnostics or core_diagnostics or validation_note:
+            for diagnostic in diagnostics:
+                print(f"{diagnostic.severity.upper():7} {diagnostic.message}")
+            for core_diagnostic in core_diagnostics:
+                location = f" · {core_diagnostic.file}"
+                if core_diagnostic.line is not None:
+                    location += f":{core_diagnostic.line}"
+                print(
+                    f"{core_diagnostic.severity.upper():7} "
+                    f"{core_diagnostic.message}{location}"
+                )
+            if validation_note:
+                marker = "ERROR" if validation_error else "WARNING"
+                print(f"{marker:7} {validation_note}")
         else:
-            print("Valid.")
-        return 1 if any(item.severity == "error" for item in diagnostics) else 0
+            print("Valid." if core_checked else "Local checks passed.")
+        has_local_error = any(item.severity == "error" for item in diagnostics)
+        if validation_error:
+            return 2
+        return 1 if has_local_error or not core_valid else 0
     parser.print_help()
     return 2
 

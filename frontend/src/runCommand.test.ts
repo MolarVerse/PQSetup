@@ -9,6 +9,9 @@ function status(executable: string | null, found = true): PQStatus {
     version: "v0.6.4",
     source: "development",
     detail: "PQ is ready.",
+    external_qm: null,
+    validation_available: true,
+    validation_scopes: ["portable", "installed"],
   };
 }
 

@@ -50,9 +50,3 @@ PQ_RUNNER_LABELS = {
     "mace_mp": "MACE-MP",
     "mace_off": "MACE-OFF",
 }
-
-PQ_DEFAULT_RUNNER_SCRIPTS = {
-    "dftbplus": "dftbplus_periodic_stress",
-    "pyscf": "pyscf_hf.py",
-    "turbomole": "turbomole_rimp2",
-}

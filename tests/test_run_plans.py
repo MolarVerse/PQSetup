@@ -5,9 +5,11 @@ from pydantic import ValidationError
 
 from pqsetup.models import (
     EquilibrationStage,
+    ExternalQMCapabilities,
     PQStatus,
     RunPlanRequest,
     RunnerStatus,
+    SetupFileReference,
     SimulationSetup,
 )
 from pqsetup.run_plan import render_run_plan
@@ -110,8 +112,7 @@ def test_equilibration_and_sampling_segments_form_exact_chain() -> None:
     ]
     assert "init_velocities = true;" in result.files[0].input_text
     assert all(
-        "init_velocities = true;" not in item.input_text
-        for item in result.files[1:]
+        "init_velocities = true;" not in item.input_text for item in result.files[1:]
     )
     assert [
         line
@@ -161,8 +162,7 @@ def test_sampling_only_starts_from_structure_and_numbers_from_one() -> None:
     ]
     assert "init_velocities = true;" in result.files[0].input_text
     assert all(
-        "init_velocities = true;" not in item.input_text
-        for item in result.files[1:]
+        "init_velocities = true;" not in item.input_text for item in result.files[1:]
     )
 
 
@@ -206,16 +206,138 @@ def test_external_calculators_use_canonical_release_scripts(
     runner_id: str,
     script: str,
 ) -> None:
+    setup_files: list[SetupFileReference] = []
+    companion_fields: dict[str, object] = {}
+    if runner_id == "dftbplus":
+        companion_fields["dftb_template_file"] = "dftb_in.template"
+        setup_files.append(
+            SetupFileReference(
+                role="dftb_template",
+                name="dftb_in.template",
+            )
+        )
+    if runner_id == "turbomole":
+        companion_fields["turbomole_define_template_file"] = "tm_define.template"
+        setup_files.append(
+            SetupFileReference(
+                role="turbomole_define_template",
+                name="tm_define.template",
+            )
+        )
     result = _render(
         RunPlanRequest(
-            setup=_setup(runner=runner_id, runner_script="custom.py"),
+            setup=_setup(
+                runner=runner_id,
+                **companion_fields,
+            ),
             sampling_run_count=1,
+            setup_files=setup_files,
         )
     )
 
     assert result.valid
     assert f"qm_script = {script};" in result.files[0].input_text
-    assert "custom.py" not in result.files[0].input_text
+
+
+def test_external_calculator_rejects_an_arbitrary_script() -> None:
+    result = _render(
+        RunPlanRequest(
+            setup=_setup(
+                runner="pyscf",
+                runner_script="custom.py",
+            ),
+        )
+    )
+
+    assert not result.valid
+    assert result.files == []
+    assert {item.code for item in result.diagnostics} == {"runner.script"}
+
+
+def test_pyscf_method_is_required_and_preserved_across_all_stages() -> None:
+    external_qm = ExternalQMCapabilities.model_validate(
+        {
+            "script_mode": "bundled_or_full_path",
+            "programs": {
+                "pyscf": {
+                    "recommended_script": None,
+                    "scripts": [
+                        {"name": "pyscf_hf.py", "label": "UHF / STO-3G"},
+                        {
+                            "name": "pyscf_mp2.py",
+                            "label": "UMP2 / 6-311++G**",
+                        },
+                    ],
+                }
+            },
+        }
+    )
+    pq = _pq().model_copy(update={"external_qm": external_qm})
+    missing = render_run_plan(
+        RunPlanRequest(setup=_setup(runner="pyscf")),
+        pq=pq,
+        runners=[_status("pyscf")],
+    )
+    selected = render_run_plan(
+        RunPlanRequest(
+            setup=_setup(
+                runner="pyscf",
+                runner_script="pyscf_mp2.py",
+            ),
+            equilibration=EquilibrationStage(enabled=True),
+            sampling_run_count=2,
+        ),
+        pq=pq,
+        runners=[_status("pyscf")],
+    )
+
+    assert not missing.valid
+    assert {item.code for item in missing.diagnostics} == {"runner.script"}
+    assert selected.valid
+    assert len(selected.files) == 3
+    assert all(
+        "qm_script = pyscf_mp2.py;" in item.input_text for item in selected.files
+    )
+
+
+def test_installed_capabilities_own_the_recommended_script_name() -> None:
+    external_qm = ExternalQMCapabilities.model_validate(
+        {
+            "script_mode": "bundled_or_full_path",
+            "programs": {
+                "dftbplus": {
+                    "recommended_script": "dftb_next",
+                    "scripts": [
+                        {
+                            "name": "dftb_next",
+                            "label": "DFTB+ periodic stress",
+                            "required_file_keywords": ["dftb_file"],
+                        }
+                    ],
+                }
+            },
+        }
+    )
+    result = render_run_plan(
+        RunPlanRequest(
+            setup=_setup(
+                runner="dftbplus",
+                dftb_template_file="dftb_in.template",
+            ),
+            setup_files=[
+                SetupFileReference(
+                    role="dftb_template",
+                    name="dftb_in.template",
+                )
+            ],
+        ),
+        pq=_pq().model_copy(update={"external_qm": external_qm}),
+        runners=[_status("dftbplus")],
+    )
+
+    assert result.valid
+    assert "qm_script = dftb_next;" in result.files[0].input_text
+    assert "dftbplus_periodic_stress" not in result.files[0].input_text
 
 
 def test_missing_tools_warn_but_still_render() -> None:
@@ -235,11 +357,46 @@ def test_missing_tools_warn_but_still_render() -> None:
     assert diagnostics["runner.not_detected"] == "warning"
 
 
+def test_installed_capabilities_warn_without_hiding_release_methods() -> None:
+    result = render_run_plan(
+        RunPlanRequest(
+            setup=_setup(),
+            sampling_run_count=1,
+        ),
+        pq=PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version="v0.7.0",
+            detail="Ready.",
+            capabilities={
+                "schema": "pq.capabilities",
+                "schema_version": 1,
+                "input": {"qm_programs": ["dftbplus"]},
+            },
+        ),
+        runners=[_status("ase_xtb")],
+    )
+
+    assert result.valid
+    assert result.files
+    diagnostics = {item.code: item.severity for item in result.diagnostics}
+    assert diagnostics["environment.pq_method_unavailable"] == "warning"
+
+
 def test_detected_dependency_with_missing_script_warns_as_incomplete() -> None:
     result = render_run_plan(
         RunPlanRequest(
-            setup=_setup(runner="dftbplus"),
+            setup=_setup(
+                runner="dftbplus",
+                dftb_template_file="dftb_in.template",
+            ),
             sampling_run_count=1,
+            setup_files=[
+                SetupFileReference(
+                    role="dftb_template",
+                    name="dftb_in.template",
+                )
+            ],
         ),
         pq=_pq(),
         runners=[

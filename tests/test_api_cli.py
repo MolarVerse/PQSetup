@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 import pqsetup.api
+import pqsetup.cli
 from pqsetup.api import create_app
 from pqsetup.cli import _print_doctor, build_parser, main
-from pqsetup.models import DoctorReport, PQStatus, RunnerStatus, SimulationSetup
+from pqsetup.models import (
+    DoctorReport,
+    PQStatus,
+    PQValidationResult,
+    RunnerStatus,
+    SimulationSetup,
+)
 from pqsetup.release import TARGET_PQ_RELEASE
 from pqsetup.structures import parse_structure_bytes
 from pqsetup.structures import perturb_structure
@@ -25,7 +34,7 @@ def test_bootstrap_reports_pq_runners_and_presets() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["pq"]["found"]
-    assert payload["pq"]["version"] == "v0.6.4-5a09e6a1"
+    assert payload["pq"]["version"].startswith(TARGET_PQ_RELEASE)
     assert payload["target_pq_release"] == TARGET_PQ_RELEASE
     assert {item["id"] for item in payload["presets"]} == {
         "ambient-npt",
@@ -122,10 +131,8 @@ def test_ase_format_named_without_an_extension_is_supported() -> None:
 def test_render_and_export_project() -> None:
     client = TestClient(create_app())
     setup = SimulationSetup(
-        ensemble="NPT",
+        ensemble="NVT",
         runner="ase_xtb",
-        pressure_bar=1.01325,
-        manostat="stochastic_rescaling",
     )
     structure = parse_structure_bytes("water.rst", (DATA / "water.rst").read_bytes())
 
@@ -250,7 +257,41 @@ def test_export_velocity_choice_is_explicit() -> None:
     assert len(preserved) == 12
 
 
-def test_validate_cli_checks_input_and_structure(tmp_path: Path, capsys) -> None:
+def test_validate_cli_checks_input_and_structure(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    (tmp_path / "structure.rst").write_bytes((DATA / "water.rst").read_bytes())
+    input_file = tmp_path / "run.in"
+    input_file.write_text(
+        "jobtype = qm-md; nstep = 5; timestep = 0.5; start_file = structure.rst;\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pqsetup.cli,
+        "discover_pq",
+        lambda _: PQStatus(found=False, detail="PQ was not found."),
+    )
+
+    exit_code = main(["validate", str(input_file), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload == [
+        {
+            "code": "environment.pq_validation_not_run",
+            "severity": "warning",
+            "message": "PQ validation was not run: PQ was not found.",
+            "atom_indices": [],
+        }
+    ]
+
+
+def test_validate_cli_rejects_an_explicitly_missing_pq(
+    tmp_path: Path,
+    capsys,
+) -> None:
     (tmp_path / "structure.rst").write_bytes((DATA / "water.rst").read_bytes())
     input_file = tmp_path / "run.in"
     input_file.write_text(
@@ -258,11 +299,77 @@ def test_validate_cli_checks_input_and_structure(tmp_path: Path, capsys) -> None
         encoding="utf-8",
     )
 
+    exit_code = main(
+        [
+            "validate",
+            str(input_file),
+            "--pq-executable",
+            str(tmp_path / "missing-PQ"),
+            "--json",
+        ]
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 2
+    assert payload[0]["severity"] == "error"
+    assert "not executable" in payload[0]["message"]
+
+
+def test_validate_cli_uses_advertised_pq_validation(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    (tmp_path / "structure.rst").write_bytes((DATA / "water.rst").read_bytes())
+    input_file = tmp_path / "run.in"
+    input_file.write_text(
+        "jobtype = qm-md; nstep = 5; timestep = 0.5; start_file = structure.rst;\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pqsetup.cli,
+        "discover_pq",
+        lambda _: PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version="v0.7.0",
+            detail="Ready.",
+            validation_available=True,
+            validation_scopes=["installed"],
+        ),
+    )
+    monkeypatch.setattr(
+        pqsetup.cli,
+        "validate_pq_input",
+        lambda _, path, *, scope: PQValidationResult(
+            schema="pq.validation",
+            schema_version=1,
+            valid=False,
+            input=path.name,
+            scope=scope,
+            diagnostics=[
+                {
+                    "severity": "error",
+                    "message": "qm_prog is required",
+                    "file": path.name,
+                    "line": 1,
+                }
+            ],
+        ),
+    )
+
     exit_code = main(["validate", str(input_file), "--json"])
     payload = json.loads(capsys.readouterr().out)
 
-    assert exit_code == 0
-    assert payload == []
+    assert exit_code == 1
+    assert payload == [
+        {
+            "severity": "error",
+            "message": "qm_prog is required",
+            "file": "run.in",
+            "line": 1,
+        }
+    ]
 
 
 def test_pq_executable_option_works_before_or_after_serve() -> None:
@@ -274,6 +381,24 @@ def test_pq_executable_option_works_before_or_after_serve() -> None:
     assert default_serve.pq_executable == "/tmp/PQ-custom"
     assert explicit_serve.command_pq_executable == "/tmp/PQ-other"
     assert parser.parse_args(["serve"]).port == 8888
+
+
+def test_cli_import_does_not_probe_the_web_application() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import pqsetup.cli; "
+                "raise SystemExit('pqsetup.api' in sys.modules)"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_doctor_reports_incomplete_setup_without_calling_it_missing(capsys) -> None:

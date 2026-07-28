@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from .external_qm import selected_external_qm_script
 from .input_writer import render_input, restart_filename
 from .mm import (
     mm_method_label,
@@ -24,6 +25,7 @@ from .release import (
     PQ_RUNNER_LABELS,
     TARGET_PQ_RELEASE,
 )
+from .setup_files import validate_qm_setup_files
 
 
 _RUNNER_STATUS_ALIASES = {"mace": "mace_mp"}
@@ -46,8 +48,10 @@ def render_run_plan(
     runners: list[RunnerStatus] | None = None,
 ) -> PlanRenderResult:
     diagnostics: list[Diagnostic] = []
-    is_mm = request.setup.job_type == "mm-md"
-    runner_id = request.setup.runner
+    setup = request.setup
+    is_mm = setup.job_type == "mm-md"
+    runner_id = setup.runner
+    external_qm = pq.external_qm if pq is not None else None
     if not is_mm and not runner_id:
         return PlanRenderResult(
             files=[],
@@ -95,13 +99,9 @@ def render_run_plan(
     if is_mm:
         method_id = "molecular_mechanics"
         label = mm_method_label(request.setup.mm_force_field)
-        diagnostics.extend(
-            validate_mm_setup_files(request.setup, request.setup_files)
-        )
+        diagnostics.extend(validate_mm_setup_files(request.setup, request.setup_files))
         if request.structure is not None:
-            diagnostics.extend(
-                validate_mm_structure(request.setup, request.structure)
-            )
+            diagnostics.extend(validate_mm_structure(request.setup, request.structure))
             diagnostics.extend(
                 validate_mm_setup_contents(
                     request.setup,
@@ -112,6 +112,23 @@ def render_run_plan(
     else:
         method_id = runner_id or ""
         label = _runner_label(method_id, status_by_id)
+        script, script_error = selected_external_qm_script(
+            method_id,
+            setup.runner_script,
+            external_qm,
+        )
+        if script_error:
+            diagnostics.append(_error("runner.script", script_error))
+            return PlanRenderResult(files=[], diagnostics=diagnostics, valid=False)
+        if script is not None and setup.runner_script != script.name:
+            setup = setup.model_copy(update={"runner_script": script.name})
+        diagnostics.extend(
+            validate_qm_setup_files(
+                setup,
+                request.setup_files,
+                external_qm,
+            )
+        )
         if method_id not in PQ_QM_PROGRAMS:
             diagnostics.append(
                 _error(
@@ -126,6 +143,12 @@ def render_run_plan(
             statuses=status_by_id,
             enabled=runners is not None,
         )
+        _append_pq_capability_warning(
+            diagnostics,
+            pq=pq,
+            runner_id=method_id,
+            label=label,
+        )
 
     equilibration = request.equilibration
     has_equilibration = bool(equilibration and equilibration.enabled)
@@ -136,12 +159,15 @@ def render_run_plan(
 
     if has_equilibration and equilibration is not None:
         equilibration_setup = _equilibration_setup(
-            request.setup,
+            setup,
             equilibration,
-            file_prefix=f"{request.setup.file_prefix}-eq",
-            random_seed=_derived_seed(request.setup.random_seed, stage_index),
+            file_prefix=f"{setup.file_prefix}-eq",
+            random_seed=_derived_seed(setup.random_seed, stage_index),
         )
-        equilibration_result = render_input(equilibration_setup)
+        equilibration_result = render_input(
+            equilibration_setup,
+            external_qm=external_qm,
+        )
         diagnostics.extend(
             _stage_diagnostics(
                 equilibration_result.diagnostics,
@@ -170,16 +196,19 @@ def render_run_plan(
     for segment_index in range(1, request.sampling_run_count + 1):
         segment_code = f"{segment_index:02d}"
         sampling_setup = _sampling_setup(
-            request.setup,
-            file_prefix=f"{request.setup.file_prefix}-{segment_code}",
+            setup,
+            file_prefix=f"{setup.file_prefix}-{segment_code}",
             start_file=previous_restart,
             initialize_velocities=(
-                request.setup.initialize_velocities if stage_index == 1 else False
+                setup.initialize_velocities if stage_index == 1 else False
             ),
             segment_index=segment_index,
-            random_seed=_derived_seed(request.setup.random_seed, stage_index),
+            random_seed=_derived_seed(setup.random_seed, stage_index),
         )
-        sampling_result = render_input(sampling_setup)
+        sampling_result = render_input(
+            sampling_setup,
+            external_qm=external_qm,
+        )
         diagnostics.extend(
             _stage_diagnostics(
                 sampling_result.diagnostics,
@@ -242,7 +271,6 @@ def _equilibration_setup(
             "manostat": None,
             "initialize_velocities": True,
             "random_seed": random_seed,
-            "runner_script": None,
         },
     )
 
@@ -262,7 +290,6 @@ def _sampling_setup(
         "file_prefix": file_prefix,
         "initialize_velocities": initialize_velocities,
         "random_seed": random_seed,
-        "runner_script": None,
     }
     if segment_index > 1:
         updates.update(
@@ -342,6 +369,38 @@ def _append_runner_warning(
                 f"{status.detail} Inputs can still be created.",
             )
         )
+
+
+def _append_pq_capability_warning(
+    diagnostics: list[Diagnostic],
+    *,
+    pq: PQStatus | None,
+    runner_id: str,
+    label: str,
+) -> None:
+    if pq is None or not pq.found or pq.capabilities is None:
+        return
+    input_capabilities = pq.capabilities.get("input")
+    if not isinstance(input_capabilities, dict):
+        return
+    qm_programs = input_capabilities.get("qm_programs")
+    if not isinstance(qm_programs, list) or not all(
+        isinstance(item, str) for item in qm_programs
+    ):
+        return
+    if runner_id in qm_programs:
+        return
+    version = f" {pq.version}" if pq.version else ""
+    diagnostics.append(
+        _warning(
+            "environment.pq_method_unavailable",
+            (
+                f"Installed PQ{version} was built without {label}. "
+                "The inputs remain portable; run them with a compatible "
+                "PQ build."
+            ),
+        )
+    )
 
 
 def _stage_diagnostics(

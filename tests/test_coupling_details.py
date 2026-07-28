@@ -124,6 +124,29 @@ def test_velocity_rescaling_rejects_unsafe_values(
     assert code in {item.code for item in validate_setup(_nvt(**overrides))}
 
 
+@pytest.mark.parametrize("thermostat", ["berendsen", "velocity_rescaling"])
+def test_thermostat_relaxation_cannot_be_shorter_than_timestep(
+    thermostat: str,
+) -> None:
+    invalid = validate_setup(
+        _nvt(
+            thermostat=thermostat,
+            timestep_fs=2.0,
+            thermostat_relaxation_ps=0.001,
+        )
+    )
+    boundary = validate_setup(
+        _nvt(
+            thermostat=thermostat,
+            timestep_fs=1.0,
+            thermostat_relaxation_ps=0.001,
+        )
+    )
+
+    assert "conditions.t_relaxation" in {item.code for item in invalid}
+    assert "conditions.t_relaxation" not in {item.code for item in boundary}
+
+
 @pytest.mark.parametrize("value", [-0.1, math.inf, math.nan])
 def test_langevin_rejects_invalid_friction(value: float) -> None:
     setup = _nvt(
@@ -131,9 +154,7 @@ def test_langevin_rejects_invalid_friction(value: float) -> None:
         thermostat_friction_ps_inverse=value,
     )
 
-    assert "conditions.friction" in {
-        item.code for item in validate_setup(setup)
-    }
+    assert "conditions.friction" in {item.code for item in validate_setup(setup)}
 
 
 @pytest.mark.parametrize(
@@ -244,6 +265,30 @@ def test_manostat_rejects_invalid_parameters(
     setup = _nvt(**values)
 
     assert code in {item.code for item in validate_setup(setup)}
+
+
+def test_manostat_relaxation_cannot_be_shorter_than_timestep() -> None:
+    invalid = validate_setup(
+        _nvt(
+            ensemble="NPT",
+            pressure_bar=1.01325,
+            manostat="berendsen",
+            timestep_fs=2.0,
+            manostat_relaxation_ps=0.001,
+        )
+    )
+    boundary = validate_setup(
+        _nvt(
+            ensemble="NPT",
+            pressure_bar=1.01325,
+            manostat="berendsen",
+            timestep_fs=1.0,
+            manostat_relaxation_ps=0.001,
+        )
+    )
+
+    assert "conditions.p_relaxation" in {item.code for item in invalid}
+    assert "conditions.p_relaxation" not in {item.code for item in boundary}
 
 
 def test_restart_file_is_explicit_and_reserved() -> None:

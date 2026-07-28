@@ -7,8 +7,41 @@ from pqsetup.executable import discover_pq
 
 
 def make_pq(path: Path, version: str) -> Path:
+    capabilities = {
+        "schema": "pq.capabilities",
+        "schema_version": 1,
+        "version": version,
+        "cli": {
+            "input_validation": {
+                "schema": "pq.validation",
+                "schema_version": 1,
+                "formats": ["text", "json"],
+                "scopes": ["portable", "installed"],
+            }
+        },
+        "input": {
+            "external_qm": {
+                "script_mode": "bundled_or_full_path",
+                "programs": {
+                    "pyscf": {
+                        "recommended_script": None,
+                        "scripts": [
+                            {
+                                "name": "pyscf_hf.py",
+                                "label": "UHF / STO-3G",
+                            },
+                            {
+                                "name": "pyscf_mp2.py",
+                                "label": "UMP2 / 6-311++G**",
+                            },
+                        ],
+                    }
+                },
+            }
+        },
+    }
     path.write_text(
-        f"#!/bin/sh\nprintf '%s\\n' '{{\"version\":\"{version}\"}}'\n",
+        (f"#!/bin/sh\nprintf '%s\\n' '{json.dumps(capabilities)}'\n"),
         encoding="utf-8",
     )
     path.chmod(0o755)
@@ -27,6 +60,18 @@ def test_custom_executable_name_and_version_are_supported(
     assert status.version == "2.4.0"
     assert status.source == "option"
     assert "PQ 2.4.0 is ready" in status.detail
+    assert status.capabilities is not None
+    assert status.capabilities["schema"] == "pq.capabilities"
+    assert status.validation_available
+    assert status.validation_scopes == ["portable", "installed"]
+    assert status.external_qm is not None
+    assert status.external_qm.programs["pyscf"].recommended_script is None
+    assert [
+        script.label for script in status.external_qm.programs["pyscf"].scripts
+    ] == [
+        "UHF / STO-3G",
+        "UMP2 / 6-311++G**",
+    ]
 
 
 def test_version_is_read_from_the_pq_startup_banner(tmp_path: Path) -> None:
@@ -48,6 +93,65 @@ fi
     assert status.found
     assert status.version == "v0.6.4-a1b2c3d4"
     assert status.detail == "PQ v0.6.4-a1b2c3d4 is ready."
+    assert status.capabilities is None
+    assert not status.validation_available
+    assert status.validation_scopes == []
+
+
+def test_unversioned_capability_payload_is_advisory_only(
+    tmp_path: Path,
+) -> None:
+    executable = tmp_path / "PQ-custom"
+    executable.write_text(
+        """#!/bin/sh
+printf '%s\n' '{"version":"v0.6.5","cli":{"input_validation":{"schema":"pq.validation","schema_version":1,"formats":["json"]}}}'
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    status = discover_pq(str(executable))
+
+    assert status.version == "v0.6.5"
+    assert status.capabilities is None
+    assert not status.validation_available
+
+
+def test_validation_requires_advertised_scope_support(tmp_path: Path) -> None:
+    executable = tmp_path / "PQ-custom"
+    executable.write_text(
+        """#!/bin/sh
+printf '%s\n' '{"schema":"pq.capabilities","schema_version":1,"version":"v0.7.0","cli":{"input_validation":{"schema":"pq.validation","schema_version":1,"formats":["json"]}}}'
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    status = discover_pq(str(executable))
+
+    assert not status.validation_available
+    assert status.validation_scopes == []
+
+
+def test_non_utf8_capabilities_do_not_break_discovery(tmp_path: Path) -> None:
+    executable = tmp_path / "PQ-custom"
+    executable.write_text(
+        """#!/usr/bin/env python3
+import sys
+if sys.argv[1] == "--capabilities=json":
+    sys.stdout.buffer.write(b"\\xff")
+else:
+    print("         Version:       v0.6.4")
+""",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+
+    status = discover_pq(str(executable))
+
+    assert status.found
+    assert status.version == "v0.6.4"
+    assert not status.validation_available
 
 
 def test_configured_executable_precedes_environment(

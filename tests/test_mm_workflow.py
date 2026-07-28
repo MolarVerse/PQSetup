@@ -379,6 +379,29 @@ def test_export_rejects_duplicate_companion_file_names(
     assert any(word in detail for word in ("duplicate", "collision", "conflict"))
 
 
+def test_export_rejects_qm_companion_file_for_mm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _export_payload("off")
+    setup_files = payload["setup_files"]
+    assert isinstance(setup_files, list)
+    setup_files.append(
+        {
+            "role": "dftb_template",
+            "name": "dftb_in.template",
+            "content": "Hamiltonian = DFTB {}",
+        }
+    )
+
+    response = _stable_client(monkeypatch).post(
+        "/api/project/export",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    assert "not used by the selected mm setup" in response.text.lower()
+
+
 def test_export_requires_a_configured_optional_companion_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

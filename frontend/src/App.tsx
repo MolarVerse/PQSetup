@@ -46,11 +46,17 @@ import {
 } from "./conditionOptions";
 import { diagnosticStep } from "./diagnosticNavigation";
 import {
-  activeSetupFiles,
+  activeFilesForSpecs,
   defaultSetupFileName,
-  missingSetupFileRoles,
+  electronicMethodOptions,
+  externalQMProgram,
+  missingFilesForSpecs,
   MM_MODES,
   mmModeLabel,
+  packagedSetupFileName,
+  qmSetupFileSpecs,
+  recommendedRunnerScript,
+  selectedExternalQMScript,
   setupFileSpecs,
 } from "./method";
 import {
@@ -169,6 +175,7 @@ const INITIAL_SETUP: SimulationSetup = {
   initialize_velocities: true,
   random_seed: 238917,
   runner: "ase_xtb",
+  runner_script: null,
   mm_force_field: "off",
   density_g_cm3: null,
   coulomb_cutoff_angstrom: 12.5,
@@ -177,6 +184,8 @@ const INITIAL_SETUP: SimulationSetup = {
   topology_file: null,
   parameter_file: null,
   intra_nonbonded_file: null,
+  dftb_template_file: null,
+  turbomole_define_template_file: null,
   overwrite_output: false,
   extra_settings: {},
 };
@@ -235,7 +244,13 @@ function withSetupFileName(
   if (role === "guff") return { ...setup, guff_file: name };
   if (role === "topology") return { ...setup, topology_file: name };
   if (role === "parameter") return { ...setup, parameter_file: name };
-  return { ...setup, intra_nonbonded_file: name };
+  if (role === "intra_nonbonded") {
+    return { ...setup, intra_nonbonded_file: name };
+  }
+  if (role === "dftb_template") {
+    return { ...setup, dftb_template_file: name };
+  }
+  return { ...setup, turbomole_define_template_file: name };
 }
 
 function formatError(error: unknown): string {
@@ -684,12 +699,46 @@ export default function App() {
     DEFAULT_CONTINUED_SAMPLING_RUNS,
   );
   const molecularMechanics = isMolecularMechanics(setup);
-  const methodSetupFiles = useMemo(
+  const externalQM = bootstrap?.pq.external_qm ?? null;
+  const electronicMethods = useMemo(
+    () => electronicMethodOptions(externalQM, setup.runner),
+    [externalQM, setup.runner],
+  );
+  const electronicProgram = useMemo(
+    () => externalQMProgram(externalQM, setup.runner),
+    [externalQM, setup.runner],
+  );
+  const selectedElectronicMethod = useMemo(
+    () =>
+      selectedExternalQMScript(
+        externalQM,
+        setup.runner,
+        setup.runner_script,
+      ),
+    [externalQM, setup.runner, setup.runner_script],
+  );
+  const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
-        ? activeSetupFiles(setup.mm_force_field, setupFiles)
-        : [],
-    [molecularMechanics, setup.mm_force_field, setupFiles],
+        ? setupFileSpecs(setup.mm_force_field)
+        : qmSetupFileSpecs(
+            setup.runner,
+            setup.ensemble,
+            setup.runner_script,
+            externalQM,
+          ),
+    [
+      externalQM,
+      molecularMechanics,
+      setup.ensemble,
+      setup.mm_force_field,
+      setup.runner,
+      setup.runner_script,
+    ],
+  );
+  const methodSetupFiles = useMemo(
+    () => activeFilesForSpecs(methodFileSpecs, setupFiles),
+    [methodFileSpecs, setupFiles],
   );
   const setupFileReferences = useMemo(
     () =>
@@ -826,16 +875,16 @@ export default function App() {
     () => rendered?.files.filter((file) => file.stage_id === "sampling") ?? [],
     [rendered],
   );
+  const selectedCalculatorLabel =
+    selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
   const selectedMethodLabel = molecularMechanics
     ? `Molecular mechanics · ${mmModeLabel(setup.mm_force_field)}`
-    : selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
-  const mmFileSpecs = useMemo(
-    () => setupFileSpecs(setup.mm_force_field),
-    [setup.mm_force_field],
-  );
-  const missingMMFiles = useMemo(
-    () => missingSetupFileRoles(setup.mm_force_field, methodSetupFiles),
-    [methodSetupFiles, setup.mm_force_field],
+    : selectedElectronicMethod
+      ? `${selectedCalculatorLabel} · ${selectedElectronicMethod.label}`
+      : selectedCalculatorLabel;
+  const missingMethodFiles = useMemo(
+    () => missingFilesForSpecs(methodFileSpecs, methodSetupFiles),
+    [methodFileSpecs, methodSetupFiles],
   );
   const hasTypedMolecules = analysis.structure.atoms.some(
     (atom) => atom.molecule_type > 0,
@@ -849,9 +898,14 @@ export default function App() {
       setup.runner &&
       !selectedRunnerStatus?.ready,
   );
+  const portableValidationAvailable = Boolean(
+    bootstrap?.pq.validation_scopes.includes("portable"),
+  );
   const methodReady = molecularMechanics
-    ? hasTypedMolecules && mmDensityReady && missingMMFiles.length === 0
-    : Boolean(setup.runner);
+    ? hasTypedMolecules && mmDensityReady && missingMethodFiles.length === 0
+    : Boolean(setup.runner) &&
+      (!electronicProgram || Boolean(selectedElectronicMethod)) &&
+      missingMethodFiles.length === 0;
   const samplingTotalSteps =
     setup.steps == null ? null : setup.steps * samplingRunCount;
   const samplingMode = samplingOutputMode(samplingRunCount);
@@ -1098,6 +1152,30 @@ export default function App() {
             },
           }),
         ),
+      ...electronicMethods.map(
+        (method): Command => ({
+          id: `electronic-method-${method.name}`,
+          group: "Scientific setup",
+          label: method.label,
+          detail: `${selectedRunnerStatus?.label ?? setup.runner} electronic method`,
+          keywords: [
+            "electronic method",
+            "basis",
+            "pyscf",
+            method.name,
+            method.label,
+          ],
+          current: setup.runner_script === method.name,
+          run: () => {
+            chooseElectronicMethod(method.name);
+            goToControl("method");
+            setNotice({
+              kind: "success",
+              message: `${method.label} selected.`,
+            });
+          },
+        }),
+      ),
       ...MM_MODES.map(
         (option): Command => ({
           id: `mm-mode-${option.value}`,
@@ -1464,6 +1542,7 @@ export default function App() {
     bootstrap,
     createRun,
     displayedDiagnostics,
+    electronicMethods,
     equilibration,
     molecularMechanics,
     openFilePicker,
@@ -1473,6 +1552,7 @@ export default function App() {
     runShortcut,
     samplingMode,
     samplingRunCount,
+    selectedRunnerStatus,
     setup,
     sourceFile,
   ]);
@@ -1610,11 +1690,75 @@ export default function App() {
   }
 
   function chooseCalculator(runnerId: string) {
-    setSetup((existing) => ({
-      ...existing,
-      job_type: "qm-md",
-      runner: runnerId,
-    }));
+    setSetup((existing) => {
+      const program = externalQMProgram(externalQM, runnerId);
+      const keepsSelection =
+        existing.runner === runnerId &&
+        program?.scripts.some(
+          (script) => script.name === existing.runner_script,
+        );
+      const runnerScript = keepsSelection
+        ? existing.runner_script
+        : recommendedRunnerScript(externalQM, runnerId);
+      const required = qmSetupFileSpecs(
+        runnerId,
+        existing.ensemble,
+        runnerScript,
+        externalQM,
+      );
+      const roles = new Set(required.map((file) => file.role));
+      return {
+        ...existing,
+        preset_id: null,
+        job_type: "qm-md",
+        runner: runnerId,
+        runner_script: runnerScript,
+        moldescriptor_file: roles.has("moldescriptor")
+          ? existing.moldescriptor_file ?? defaultSetupFileName("moldescriptor")
+          : existing.moldescriptor_file,
+        dftb_template_file: roles.has("dftb_template")
+          ? existing.dftb_template_file ??
+            defaultSetupFileName("dftb_template")
+          : existing.dftb_template_file,
+        turbomole_define_template_file: roles.has(
+          "turbomole_define_template",
+        )
+          ? existing.turbomole_define_template_file ??
+            defaultSetupFileName("turbomole_define_template")
+          : existing.turbomole_define_template_file,
+      };
+    });
+  }
+
+  function chooseElectronicMethod(scriptName: string) {
+    setSetup((existing) => {
+      const allowed = electronicMethodOptions(externalQM, existing.runner);
+      if (!allowed.some((script) => script.name === scriptName)) {
+        return existing;
+      }
+      const required = qmSetupFileSpecs(
+        existing.runner,
+        existing.ensemble,
+        scriptName,
+        externalQM,
+      );
+      const roles = new Set(required.map((file) => file.role));
+      return {
+        ...existing,
+        preset_id: null,
+        runner_script: scriptName,
+        dftb_template_file: roles.has("dftb_template")
+          ? existing.dftb_template_file ??
+            defaultSetupFileName("dftb_template")
+          : existing.dftb_template_file,
+        turbomole_define_template_file: roles.has(
+          "turbomole_define_template",
+        )
+          ? existing.turbomole_define_template_file ??
+            defaultSetupFileName("turbomole_define_template")
+          : existing.turbomole_define_template_file,
+      };
+    });
   }
 
   function chooseInteractionModel(model: "qm" | "mm") {
@@ -1662,11 +1806,12 @@ export default function App() {
 
     try {
       const content = await file.text();
+      const packageName = packagedSetupFileName(role, file.name);
       setSetupFiles((existing) => [
         ...existing.filter((item) => item.role !== role),
-        { role, name: file.name, content },
+        { role, name: packageName, content },
       ]);
-      setSetup((existing) => withSetupFileName(existing, role, file.name));
+      setSetup((existing) => withSetupFileName(existing, role, packageName));
     } catch (error) {
       setNotice({ kind: "error", message: formatError(error) });
     }
@@ -1729,6 +1874,11 @@ export default function App() {
           : null,
       pressure_bar:
         ensemble === "NPT" ? existing.pressure_bar ?? 1.01325 : null,
+      moldescriptor_file:
+        ensemble === "NPT"
+          ? existing.moldescriptor_file ??
+            defaultSetupFileName("moldescriptor")
+          : existing.moldescriptor_file,
     }));
   }
 
@@ -2104,6 +2254,94 @@ export default function App() {
                       Select a calculator.
                     </div>
                   )}
+                  {electronicMethods.length > 0 &&
+                    (electronicMethods.length > 1 ||
+                      !electronicProgram?.recommended_script) && (
+                      <fieldset className="electronic-method-fieldset">
+                        <legend>Electronic method</legend>
+                        <div
+                          className="electronic-method-options"
+                          role="radiogroup"
+                          aria-label="Electronic method"
+                        >
+                          {electronicMethods.map((method) => (
+                            <label
+                              className={
+                                setup.runner_script === method.name
+                                  ? "selected"
+                                  : ""
+                              }
+                              key={method.name}
+                            >
+                              <input
+                                type="radio"
+                                name="electronic-method"
+                                checked={setup.runner_script === method.name}
+                                onChange={() =>
+                                  chooseElectronicMethod(method.name)
+                                }
+                              />
+                              <span>{method.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <p>Used for equilibration and sampling.</p>
+                        {!selectedElectronicMethod && (
+                          <div className="inline-warning" role="alert">
+                            <CircleAlert size={15} aria-hidden="true" />
+                            Choose an electronic method.
+                          </div>
+                        )}
+                      </fieldset>
+                    )}
+                  {methodFileSpecs.length > 0 && (
+                    <section
+                      className="setup-files"
+                      aria-labelledby="qm-setup-files-title"
+                    >
+                      <div className="section-rule-heading">
+                        <strong id="qm-setup-files-title">
+                          Required files
+                        </strong>
+                        <span>Included in the package</span>
+                      </div>
+                      <div className="setup-file-list">
+                        {methodFileSpecs.map((spec) => {
+                          const selected = setupFiles.find(
+                            (file) => file.role === spec.role,
+                          );
+                          return (
+                            <label
+                              className={selected ? "selected" : ""}
+                              key={spec.role}
+                            >
+                              <input
+                                className="setup-file-input"
+                                type="file"
+                                onChange={(event) =>
+                                  void chooseSetupFile(spec.role, event)
+                                }
+                              />
+                              <Upload size={16} aria-hidden="true" />
+                              <span>
+                                <strong>{spec.label}</strong>
+                                <small>
+                                  {selected?.name ?? spec.defaultName}
+                                </small>
+                              </span>
+                              <span
+                                className={
+                                  selected ? "file-added" : "file-required"
+                                }
+                              >
+                                {selected ? "Added" : "Required"}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  )}
                 </div>
               ) : (
                 <div className="method-content">
@@ -2207,7 +2445,7 @@ export default function App() {
                       <span>Included in the package</span>
                     </div>
                     <div className="setup-file-list">
-                      {mmFileSpecs.map((spec) => {
+                      {methodFileSpecs.map((spec) => {
                         const selected = setupFiles.find(
                           (file) => file.role === spec.role,
                         );
@@ -3140,18 +3378,24 @@ export default function App() {
                     {molecularMechanics
                       ? !hasTypedMolecules
                         ? "Import a PQ restart with molecule type IDs."
-                        : missingMMFiles.length
-                          ? `Add ${missingMMFiles.length} required force-field ${
-                              missingMMFiles.length === 1 ? "file" : "files"
+                        : missingMethodFiles.length
+                          ? `Add ${missingMethodFiles.length} required force-field ${
+                              missingMethodFiles.length === 1 ? "file" : "files"
                             }.`
                           : !mmDensityReady
                             ? "Set the system density."
                             : `${selectedMethodLabel} is ready.`
                       : !setup.runner
                         ? "Choose a calculator."
-                        : calculatorMissing
-                          ? `${selectedMethodLabel} was not detected.`
-                          : `${selectedMethodLabel} is ready.`}
+                        : electronicProgram && !selectedElectronicMethod
+                          ? "Choose an electronic method."
+                          : missingMethodFiles.length
+                            ? `Add ${missingMethodFiles.length} required ${
+                                missingMethodFiles.length === 1 ? "file" : "files"
+                              }.`
+                            : calculatorMissing
+                              ? `${selectedMethodLabel} was not detected.`
+                              : `${selectedMethodLabel} is ready.`}
                   </small>
                 </span>
               </li>
@@ -3163,9 +3407,13 @@ export default function App() {
                   <strong>PQ inputs</strong>
                   <small>
                     {rendered?.valid
-                      ? `${rendered.files.length} input ${
-                          rendered.files.length === 1 ? "file" : "files"
-                        } ready.`
+                      ? portableValidationAvailable
+                        ? `${rendered.files.length} input ${
+                            rendered.files.length === 1 ? "file" : "files"
+                          } ready for PQ validation.`
+                        : `${rendered.files.length} input ${
+                            rendered.files.length === 1 ? "file" : "files"
+                          } generated locally; PQ validation is unavailable.`
                       : rendering
                         ? "Validating…"
                         : "Input settings need attention."}

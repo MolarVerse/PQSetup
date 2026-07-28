@@ -12,5 +12,17 @@ describe("API error details", () => {
         "Fallback",
       ),
     ).toBe("Coulomb cutoff exceeds half the box length.");
+    expect(
+      errorDetail(
+        [
+          {
+            message: "nstep must be at least 1",
+            file: "run-01.in",
+            line: 17,
+          },
+        ],
+        "Fallback",
+      ),
+    ).toBe("nstep must be at least 1 · run-01.in:17");
   });
 });

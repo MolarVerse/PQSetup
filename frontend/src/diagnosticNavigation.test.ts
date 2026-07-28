@@ -9,7 +9,11 @@ describe("diagnostic navigation", () => {
 
   it("routes method checks to Method and run checks to Conditions", () => {
     expect(diagnosticStep("mm.density")).toBe("method");
+    expect(diagnosticStep("qm.file_missing.turbomole_define_template")).toBe(
+      "method",
+    );
     expect(diagnosticStep("runner.missing")).toBe("method");
+    expect(diagnosticStep("environment.pq_method_unavailable")).toBe("method");
     expect(diagnosticStep("conditions.generated_cell_npt")).toBe("conditions");
   });
 });

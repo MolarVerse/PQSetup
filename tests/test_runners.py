@@ -3,14 +3,21 @@ from __future__ import annotations
 from pathlib import Path
 
 import pqsetup.runners as runners
+from pqsetup.models import ExternalQMCapabilities
 
 
-def _detect(pq_executable: Path | None = None) -> dict[str, runners.RunnerStatus]:
+def _detect(
+    pq_executable: Path | None = None,
+    external_qm: ExternalQMCapabilities | None = None,
+) -> dict[str, runners.RunnerStatus]:
     runners._detect_runners.cache_clear()
     try:
         return {
             item.id: item
-            for item in runners.detect_runners(pq_executable=pq_executable)
+            for item in runners.detect_runners(
+                pq_executable=pq_executable,
+                external_qm=external_qm,
+            )
         }
     finally:
         runners._detect_runners.cache_clear()
@@ -29,8 +36,7 @@ def test_ase_xtb_uses_dftbplus_backend(monkeypatch) -> None:
     assert statuses["ase_xtb"].installed
     assert statuses["ase_xtb"].executable == "/tools/dftb+"
     assert (
-        statuses["ase_xtb"].detail
-        == "ASE and DFTB+ detected for the xTB Hamiltonian."
+        statuses["ase_xtb"].detail == "ASE and DFTB+ detected for the xTB Hamiltonian."
     )
     assert statuses["dftbplus"].ready
     assert statuses["dftbplus"].detail == "DFTB+ detected. PQ script not checked."
@@ -52,7 +58,8 @@ def test_selected_development_pq_finds_canonical_scripts(
     pq_executable = tmp_path / "build" / "apps" / "PQ"
     scripts = tmp_path / "build" / "src" / "QM" / "scripts"
     scripts.mkdir(parents=True)
-    for script_name in runners.PQ_DEFAULT_RUNNER_SCRIPTS.values():
+    for script_names in runners.advertised_script_names(None).values():
+        script_name = script_names[0]
         (scripts / script_name).touch()
 
     def binary(names: tuple[str, ...]) -> str | None:
@@ -108,15 +115,74 @@ def test_missing_pq_script_is_an_advisory_not_unsupported(
 
 def test_installed_share_layout_is_checked(tmp_path: Path) -> None:
     pq_executable = tmp_path / "prefix" / "bin" / "PQ"
-    script = (
-        tmp_path
-        / "prefix"
-        / "share"
-        / "PQ"
-        / "scripts"
-        / "pyscf_hf.py"
-    )
+    script = tmp_path / "prefix" / "share" / "PQ" / "scripts" / "pyscf_hf.py"
     script.parent.mkdir(parents=True)
     script.touch()
 
     assert runners._pq_script(str(pq_executable), "pyscf") == script
+
+
+def test_advertised_script_names_drive_installation_detection(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pq_executable = tmp_path / "prefix" / "bin" / "PQ"
+    script = tmp_path / "prefix" / "share" / "PQ" / "scripts" / "pyscf_next.py"
+    script.parent.mkdir(parents=True)
+    script.touch()
+    capabilities = ExternalQMCapabilities.model_validate(
+        {
+            "script_mode": "bundled_or_full_path",
+            "programs": {
+                "pyscf": {
+                    "recommended_script": None,
+                    "scripts": [
+                        {
+                            "name": "pyscf_next.py",
+                            "label": "UHF / larger basis",
+                        }
+                    ],
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(runners, "_binary", lambda _: None)
+    monkeypatch.setattr(runners, "_module", lambda name: name == "pyscf")
+    monkeypatch.setattr(runners, "_version", lambda _: None)
+    monkeypatch.delenv("TURBODIR", raising=False)
+
+    statuses = _detect(pq_executable, capabilities)
+
+    assert statuses["pyscf"].ready
+    assert statuses["pyscf"].detail.endswith("PQ script found.")
+
+
+def test_full_path_only_build_does_not_report_bundled_scripts_as_ready(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pq_executable = tmp_path / "prefix" / "bin" / "PQ"
+    script = tmp_path / "prefix" / "share" / "PQ" / "scripts" / "pyscf_hf.py"
+    script.parent.mkdir(parents=True)
+    script.touch()
+    capabilities = ExternalQMCapabilities.model_validate(
+        {
+            "script_mode": "full_path_only",
+            "programs": {
+                "pyscf": {
+                    "recommended_script": None,
+                    "scripts": [{"name": "pyscf_hf.py", "label": "UHF / STO-3G"}],
+                }
+            },
+        }
+    )
+    monkeypatch.setattr(runners, "_binary", lambda _: None)
+    monkeypatch.setattr(runners, "_module", lambda name: name == "pyscf")
+    monkeypatch.setattr(runners, "_version", lambda _: None)
+    monkeypatch.delenv("TURBODIR", raising=False)
+
+    status = _detect(pq_executable, capabilities)["pyscf"]
+
+    assert status.installed
+    assert not status.ready
+    assert status.detail == "PySCF detected. PQ requires a full QM script path."

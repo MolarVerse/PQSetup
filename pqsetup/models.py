@@ -2,19 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 Severity = Literal["error", "warning", "info"]
 Ensemble = Literal["NPT", "NVT", "NVE", "OPT"]
 JobType = Literal["mm-md", "qm-md", "qm-rpmd", "mm-opt"]
 MMForceFieldMode = Literal["off", "bonded", "on"]
+JsonObject = dict[str, Any]
+PQValidationScope = Literal["portable", "installed"]
 SetupFileRole = Literal[
     "moldescriptor",
     "guff",
     "topology",
     "parameter",
     "intra_nonbonded",
+    "dftb_template",
+    "turbomole_define_template",
 ]
 PressureIsotropy = Literal[
     "isotropic",
@@ -102,12 +106,71 @@ class RunnerStatus(BaseModel):
     detail: str
 
 
+class ExternalQMScript(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    name: str = Field(pattern=r"^[A-Za-z0-9._+-]+$")
+    label: str = Field(min_length=1, max_length=120)
+    required_file_keywords: list[str] = Field(default_factory=list)
+    required_working_files: list[str] = Field(default_factory=list)
+
+
+class ExternalQMProgram(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    recommended_script: str | None = None
+    scripts: list[ExternalQMScript] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_scripts(self) -> ExternalQMProgram:
+        names = [script.name for script in self.scripts]
+        if len(names) != len(set(names)):
+            raise ValueError("External QM script names must be unique.")
+        if self.recommended_script is not None and self.recommended_script not in names:
+            raise ValueError("The recommended external QM script must be advertised.")
+        return self
+
+
+class ExternalQMCapabilities(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    script_mode: Literal["bundled_or_full_path", "full_path_only"]
+    programs: dict[str, ExternalQMProgram]
+
+
 class PQStatus(BaseModel):
     found: bool
     executable: str | None = None
     version: str | None = None
     source: str | None = None
     detail: str
+    capabilities: JsonObject | None = None
+    external_qm: ExternalQMCapabilities | None = None
+    validation_available: bool = False
+    validation_scopes: list[PQValidationScope] = Field(default_factory=list)
+
+    def supports_validation(self, scope: PQValidationScope) -> bool:
+        return self.validation_available and scope in self.validation_scopes
+
+
+class PQValidationDiagnostic(BaseModel):
+    model_config = ConfigDict(extra="allow", strict=True)
+
+    severity: Literal["error", "warning"]
+    message: str
+    file: str
+    line: int | None = Field(default=None, ge=1)
+
+
+class PQValidationResult(BaseModel):
+    model_config = ConfigDict(extra="allow", strict=True)
+
+    schema_name: Literal["pq.validation"] = Field(alias="schema")
+    schema_version: Literal[1]
+    valid: bool
+    input: str
+    scope: PQValidationScope
+    diagnostics: list[PQValidationDiagnostic]
 
 
 class Preset(BaseModel):
@@ -162,6 +225,8 @@ class SimulationSetup(BaseModel):
     topology_file: str | None = None
     parameter_file: str | None = None
     intra_nonbonded_file: str | None = None
+    dftb_template_file: str | None = None
+    turbomole_define_template_file: str | None = None
     overwrite_output: bool = False
     extra_settings: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
@@ -210,7 +275,7 @@ class RunPlanRequest(BaseModel):
     sampling_run_count: int = Field(default=1, ge=1, le=999)
     setup_files: list[SetupFileReference] = Field(
         default_factory=list,
-        max_length=5,
+        max_length=6,
     )
 
 
@@ -262,13 +327,10 @@ class ExportRequest(BaseModel):
     preparation: PreparationMetadata | None = None
     equilibration: EquilibrationStage | None = None
     sampling_run_count: int | None = Field(default=None, ge=1, le=999)
-    setup_files: list[SetupFile] = Field(default_factory=list, max_length=5)
+    setup_files: list[SetupFile] = Field(default_factory=list, max_length=6)
 
 
 class DoctorReport(BaseModel):
     pq: PQStatus
     runners: list[RunnerStatus]
     diagnostics: list[Diagnostic]
-
-
-JsonObject = dict[str, Any]

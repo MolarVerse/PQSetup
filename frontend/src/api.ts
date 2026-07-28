@@ -21,7 +21,18 @@ export function errorDetail(detail: unknown, fallback: string): string {
             return item.msg;
           }
           if ("message" in item && typeof item.message === "string") {
-            return item.message;
+            const file =
+              "file" in item && typeof item.file === "string"
+                ? item.file
+                : null;
+            const line =
+              "line" in item && typeof item.line === "number"
+                ? item.line
+                : null;
+            const location = file
+              ? `${file}${line == null ? "" : `:${line}`}`
+              : null;
+            return location ? `${item.message} · ${location}` : item.message;
           }
         }
         return null;

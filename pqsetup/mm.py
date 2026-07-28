@@ -65,6 +65,14 @@ def validate_mm_setup_files(
     files_by_role: dict[SetupFileRole, SetupFileReference] = {}
     names: dict[str, SetupFileRole] = {}
     for item in files:
+        if item.role not in MM_FILE_FIELDS:
+            diagnostics.append(
+                _error(
+                    "mm.file_unused",
+                    f"'{item.name}' is not used by the selected MM setup.",
+                )
+            )
+            continue
         diagnostics.extend(_filename_diagnostics(item.role, item.name))
         if item.role in files_by_role:
             diagnostics.append(
@@ -189,8 +197,7 @@ def validate_mm_setup_contents(
                     code="mm.structure_molecule_types",
                     severity="error",
                     message=(
-                        "Every atom in an MM restart needs a positive molecule "
-                        "type."
+                        "Every atom in an MM restart needs a positive molecule type."
                     ),
                     atom_indices=[atom_index],
                 )
@@ -240,19 +247,14 @@ def validate_mm_structure(
 
     diagnostics: list[Diagnostic] = []
     invalid_molecule_types = [
-        index
-        for index, atom in enumerate(structure.atoms)
-        if atom.molecule_type <= 0
+        index for index, atom in enumerate(structure.atoms) if atom.molecule_type <= 0
     ]
     if invalid_molecule_types:
         diagnostics.append(
             Diagnostic(
                 code="mm.structure_molecule_types",
                 severity="error",
-                message=(
-                    "Every atom in an MM restart needs a positive molecule "
-                    "type."
-                ),
+                message=("Every atom in an MM restart needs a positive molecule type."),
                 atom_indices=invalid_molecule_types,
             )
         )
@@ -297,7 +299,16 @@ def _filename_diagnostics(
     label = _ROLE_LABELS[role]
     if not name:
         return [_error(f"mm.{MM_FILE_FIELDS[role]}", f"{label} filename is required.")]
-    if len(name) > 255:
+    try:
+        encoded_length = len(name.encode("utf-8"))
+    except UnicodeEncodeError:
+        return [
+            _error(
+                f"mm.{MM_FILE_FIELDS[role]}",
+                f"{label} filename is invalid.",
+            )
+        ]
+    if encoded_length > 255:
         return [_error(f"mm.{MM_FILE_FIELDS[role]}", f"{label} filename is too long.")]
     if Path(name).name != name:
         return [
