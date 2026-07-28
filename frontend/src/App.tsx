@@ -67,6 +67,7 @@ import {
   samplingRunSummary,
   type SamplingOutputMode,
 } from "./runPlan";
+import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
@@ -1774,6 +1775,8 @@ export default function App() {
     }, 0);
   }
 
+  const runLauncher = packageRunLauncher(bootstrap?.pq ?? null);
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -2887,12 +2890,10 @@ export default function App() {
               >
                 <div>
                   <strong id="run-launcher-title">Run the package</strong>
-                  <span>run.sh follows the generated input sequence.</span>
+                  <span>{runLauncher.detail}</span>
                 </div>
                 <pre>
-                  <code>
-                    {"./run.sh\nPQ_EXECUTABLE=/path/to/PQ ./run.sh"}
-                  </code>
+                  <code>{runLauncher.command}</code>
                 </pre>
                 <p>
                   Stops at the first failed input or when PQ does not report{" "}
