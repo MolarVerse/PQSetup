@@ -1,7 +1,7 @@
 import type { PlannedInput } from "./types";
 
 export const MIN_SAMPLING_RUNS = 1;
-export const MAX_SAMPLING_RUNS = 99;
+export const MAX_SAMPLING_RUNS = 999;
 export const MIN_CONTINUED_SAMPLING_RUNS = 2;
 export const DEFAULT_CONTINUED_SAMPLING_RUNS = 3;
 

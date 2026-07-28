@@ -246,7 +246,7 @@ def test_legacy_export_without_protocol_fields_remains_schema_one(
     assert manifest["files"]["input"]["name"] == "water-study.in"
 
 
-@pytest.mark.parametrize("sampling_run_count", [0, 100])
+@pytest.mark.parametrize("sampling_run_count", [0, 1000])
 def test_plan_api_rejects_out_of_range_counts(
     monkeypatch,
     sampling_run_count: int,

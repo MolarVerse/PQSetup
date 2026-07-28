@@ -1,4 +1,4 @@
-import { ArrowRight, Search, X } from "lucide-react";
+import { ArrowRight, Check, Search, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -6,11 +6,14 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import {
+  COMMAND_GROUP_ORDER,
+  rankCommands,
+  type CommandGroup,
+  type SearchableCommand,
+} from "./commandSearch";
 
-export interface Command {
-  id: string;
-  label: string;
-  hint?: string;
+export interface Command extends SearchableCommand {
   run: () => void;
 }
 
@@ -29,16 +32,38 @@ export default function CommandPalette({
   const [selected, setSelected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLElement>(null);
+  const selectedRow = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<HTMLElement | null>(null);
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return commands;
-    return commands.filter((command) =>
-      `${command.label} ${command.hint ?? ""}`
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [commands, query]);
+  const filtered = useMemo(
+    () => rankCommands(commands, query),
+    [commands, query],
+  );
+  const grouped = useMemo(() => {
+    const groups = new Map<
+      CommandGroup,
+      { command: Command; index: number }[]
+    >();
+    filtered.forEach((command, index) => {
+      const items = groups.get(command.group) ?? [];
+      items.push({ command, index });
+      groups.set(command.group, items);
+    });
+    return COMMAND_GROUP_ORDER.flatMap((group) => {
+      const items = groups.get(group);
+      return items?.length ? [{ group, items }] : [];
+    });
+  }, [filtered]);
+  const ordered = useMemo(
+    () => grouped.flatMap(({ items }) => items.map(({ command }) => command)),
+    [grouped],
+  );
+  const orderedIndex = useMemo(
+    () => new Map(ordered.map((command, index) => [command.id, index])),
+    [ordered],
+  );
+  const activeId = ordered[selected]
+    ? `command-option-${ordered[selected].id}`
+    : undefined;
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +74,8 @@ export default function CommandPalette({
     background.forEach((element) => {
       element.inert = true;
     });
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     setQuery("");
     setSelected(0);
     requestAnimationFrame(() => input.current?.focus());
@@ -56,6 +83,7 @@ export default function CommandPalette({
       background.forEach((element) => {
         element.inert = false;
       });
+      document.body.style.overflow = previousOverflow;
       restoreFocus.current?.focus();
     };
   }, [open]);
@@ -63,6 +91,16 @@ export default function CommandPalette({
   useEffect(() => {
     setSelected(0);
   }, [query]);
+
+  useEffect(() => {
+    setSelected((value) =>
+      Math.min(value, Math.max(ordered.length - 1, 0)),
+    );
+  }, [ordered.length]);
+
+  useEffect(() => {
+    selectedRow.current?.scrollIntoView({ block: "nearest" });
+  }, [query, selected]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,7 +114,7 @@ export default function CommandPalette({
   if (!open) return null;
 
   function run(command: Command) {
-    restoreFocus.current = null;
+    if (command.disabledReason) return;
     onClose();
     command.run();
   }
@@ -107,7 +145,7 @@ export default function CommandPalette({
         className="command-palette"
         role="dialog"
         aria-modal="true"
-        aria-label="Commands"
+        aria-label="Search setup"
         onMouseDown={(event) => event.stopPropagation()}
         onKeyDown={trapFocus}
       >
@@ -121,49 +159,107 @@ export default function CommandPalette({
               if (event.key === "ArrowDown") {
                 event.preventDefault();
                 setSelected((value) =>
-                  Math.min(value + 1, Math.max(filtered.length - 1, 0)),
+                  ordered.length ? (value + 1) % ordered.length : 0,
                 );
               }
               if (event.key === "ArrowUp") {
                 event.preventDefault();
-                setSelected((value) => Math.max(value - 1, 0));
+                setSelected((value) =>
+                  ordered.length
+                    ? (value - 1 + ordered.length) % ordered.length
+                    : 0,
+                );
               }
-              if (event.key === "Enter" && filtered[selected]) {
+              if (event.key === "Home") {
                 event.preventDefault();
-                run(filtered[selected]);
+                setSelected(0);
+              }
+              if (event.key === "End") {
+                event.preventDefault();
+                setSelected(Math.max(ordered.length - 1, 0));
+              }
+              if (event.key === "Enter" && ordered[selected]) {
+                event.preventDefault();
+                run(ordered[selected]);
               }
             }}
-            placeholder="Go to a step or run an action"
-            aria-label="Search commands"
+            placeholder="Search settings, methods, or actions"
+            aria-label="Search setup"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="command-results"
+            aria-activedescendant={activeId}
+            aria-autocomplete="list"
           />
-          <button type="button" onClick={onClose} aria-label="Close commands">
+          <button type="button" onClick={onClose} aria-label="Close search">
             <X size={18} />
           </button>
         </div>
-        <div className="palette-results">
+        <span className="visually-hidden" aria-live="polite">
+          {filtered.length
+            ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}`
+            : "No results"}
+        </span>
+        <div
+          className="palette-results"
+          id="command-results"
+          role="listbox"
+          aria-label="Search results"
+        >
           {filtered.length ? (
-            filtered.map((command, index) => (
-              <button
-                type="button"
-                key={command.id}
-                className={selected === index ? "selected" : ""}
-                onMouseEnter={() => setSelected(index)}
-                onClick={() => run(command)}
-              >
-                <span>{command.label}</span>
-                <span className="command-hint">
-                  {command.hint}
-                  <ArrowRight size={15} aria-hidden="true" />
-                </span>
-              </button>
+            grouped.map(({ group, items }) => (
+              <section className="command-group" key={group}>
+                <h2>{group}</h2>
+                {items.map(({ command }) => {
+                  const index = orderedIndex.get(command.id) ?? 0;
+                  return (
+                  <button
+                    type="button"
+                    role="option"
+                    id={`command-option-${command.id}`}
+                    key={command.id}
+                    ref={selected === index ? selectedRow : undefined}
+                    className={selected === index ? "selected" : ""}
+                    aria-selected={selected === index}
+                    aria-disabled={Boolean(command.disabledReason)}
+                    onMouseMove={() => setSelected(index)}
+                    onClick={() => run(command)}
+                  >
+                    <span className="command-copy">
+                      <strong>{command.label}</strong>
+                      {(command.disabledReason || command.detail) && (
+                        <small>
+                          {command.disabledReason ?? command.detail}
+                        </small>
+                      )}
+                    </span>
+                    <span className="command-hint">
+                      {command.current && (
+                        <Check size={15} aria-label="Current" />
+                      )}
+                      {command.hint}
+                      {!command.current && (
+                        <ArrowRight size={15} aria-hidden="true" />
+                      )}
+                    </span>
+                  </button>
+                  );
+                })}
+              </section>
             ))
           ) : (
-            <p>No matching commands</p>
+            <div className="palette-empty">
+              <strong>No matching setting</strong>
+              <span>Try temperature, barostat, calculator, eq, or xyz.</span>
+            </div>
           )}
         </div>
         <footer>
           <span>
-            <kbd>Enter</kbd> run
+            <kbd>↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd>Enter</kbd> select
           </span>
           <span>
             <kbd>Esc</kbd> close

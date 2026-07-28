@@ -321,24 +321,24 @@ def test_start_file_cannot_collide_with_any_generated_restart(
     assert generated_restart in diagnostic.message
 
 
-def test_ninety_nine_sampling_runs_have_stable_two_digit_names() -> None:
+def test_one_hundred_sampling_runs_have_stable_names() -> None:
     result = _render(
         RunPlanRequest(
             setup=_setup(),
-            sampling_run_count=99,
+            sampling_run_count=100,
         )
     )
 
     assert result.valid
-    assert len(result.files) == 99
+    assert len(result.files) == 100
     assert result.files[0].name == "run-01.in"
-    assert result.files[-1].name == "run-99.in"
-    assert result.files[-1].start_file == "water-98.rst"
-    assert result.files[-1].restart_file == "water-99.rst"
-    assert [item.stage_index for item in result.files] == list(range(1, 100))
+    assert result.files[-1].name == "run-100.in"
+    assert result.files[-1].start_file == "water-99.rst"
+    assert result.files[-1].restart_file == "water-100.rst"
+    assert [item.stage_index for item in result.files] == list(range(1, 101))
 
 
-@pytest.mark.parametrize("sampling_run_count", [0, 100])
+@pytest.mark.parametrize("sampling_run_count", [0, 1000])
 def test_sampling_run_count_rejects_out_of_range_values(
     sampling_run_count: int,
 ) -> None:

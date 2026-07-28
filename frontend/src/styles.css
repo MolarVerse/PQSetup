@@ -103,7 +103,7 @@ p {
 .app-header {
   min-height: 62px;
   display: grid;
-  grid-template-columns: 1fr minmax(220px, 390px) 1fr;
+  grid-template-columns: 1fr minmax(320px, 540px) 1fr;
   align-items: center;
   gap: 22px;
   padding: 8px 18px;
@@ -143,6 +143,7 @@ p {
 }
 
 .command-trigger {
+  width: 100%;
   height: 38px;
   display: flex;
   align-items: center;
@@ -1607,6 +1608,10 @@ kbd {
   margin-top: 14px !important;
 }
 
+.sampling-length-grid.single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sampling-total {
   min-height: 58px;
   display: grid;
@@ -2787,14 +2792,16 @@ kbd {
   inset: 0;
   display: grid;
   place-items: start center;
-  padding-top: min(16vh, 140px);
+  padding-top: min(13vh, 118px);
   background: rgb(17 29 32 / 34%);
   backdrop-filter: blur(3px);
   z-index: 100;
 }
 
 .command-palette {
-  width: min(calc(100vw - 30px), 570px);
+  width: min(calc(100vw - 30px), 620px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 9px;
@@ -2803,9 +2810,9 @@ kbd {
 }
 
 .palette-search {
-  min-height: 52px;
+  min-height: 58px;
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 30px;
+  grid-template-columns: 22px minmax(0, 1fr) 40px;
   align-items: center;
   gap: 7px;
   padding: 0 10px 0 15px;
@@ -2815,7 +2822,7 @@ kbd {
 
 .palette-search input {
   width: 100%;
-  height: 48px;
+  height: 54px;
   border: 0;
   outline: 0;
   color: var(--ink);
@@ -2823,8 +2830,8 @@ kbd {
 }
 
 .palette-search button {
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border: 0;
@@ -2839,19 +2846,30 @@ kbd {
 }
 
 .palette-results {
-  max-height: min(55vh, 420px);
+  max-height: min(60vh, 500px);
   overflow-y: auto;
-  padding: 6px;
+  overscroll-behavior: contain;
+  padding: 4px 6px 8px;
 }
 
-.palette-results > button {
+.command-group h2 {
+  margin: 0;
+  padding: 9px 10px 4px;
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.command-group > button {
   width: 100%;
-  min-height: 42px;
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 0 10px;
+  padding: 7px 10px;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -2860,13 +2878,48 @@ kbd {
   font-size: 0.78rem;
 }
 
-.palette-results > button:hover,
-.palette-results > button:focus-visible,
-.palette-results > button.selected {
+.command-group > button:hover,
+.command-group > button:focus-visible,
+.command-group > button.selected {
   background: var(--accent-soft);
 }
 
+.command-group > button[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+.command-group > button[aria-disabled="true"] .command-copy {
+  opacity: 0.54;
+}
+
+.command-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-copy strong,
+.command-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-copy strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.command-copy small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 400;
+}
+
 .command-hint {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2874,11 +2927,23 @@ kbd {
   font-size: 0.65rem;
 }
 
-.palette-results p {
-  margin: 25px;
+.palette-empty {
+  min-height: 112px;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  padding: 24px;
   color: var(--muted);
-  font-size: 0.76rem;
   text-align: center;
+}
+
+.palette-empty strong {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.palette-empty span {
+  font-size: 0.68rem;
 }
 
 .command-palette footer {
@@ -3008,7 +3073,7 @@ kbd {
   .app-header {
     position: sticky;
     top: 0;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
     min-height: 56px;
     padding: 7px 10px;
@@ -3025,16 +3090,46 @@ kbd {
   }
 
   .command-trigger {
-    width: 35px;
-    height: 34px;
-    display: grid;
-    place-items: center;
-    padding: 0;
+    min-width: 0;
+    height: 40px;
+    gap: 7px;
+    padding: 0 10px;
   }
 
-  .command-trigger > span,
   .command-trigger kbd {
     display: none;
+  }
+
+  .command-trigger > span {
+    overflow: hidden;
+    font-size: 0.74rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .palette-backdrop {
+    padding: 10px;
+  }
+
+  .command-palette {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+  }
+
+  .palette-results {
+    max-height: calc(100dvh - 132px);
+  }
+
+  .command-group > button {
+    min-height: 48px;
+  }
+
+  .command-copy strong {
+    font-size: 0.84rem;
+  }
+
+  .command-copy small {
+    font-size: 0.72rem;
   }
 
   .header-status {
@@ -3150,7 +3245,7 @@ kbd {
   }
 
   .command-trigger {
-    justify-self: end;
+    justify-self: stretch;
   }
 
   .header-status,

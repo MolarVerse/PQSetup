@@ -52,7 +52,7 @@ logs to `run-logs/` and stops at the first failed or incomplete PQ run.
 - NVT and NPT expose every thermostat and method-specific control in PQ v0.6.4.
 - NPT exposes both manostats, relaxation, compressibility, and cell response.
 - Sampling can follow an NVT equilibration and be split into linked runs.
-- Run-plan inputs use optional `run-eq.in`, then `run-01.in` through `run-99.in`.
+- Run-plan inputs use optional `run-eq.in`, then `run-01.in` through `run-999.in`.
 - Exported packages include `run.sh`, which logs every stage and stops unless
   PQ reports normal completion.
 - Quantum-mechanical protocols use one calculator for the complete sequence.

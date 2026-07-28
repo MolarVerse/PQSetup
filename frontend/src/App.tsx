@@ -57,6 +57,7 @@ import {
   commitContinuedSamplingRunCountDraft,
   compactRunFileNames,
   DEFAULT_CONTINUED_SAMPLING_RUNS,
+  MAX_SAMPLING_RUNS,
   nextPlannedInputSelection,
   parseContinuedSamplingRunCountDraft,
   plannedInputOptionLabel,
@@ -270,15 +271,18 @@ function Field({
   unit,
   help,
   info,
+  controlId,
   children,
 }: {
   label: ReactNode;
   unit?: string;
   help?: string;
   info?: string;
+  controlId?: string;
   children: ReactElement<{ id?: string }>;
 }) {
-  const fieldId = useId();
+  const generatedFieldId = useId();
+  const fieldId = controlId ?? generatedFieldId;
   const infoId = useId();
 
   return (
@@ -327,9 +331,11 @@ type TemperatureScheduleSettings = Pick<
 function TemperatureCoupling({
   value,
   onChange,
+  controlId,
 }: {
   value: ThermostatSettings;
   onChange: (patch: Partial<ThermostatSettings>) => void;
+  controlId?: string;
 }) {
   return (
     <section className="coupling-section" aria-label="Temperature coupling">
@@ -338,7 +344,7 @@ function TemperatureCoupling({
         <span>Thermostat</span>
       </div>
       <div className="form-grid coupling-grid">
-        <Field label="Thermostat">
+        <Field label="Thermostat" controlId={controlId}>
           <select
             value={value.thermostat ?? "velocity_rescaling"}
             onChange={(event) => onChange({ thermostat: event.target.value })}
@@ -511,9 +517,11 @@ type ManostatSettings = Pick<
 function PressureCoupling({
   value,
   onChange,
+  controlId,
 }: {
   value: ManostatSettings;
   onChange: (patch: Partial<ManostatSettings>) => void;
+  controlId?: string;
 }) {
   return (
     <section className="coupling-section" aria-label="Pressure coupling">
@@ -524,6 +532,7 @@ function PressureCoupling({
       <div className="form-grid coupling-grid pressure-grid">
         <Field
           label="Manostat"
+          controlId={controlId}
           info="PQ calls this a manostat. It is essentially a barostat: the pressure-coupling method that adjusts the simulation cell."
         >
           <select
@@ -649,6 +658,12 @@ export default function App() {
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const searchShortcut =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform)
+      ? "⌘ K"
+      : "Ctrl K";
+  const runShortcut = searchShortcut.startsWith("⌘") ? "⌘ Enter" : "Ctrl Enter";
   const [notice, setNotice] = useState<{
     kind: "error" | "success" | "info";
     message: string;
@@ -961,29 +976,505 @@ export default function App() {
     setup,
   ]);
 
-  const commands = useMemo<Command[]>(
-    () => [
-      ...STEPS.map((step, index) => ({
-        id: `step-${step.id}`,
-        label: `Go to ${step.label}`,
-        hint: `Alt ${index + 1}`,
-        run: () => setActiveStep(step.id),
-      })),
+  const commands = useMemo<Command[]>(() => {
+    const activeIndex = STEPS.findIndex((step) => step.id === activeStep);
+    const nextStep =
+      activeIndex < STEPS.length - 1 ? STEPS[activeIndex + 1] : null;
+    const seenDiagnostics = new Set<string>();
+    const problemCommands = displayedDiagnostics
+      .filter((item) => item.severity !== "info")
+      .filter((item) => {
+        const key = `${item.code}:${item.message}`;
+        if (seenDiagnostics.has(key)) return false;
+        seenDiagnostics.add(key);
+        return true;
+      })
+      .map(
+        (item, index): Command => ({
+          id: `problem-${item.code}-${index}`,
+          group: "Problems",
+          label: item.severity === "error" ? "Fix input error" : "Review warning",
+          detail: item.message,
+          keywords: [item.code, item.message, "preflight", "diagnostic"],
+          featured: index < 2,
+          run: () => goToControl(diagnosticStep(item.code)),
+        }),
+      );
+
+    return [
+      ...(nextStep
+        ? [
+            {
+              id: "continue",
+              group: "Suggested" as const,
+              label: `Continue to ${nextStep.label}`,
+              detail: nextStep.hint,
+              keywords: ["next", "continue", "workflow"],
+              featured: true,
+              run: () => goToControl(nextStep.id),
+            },
+          ]
+        : []),
+      ...problemCommands,
+      ...STEPS.map(
+        (step, index): Command => ({
+          id: `step-${step.id}`,
+          group: "Workflow",
+          label: step.label,
+          detail: step.hint,
+          hint: `Alt ${index + 1}`,
+          keywords: [
+            "go",
+            "open",
+            step.id === "system" ? "structure atoms cell" : "",
+            step.id === "method" ? "calculator engine force field" : "",
+            step.id === "conditions"
+              ? "protocol ensemble sampling thermostat manostat"
+              : "",
+            step.id === "prepare" ? "coordinates jitter perturb symmetry" : "",
+            step.id === "review" ? "inputs files preview package" : "",
+          ],
+          current: activeStep === step.id,
+          run: () => goToControl(step.id),
+        }),
+      ),
+      {
+        id: "model-qm",
+        group: "Scientific setup",
+        label: "Use quantum mechanics",
+        detail: "External electronic-structure calculator",
+        keywords: ["qm", "quantum", "electronic structure", "calculator"],
+        current: !molecularMechanics,
+        run: () => {
+          chooseInteractionModel("qm");
+          goToControl("method");
+          setNotice({ kind: "success", message: "Quantum mechanics selected." });
+        },
+      },
+      {
+        id: "model-mm",
+        group: "Scientific setup",
+        label: "Use molecular mechanics",
+        detail: "GUFF or classical force field",
+        keywords: ["mm", "molecular mechanics", "force field", "classical"],
+        current: molecularMechanics,
+        run: () => {
+          chooseInteractionModel("mm");
+          goToControl("method");
+          setNotice({
+            kind: "success",
+            message: "Molecular mechanics selected.",
+          });
+        },
+      },
+      ...(bootstrap?.runners ?? [])
+        .filter((runner) => runner.supported)
+        .map(
+          (runner): Command => ({
+            id: `calculator-${runner.id}`,
+            group: "Scientific setup",
+            label: runner.label,
+            detail: runner.ready
+              ? "Calculator ready"
+              : `${runner.detail} Inputs can still be created.`,
+            keywords: [
+              "calculator",
+              "runner",
+              "engine",
+              runner.id,
+              runner.label,
+            ],
+            current: !molecularMechanics && setup.runner === runner.id,
+            run: () => {
+              chooseCalculator(runner.id);
+              goToControl("method");
+              setNotice({
+                kind: runner.ready ? "success" : "info",
+                message: runner.ready
+                  ? `${runner.label} selected.`
+                  : `${runner.label} selected but was not detected.`,
+              });
+            },
+          }),
+        ),
+      ...MM_MODES.map(
+        (option): Command => ({
+          id: `mm-mode-${option.value}`,
+          group: "Scientific setup",
+          label: option.label,
+          detail: option.description,
+          keywords: ["molecular mechanics", "force field", "guff"],
+          current:
+            molecularMechanics && setup.mm_force_field === option.value,
+          run: () => {
+            chooseMMMode(option.value);
+            goToControl("method");
+            setNotice({
+              kind: "success",
+              message: `${option.label} selected.`,
+            });
+          },
+        }),
+      ),
+      ...(["NVE", "NVT", "NPT"] as const).map(
+        (ensemble): Command => ({
+          id: `ensemble-${ensemble.toLowerCase()}`,
+          group: "Scientific setup",
+          label: `Use ${ensemble} sampling`,
+          detail:
+            ensemble === "NVE"
+              ? "Fixed energy and volume"
+              : ensemble === "NVT"
+                ? "Fixed temperature and volume"
+                : "Fixed temperature and pressure",
+          keywords:
+            ensemble === "NVE"
+              ? ["microcanonical", "energy", "fixed volume"]
+              : ensemble === "NVT"
+                ? ["canonical", "temperature", "fixed volume"]
+                : [
+                    "isobaric",
+                    "pressure",
+                    "barostat",
+                    "manostat",
+                    "pressure coupling",
+                  ],
+          current: setup.ensemble === ensemble,
+          disabledReason:
+            ensemble === "NPT" &&
+            !molecularMechanics &&
+            analysis.structure.cell_generated
+              ? "NPT needs a physical periodic cell."
+              : undefined,
+          run: () => {
+            chooseSamplingEnsemble(ensemble);
+            goToControl("conditions");
+            setNotice({
+              kind: "success",
+              message: `Sampling ensemble set to ${ensemble}.`,
+            });
+          },
+        }),
+      ),
+      {
+        id: "protocol-equilibration",
+        group: "Scientific setup",
+        label: "Include NVT equilibration",
+        detail: "Write run-eq.in before sampling",
+        keywords: ["eq", "equilibrate", "warmup", "prepare"],
+        current: Boolean(equilibration),
+        run: () => {
+          chooseProtocol(true);
+          goToControl("conditions");
+          setNotice({ kind: "success", message: "Equilibration included." });
+        },
+      },
+      {
+        id: "protocol-no-equilibration",
+        group: "Scientific setup",
+        label: "Skip equilibration",
+        detail: "Start directly with sampling",
+        keywords: ["no eq", "sampling only"],
+        current: !equilibration,
+        run: () => {
+          chooseProtocol(false);
+          goToControl("conditions");
+          setNotice({ kind: "success", message: "Equilibration skipped." });
+        },
+      },
+      {
+        id: "sampling-single",
+        group: "Scientific setup",
+        label: "Use one sampling input",
+        detail: "Write a single run-01.in",
+        keywords: ["single", "one file", "sampling output"],
+        current: samplingMode === "single",
+        run: () => {
+          chooseSamplingOutputMode("single");
+          goToControl("conditions", "sampling-steps");
+          setNotice({ kind: "success", message: "One sampling input selected." });
+        },
+      },
+      {
+        id: "sampling-continued",
+        group: "Scientific setup",
+        label: "Split into continued inputs",
+        detail: "Write linked 01, 02, 03… inputs",
+        keywords: [
+          "multiple",
+          "continued",
+          "continuation",
+          "split",
+          "segments",
+          "number of inputs",
+        ],
+        current: samplingMode === "continued",
+        run: () => {
+          chooseSamplingOutputMode("continued");
+          goToControl("conditions", "sampling-run-count");
+          setNotice({
+            kind: "success",
+            message: "Continued sampling inputs selected.",
+          });
+        },
+      },
+      ...THERMOSTATS.map(
+        (option): Command => ({
+          id: `thermostat-${option.value}`,
+          group: "Scientific setup",
+          label: option.label,
+          detail: option.description,
+          keywords: [
+            "thermostat",
+            "temperature coupling",
+            option.value,
+            option.value === "nh-chain" ? "nose hoover" : "",
+            option.value === "velocity_rescaling"
+              ? "svr stochastic velocity rescaling"
+              : "",
+          ],
+          current:
+            setup.ensemble !== "NVE" && setup.thermostat === option.value,
+          run: () => {
+            chooseThermostat(option.value);
+            goToControl("conditions", "sampling-thermostat");
+            setNotice({
+              kind: "success",
+              message: `${option.label} thermostat selected.`,
+            });
+          },
+        }),
+      ),
+      ...MANOSTATS.map(
+        (option): Command => ({
+          id: `manostat-${option.value}`,
+          group: "Scientific setup",
+          label: `${option.label} manostat`,
+          detail: option.description,
+          keywords: [
+            "manostat",
+            "barostat",
+            "pressure coupling",
+            option.value,
+          ],
+          current:
+            setup.ensemble === "NPT" && setup.manostat === option.value,
+          disabledReason:
+            !molecularMechanics && analysis.structure.cell_generated
+              ? "Pressure coupling needs a physical periodic cell."
+              : undefined,
+          run: () => {
+            chooseManostat(option.value);
+            goToControl("conditions", "sampling-manostat");
+            setNotice({
+              kind: "success",
+              message: `${option.label} manostat selected.`,
+            });
+          },
+        }),
+      ),
+      {
+        id: "parameter-temperature",
+        group: "Parameters",
+        label: "Target temperature",
+        detail: `${setup.temperature_k ?? "Not set"} K`,
+        keywords: ["temperature", "kelvin", "heat", "initial temperature"],
+        run: () => goToControl("conditions", "sampling-temperature"),
+      },
+      {
+        id: "parameter-pressure",
+        group: "Parameters",
+        label: "Target pressure",
+        detail: `${setup.pressure_bar ?? 1.01325} bar`,
+        keywords: ["pressure", "atm", "bar", "isobaric"],
+        disabledReason:
+          !molecularMechanics && analysis.structure.cell_generated
+            ? "Pressure needs a physical periodic cell."
+            : undefined,
+        run: () => {
+          chooseSamplingEnsemble("NPT");
+          goToControl("conditions", "sampling-pressure");
+        },
+      },
+      {
+        id: "parameter-timestep",
+        group: "Parameters",
+        label: "Sampling timestep",
+        detail: `${setup.timestep_fs ?? "Not set"} fs`,
+        keywords: ["time step", "dt", "integration"],
+        run: () => goToControl("conditions", "sampling-timestep"),
+      },
+      {
+        id: "parameter-steps",
+        group: "Parameters",
+        label: samplingMode === "single" ? "Sampling steps" : "Steps per input",
+        detail: `${setup.steps?.toLocaleString() ?? "Not set"} steps`,
+        keywords: ["length", "duration", "sampling", "steps per input"],
+        run: () => goToControl("conditions", "sampling-steps"),
+      },
+      ...(samplingMode === "continued"
+        ? [
+            {
+              id: "parameter-input-count",
+              group: "Parameters" as const,
+              label: "Number of sampling inputs",
+              detail: `${samplingRunCount} linked inputs · maximum ${MAX_SAMPLING_RUNS}`,
+              keywords: ["segments", "files", "split", "continued", "count"],
+              run: () =>
+                goToControl("conditions", "sampling-run-count"),
+            },
+          ]
+        : []),
+      {
+        id: "parameter-thermostat",
+        group: "Parameters",
+        label: "Thermostat settings",
+        detail: thermostatDescription(setup.thermostat),
+        keywords: [
+          "temperature coupling",
+          "relaxation",
+          "friction",
+          "nose hoover",
+          "svr",
+        ],
+        run: () => {
+          if (setup.ensemble === "NVE") chooseSamplingEnsemble("NVT");
+          goToControl("conditions", "sampling-thermostat");
+        },
+      },
+      {
+        id: "parameter-manostat",
+        group: "Parameters",
+        label: "Manostat settings",
+        detail: "Pressure coupling, also called a barostat",
+        keywords: [
+          "barostat",
+          "pressure coupling",
+          "compressibility",
+          "cell response",
+        ],
+        disabledReason:
+          !molecularMechanics && analysis.structure.cell_generated
+            ? "Pressure coupling needs a physical periodic cell."
+            : undefined,
+        run: () => {
+          chooseSamplingEnsemble("NPT");
+          goToControl("conditions", "sampling-manostat");
+        },
+      },
+      {
+        id: "parameter-density",
+        group: "Parameters",
+        label: "System density",
+        detail: "Molecular mechanics cell construction",
+        keywords: ["density", "g cm", "box", "volume"],
+        disabledReason: !molecularMechanics
+          ? "Available for molecular mechanics."
+          : !analysis.structure.cell_generated
+            ? "The imported structure already has a physical cell."
+            : undefined,
+        run: () => goToControl("method", "mm-density"),
+      },
+      {
+        id: "parameter-cutoff",
+        group: "Parameters",
+        label: "Coulomb cutoff",
+        detail: `${setup.coulomb_cutoff_angstrom} Å`,
+        keywords: ["electrostatic", "nonbonded", "angstrom"],
+        disabledReason: !molecularMechanics
+          ? "Available for molecular mechanics."
+          : undefined,
+        run: () => goToControl("method", "mm-cutoff"),
+      },
+      {
+        id: "parameter-jitter",
+        group: "Parameters",
+        label: "Position perturbation",
+        detail: "Seeded Gaussian symmetry breaking",
+        keywords: ["jitter", "sigma", "gaussian", "crystal", "symmetry", "random"],
+        disabledReason: !sourceFile
+          ? "Import a structure before perturbing coordinates."
+          : undefined,
+        run: () => {
+          setJitter(true);
+          goToControl("prepare", "position-sigma");
+        },
+      },
+      ...(rendered?.files ?? []).map(
+        (file): Command => ({
+          id: `input-${file.name}`,
+          group: "Inputs",
+          label: file.name,
+          detail:
+            file.stage_id === "equilibration"
+              ? "Equilibration input"
+              : `Sampling input ${file.segment_index}`,
+          keywords: [
+            "generated input",
+            "preview",
+            file.stage_id === "equilibration" ? "eq equilibrium" : "sampling",
+          ],
+          run: () => {
+            setSelectedFileKey(file.name);
+            goToControl("review", "generated-input-preview");
+          },
+        }),
+      ),
       {
         id: "import",
+        group: "Actions",
         label: "Import a structure",
-        hint: "RST, CIF, XYZ, PDB",
+        detail: "RST, CIF, XYZ, PDB, MOL, SDF, TRAJ",
+        keywords: [
+          "open",
+          "upload",
+          "file",
+          "rst",
+          "cif",
+          "xyz",
+          "pdb",
+          "mol",
+          "sdf",
+          "traj",
+          "extxyz",
+        ],
+        featured: true,
         run: openFilePicker,
       },
       {
         id: "create",
+        group: "Actions",
         label: "Create run package",
-        hint: ready ? "Ctrl Enter" : "Resolve preflight first",
+        detail: "Export inputs, run script, structure, and manifest",
+        hint: runShortcut,
+        keywords: ["export", "zip", "download", "inputs", "run script"],
+        featured: true,
+        disabledReason: rendering
+          ? "Inputs are still validating."
+          : !ready
+            ? "Resolve preflight issues first."
+            : undefined,
         run: () => void createRun(),
       },
-    ],
-    [createRun, openFilePicker, ready],
-  );
+    ];
+  }, [
+    activeStep,
+    analysis.structure.cell_generated,
+    bootstrap,
+    createRun,
+    displayedDiagnostics,
+    equilibration,
+    molecularMechanics,
+    openFilePicker,
+    ready,
+    rendered?.files,
+    rendering,
+    runShortcut,
+    samplingMode,
+    samplingRunCount,
+    setup,
+    sourceFile,
+  ]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -993,7 +1484,7 @@ export default function App() {
         false;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setPaletteOpen(true);
+        setPaletteOpen((value) => !value);
         return;
       }
       if (
@@ -1240,6 +1731,49 @@ export default function App() {
     }));
   }
 
+  function chooseThermostat(
+    thermostat: (typeof THERMOSTATS)[number]["value"],
+  ) {
+    setSetup((existing) => ({
+      ...existing,
+      preset_id: null,
+      ensemble: existing.ensemble === "NVE" ? "NVT" : existing.ensemble,
+      thermostat,
+    }));
+  }
+
+  function chooseManostat(manostat: (typeof MANOSTATS)[number]["value"]) {
+    setSetup((existing) => ({
+      ...existing,
+      preset_id: null,
+      ensemble: "NPT",
+      thermostat: existing.thermostat ?? "velocity_rescaling",
+      manostat,
+      pressure_bar: existing.pressure_bar ?? 1.01325,
+    }));
+  }
+
+  function goToControl(step: StepId, controlId?: string) {
+    setActiveStep(step);
+    if (!controlId) return;
+    window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        const control = document.getElementById(controlId);
+        const details = control?.closest("details");
+        if (details instanceof HTMLDetailsElement) details.open = true;
+        control?.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (
+          control instanceof HTMLInputElement ||
+          control instanceof HTMLSelectElement ||
+          control instanceof HTMLButtonElement ||
+          control instanceof HTMLTextAreaElement
+        ) {
+          control.focus({ preventScroll: true });
+        }
+      });
+    }, 0);
+  }
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -1253,12 +1787,12 @@ export default function App() {
         <button
           type="button"
           className="command-trigger"
-          aria-label="Search commands"
+          aria-label={`Search setup, ${searchShortcut}`}
           onClick={() => setPaletteOpen(true)}
         >
           <Search size={16} aria-hidden="true" />
-          <span>Search commands</span>
-          <kbd>Ctrl K</kbd>
+          <span>Search setup</span>
+          <kbd>{searchShortcut}</kbd>
         </button>
         <div className="header-status">
           {bootstrap ? (
@@ -1609,6 +2143,7 @@ export default function App() {
                       <Field
                         label="System density"
                         unit="g cm⁻³"
+                        controlId="mm-density"
                         help="Required because the imported structure has no physical periodic cell. PQ uses the equivalent kg L⁻¹ value."
                       >
                         <input
@@ -1630,6 +2165,7 @@ export default function App() {
                     <Field
                       label="Coulomb cutoff"
                       unit="Å"
+                      controlId="mm-cutoff"
                       help={
                         analysis.structure.cell_generated
                           ? "Must be below half the box length derived from the density."
@@ -1925,8 +2461,17 @@ export default function App() {
                           : `Create ${samplingRunCount} linked inputs. Each later input reads the previous restart.`}
                       </p>
 
-                      <div className="form-grid sampling-length-grid">
-                        <Field label="Steps per input">
+                      <div
+                        className={`form-grid sampling-length-grid ${samplingMode}`}
+                      >
+                        <Field
+                          label={
+                            samplingMode === "single"
+                              ? "Steps"
+                              : "Steps per input"
+                          }
+                          controlId="sampling-steps"
+                        >
                           <input
                             type="number"
                             min="1"
@@ -1942,40 +2487,38 @@ export default function App() {
                             }
                           />
                         </Field>
-                        <Field
-                          label="Number of inputs"
-                          help={
-                            samplingMode === "single"
-                              ? "Choose continued inputs to split the sampling run."
-                              : undefined
-                          }
-                        >
-                          <input
-                            type="number"
-                            min="2"
-                            max="99"
-                            step="1"
-                            inputMode="numeric"
-                            disabled={samplingMode === "single"}
-                            value={samplingRunCountDraft}
-                            onChange={(event) => {
-                              const draft = event.target.value;
-                              setSamplingRunCountDraft(draft);
-                              const count =
-                                parseContinuedSamplingRunCountDraft(draft);
-                              if (count !== null) {
-                                lastContinuedSamplingRunCount.current = count;
-                                setSamplingRunCount(count);
-                              }
-                            }}
-                            onBlur={commitSamplingRunCount}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.currentTarget.blur();
-                              }
-                            }}
-                          />
-                        </Field>
+                        {samplingMode === "continued" && (
+                          <Field
+                            label="Number of inputs"
+                            controlId="sampling-run-count"
+                            help={`Linked inputs are numbered automatically. Maximum ${MAX_SAMPLING_RUNS}.`}
+                          >
+                            <input
+                              type="number"
+                              min="2"
+                              max={MAX_SAMPLING_RUNS}
+                              step="1"
+                              inputMode="numeric"
+                              value={samplingRunCountDraft}
+                              onChange={(event) => {
+                                const draft = event.target.value;
+                                setSamplingRunCountDraft(draft);
+                                const count =
+                                  parseContinuedSamplingRunCountDraft(draft);
+                                if (count !== null) {
+                                  lastContinuedSamplingRunCount.current = count;
+                                  setSamplingRunCount(count);
+                                }
+                              }}
+                              onBlur={commitSamplingRunCount}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.currentTarget.blur();
+                                }
+                              }}
+                            />
+                          </Field>
+                        )}
                       </div>
 
                       <div className="sampling-total" aria-live="polite">
@@ -1989,7 +2532,9 @@ export default function App() {
                           <strong>
                             {setup.steps?.toLocaleString() ?? "—"}
                           </strong>
-                          steps per input
+                          {samplingMode === "single"
+                            ? "steps"
+                            : "steps per input"}
                         </span>
                         <span>
                           <strong>
@@ -2066,6 +2611,7 @@ export default function App() {
                             : "Target temperature"
                         }
                         unit="K"
+                        controlId="sampling-temperature"
                       >
                         <input
                           type="number"
@@ -2086,6 +2632,7 @@ export default function App() {
                         <Field
                           label="Target pressure"
                           unit="bar"
+                          controlId="sampling-pressure"
                           help="1 atm = 1.01325 bar; negative values model tension."
                         >
                           <input
@@ -2103,7 +2650,11 @@ export default function App() {
                           />
                         </Field>
                       )}
-                      <Field label="Timestep" unit="fs">
+                      <Field
+                        label="Timestep"
+                        unit="fs"
+                        controlId="sampling-timestep"
+                      >
                         <input
                           type="number"
                           min="0.000001"
@@ -2126,6 +2677,7 @@ export default function App() {
                       <>
                         <TemperatureCoupling
                           value={setup}
+                          controlId="sampling-thermostat"
                           onChange={(patch) =>
                             setSetup((existing) => ({
                               ...existing,
@@ -2149,6 +2701,7 @@ export default function App() {
                     {setup.ensemble === "NPT" && (
                       <PressureCoupling
                         value={setup}
+                        controlId="sampling-manostat"
                         onChange={(patch) =>
                           setSetup((existing) => ({
                             ...existing,
@@ -2206,6 +2759,7 @@ export default function App() {
                     <Field
                       label="Position σ"
                       unit="Å"
+                      controlId="position-sigma"
                       help="0.01 Å is a conservative starting point."
                     >
                       <input
@@ -2222,6 +2776,7 @@ export default function App() {
                     </Field>
                     <Field
                       label="Random seed"
+                      controlId="position-seed"
                       help="The same seed reproduces the same coordinates."
                     >
                       <input
@@ -2289,7 +2844,7 @@ export default function App() {
                 description="Check the input sequence before creating the run package."
               />
               <div className="form-grid review-fields">
-                <Field label="Run name">
+                <Field label="Run name" controlId="run-name">
                   <input
                     value={setup.file_prefix}
                     onChange={(event) =>
@@ -2300,7 +2855,7 @@ export default function App() {
                     }
                   />
                 </Field>
-                <Field label="Start file">
+                <Field label="Start file" controlId="start-file">
                   <input
                     value={setup.start_file}
                     onChange={(event) =>

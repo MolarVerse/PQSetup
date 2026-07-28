@@ -33,18 +33,21 @@ describe("run plan labels", () => {
 
   it("clamps counts and pads labels", () => {
     expect(clampSamplingRunCount(0)).toBe(1);
-    expect(clampSamplingRunCount(120)).toBe(99);
+    expect(clampSamplingRunCount(120)).toBe(120);
+    expect(clampSamplingRunCount(1000)).toBe(999);
     expect(samplingLabel(7)).toBe("07");
+    expect(samplingLabel(100)).toBe("100");
   });
 
-  it("keeps continued input counts between 2 and 99", () => {
+  it("keeps continued input counts between 2 and 999", () => {
     expect(parseContinuedSamplingRunCountDraft("")).toBeNull();
     expect(parseContinuedSamplingRunCountDraft("1")).toBeNull();
     expect(parseContinuedSamplingRunCountDraft("12")).toBe(12);
-    expect(parseContinuedSamplingRunCountDraft("100")).toBeNull();
+    expect(parseContinuedSamplingRunCountDraft("100")).toBe(100);
+    expect(parseContinuedSamplingRunCountDraft("1000")).toBeNull();
     expect(commitContinuedSamplingRunCountDraft("", 12)).toBe(12);
     expect(commitContinuedSamplingRunCountDraft("1", 12)).toBe(2);
-    expect(commitContinuedSamplingRunCountDraft("100", 12)).toBe(99);
+    expect(commitContinuedSamplingRunCountDraft("1000", 12)).toBe(999);
   });
 
   it("maps the visible output choice to the backend file count", () => {
@@ -83,18 +86,18 @@ describe("run plan labels", () => {
     } satisfies PlannedInput;
     const sampling = {
       ...shared,
-      name: "run-99.in",
+      name: "run-100.in",
       stage_id: "sampling",
-      stage_label: "Sampling 99",
-      segment_index: 99,
-      segment_count: 99,
+      stage_label: "Sampling 100",
+      segment_index: 100,
+      segment_count: 100,
     } satisfies PlannedInput;
 
     expect(plannedInputOptionLabel(equilibration, 100)).toBe(
       "eq · run-eq.in — Equilibration",
     );
     expect(plannedInputOptionLabel(sampling, 100)).toBe(
-      "99 · run-99.in — Sampling 99 of 99",
+      "100 · run-100.in — Sampling 100 of 100",
     );
 
     expect(
@@ -106,11 +109,11 @@ describe("run plan labels", () => {
     ).toBe("run-eq.in");
     expect(
       nextPlannedInputSelection(
-        "run-99.in",
+        "run-100.in",
         "run-eq.in",
         [equilibration, sampling],
       ),
-    ).toBe("run-99.in");
+    ).toBe("run-100.in");
     expect(
       nextPlannedInputSelection(
         "run-98.in",

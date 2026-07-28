@@ -207,7 +207,7 @@ class RunPlanRequest(BaseModel):
     setup: SimulationSetup
     structure: Structure | None = None
     equilibration: EquilibrationStage | None = None
-    sampling_run_count: int = Field(default=1, ge=1, le=99)
+    sampling_run_count: int = Field(default=1, ge=1, le=999)
     setup_files: list[SetupFileReference] = Field(
         default_factory=list,
         max_length=5,
@@ -261,7 +261,7 @@ class ExportRequest(BaseModel):
     project_name: str = "pq-run"
     preparation: PreparationMetadata | None = None
     equilibration: EquilibrationStage | None = None
-    sampling_run_count: int | None = Field(default=None, ge=1, le=99)
+    sampling_run_count: int | None = Field(default=None, ge=1, le=999)
     setup_files: list[SetupFile] = Field(default_factory=list, max_length=5)
 
 
