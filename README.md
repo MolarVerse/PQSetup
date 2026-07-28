@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="frontend/public/pq-logo.png" alt="PQ logo" width="104">
-</p>
+<img src="https://raw.githubusercontent.com/MolarVerse/PQSetup/main/frontend/public/pq-logo.png" alt="PQSetup logo" width="200">
 
 <h1 align="center">PQSetup</h1>
 
