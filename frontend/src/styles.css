@@ -1854,11 +1854,17 @@ kbd {
   padding: 4px 0 14px;
 }
 
+.chemical-formula {
+  display: inline-block;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .chemical-formula sub {
-  position: relative;
-  bottom: -0.08em;
+  position: static;
   font-size: 0.72em;
-  line-height: 0;
+  line-height: 1;
+  vertical-align: -0.2em;
 }
 
 .prepare-row,
