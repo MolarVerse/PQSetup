@@ -9,6 +9,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import __version__
 from .executable import discover_pq
 from .input_writer import validate_input_file
 from .models import DoctorReport
@@ -22,6 +23,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Prepare and validate PQ simulation inputs.",
     )
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+    )
+    parser.add_argument(
         "--pq-executable",
         dest="pq_executable",
         help="Use this PQ executable.",
@@ -29,7 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
 
     serve = subcommands.add_parser("serve", help="Open the local interface.")
-    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument(
+        "--host",
+        choices=("127.0.0.1", "localhost"),
+        default="127.0.0.1",
+    )
     serve.add_argument("--port", default=8888, type=int)
     serve.add_argument("--no-browser", action="store_true")
     serve.add_argument(

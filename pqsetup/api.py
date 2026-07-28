@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .executable import discover_pq
@@ -50,10 +51,18 @@ from .structures import (
 
 _MAX_STRUCTURE_BYTES = 100 * 1024 * 1024
 _MAX_SETUP_FILE_BYTES = 100 * 1024 * 1024
+_TRUSTED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "testserver"]
 
 
 def create_app(*, pq_executable: str | None = None) -> FastAPI:
-    app = FastAPI(title="PQSetup", version=__version__)
+    app = FastAPI(
+        title="PQSetup",
+        version=__version__,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_TRUSTED_HOSTS)
     pq = discover_pq(pq_executable)
     runner_context = pq.executable if pq.found else None
     runners = (

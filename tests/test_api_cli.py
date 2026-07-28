@@ -7,10 +7,12 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 import pqsetup.api
 import pqsetup.cli
+from pqsetup import __version__
 from pqsetup.api import create_app
 from pqsetup.cli import _print_doctor, build_parser, main
 from pqsetup.models import (
@@ -28,7 +30,25 @@ from pqsetup.structures import perturb_structure
 DATA = Path(__file__).parent / "data"
 
 
-def test_bootstrap_reports_pq_runners_and_presets() -> None:
+def test_cli_reports_version(capsys) -> None:
+    with pytest.raises(SystemExit) as error:
+        build_parser().parse_args(["--version"])
+
+    assert error.value.code == 0
+    assert capsys.readouterr().out.strip() == f"pqsetup {__version__}"
+
+
+def test_bootstrap_reports_pq_runners_and_presets(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pqsetup.api,
+        "discover_pq",
+        lambda _: PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version=TARGET_PQ_RELEASE,
+            detail="Ready.",
+        ),
+    )
     response = TestClient(create_app()).get("/api/bootstrap")
 
     assert response.status_code == 200
@@ -45,6 +65,22 @@ def test_bootstrap_reports_pq_runners_and_presets() -> None:
     assert "g16" not in runner_ids
     assert "fennol" not in runner_ids
     assert "mace_cpp" not in runner_ids
+
+
+def test_untrusted_host_is_rejected() -> None:
+    response = TestClient(create_app()).get(
+        "/api/health",
+        headers={"host": "example.org"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_local_api_does_not_expose_interactive_docs() -> None:
+    client = TestClient(create_app())
+
+    assert client.get("/docs").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
 
 
 def test_analyze_and_perturb_upload_end_to_end() -> None:
@@ -381,6 +417,11 @@ def test_pq_executable_option_works_before_or_after_serve() -> None:
     assert default_serve.pq_executable == "/tmp/PQ-custom"
     assert explicit_serve.command_pq_executable == "/tmp/PQ-other"
     assert parser.parse_args(["serve"]).port == 8888
+
+
+def test_serve_rejects_network_bind_addresses() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["serve", "--host", "0.0.0.0"])
 
 
 def test_cli_import_does_not_probe_the_web_application() -> None:

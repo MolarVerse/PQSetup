@@ -708,7 +708,6 @@ wheels = [
 
 [[package]]
 name = "pqsetup"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "ase" },
@@ -746,7 +745,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.13" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
-provides-extras = ["test", "dev"]
+provides-extras = ["dev", "test"]
 
 [[package]]
 name = "pydantic"

@@ -4,13 +4,27 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pqsetup"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Prepare and validate PQ simulation inputs."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
   { name = "MolarVerse" },
+]
+keywords = [
+  "computational chemistry",
+  "molecular dynamics",
+  "simulation input",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Chemistry",
 ]
 requires-python = ">=3.11"
 dependencies = [
@@ -35,6 +49,14 @@ dev = [
 
 [project.scripts]
 pqsetup = "pqsetup.cli:main"
+
+[project.urls]
+Repository = "https://github.com/MolarVerse/PQSetup"
+Issues = "https://github.com/MolarVerse/PQSetup/issues"
+PQ = "https://github.com/MolarVerse/PQ"
+
+[tool.hatch.version]
+path = "pqsetup/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pqsetup"]

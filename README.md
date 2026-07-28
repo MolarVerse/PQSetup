@@ -1,70 +1,107 @@
-# PQSetup
+<p align="center">
+  <img src="frontend/public/pq-logo.png" alt="PQ logo" width="104">
+</p>
 
-PQSetup prepares validated, reproducible inputs for PQ simulations.
+<h1 align="center">PQSetup</h1>
 
-It combines a guided run protocol, structure checks, method diagnostics,
-and readable input previews in one local application.
+<p align="center">
+  Prepare and validate PQ simulation inputs before a run.
+</p>
 
-PQSetup currently targets the input schema of PQ v0.6.4. It detects and shows
-the version of the selected PQ executable separately.
+<p align="center">
+  <a href="https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml"><img src="https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2f6f8f.svg" alt="MIT License"></a>
+</p>
 
-## Development
+PQSetup is a local graphical setup tool for
+[PQ](https://github.com/MolarVerse/PQ). It checks structures, guides ensemble
+and method selection, builds equilibration and sampling plans, and exports
+readable inputs with a fail-fast run script.
 
-Requires Python 3.11 or newer and Node.js 20 or newer.
+![PQSetup structure and preflight workflow](docs/assets/pqsetup-workspace.png)
+
+## Quick start
+
+PQSetup requires Python 3.11 or newer. A PQ installation is recommended but
+not required to prepare an input.
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-npm --prefix frontend install
-npm --prefix frontend run build
-.venv/bin/pqsetup
+git clone https://github.com/MolarVerse/PQSetup.git
+cd PQSetup
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install .
+pqsetup
 ```
 
-The application opens locally in the default browser. It does not submit or
-run a simulation.
+The interface is bundled with the Python package, so Node.js is not needed to
+install or run PQSetup. It opens on `127.0.0.1` and does not submit or run a
+simulation.
+
+Check the local PQ installation and available external calculators:
+
+```bash
+pqsetup doctor
+```
+
+For an executable with a different name or location:
+
+```bash
+pqsetup --pq-executable /path/to/PQ
+```
+
+The same path can be set with `PQ_EXECUTABLE`.
+
+## PQ compatibility
+
+PQSetup currently targets the stable PQ v0.6.4 input schema. It detects the
+selected executable's version and uses PQ's machine-readable CLI when
+available:
+
+| PQ command | Used for |
+| --- | --- |
+| `PQ --capabilities=json` | Version, compiled features, external calculators, defaults, and supported ranges |
+| `PQ --validate run.in --format=json --scope=installed` | Authoritative parser and setup validation |
+
+This CLI contract is implemented for the planned PQ v0.7 release in
+[PQ pull request #322](https://github.com/MolarVerse/PQ/pull/322). With older
+PQ versions, PQSetup keeps local checks active and states when PQ validation
+was not run.
+
+## What it prepares
+
+- XYZ and PQ restart structures, including collision and periodic-cell checks.
+- Vacuum, NVT, and NPT conditions with the controls supported by PQ v0.6.4.
+- QM and molecular-mechanics inputs with calculator availability diagnostics.
+- Optional NVT equilibration followed by one or more numbered sampling runs.
+- Seeded velocity initialization and optional Gaussian position perturbation.
+- `run-eq.in`, `run-01.in` through `run-999.in`, and a `run.sh` launcher.
+
+Exported launchers write logs to `run-logs/` and stop at the first failed or
+incomplete PQ run.
 
 ## Command line
 
 ```bash
-pqsetup
-pqsetup doctor
-pqsetup validate run.in
-pqsetup serve --no-browser
+pqsetup                              # open the local interface
+pqsetup doctor                       # inspect PQ and calculators
+pqsetup validate run.in              # check an existing input
+pqsetup serve --no-browser           # run without opening a browser
 ```
 
-Set a non-standard PQ executable with `PQ_EXECUTABLE` or
-`--pq-executable /path/to/PQ`.
+Use `--json` with `doctor` or `validate` for machine-readable output.
 
-## Running a package
+## Development
+
+Node.js 20 or newer is required only when changing the interface.
 
 ```bash
-./run.sh
-PQ_EXECUTABLE=/path/to/PQ ./run.sh
+python -m pip install -e ".[dev]"
+npm --prefix frontend ci
+python -m pytest
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
 
-The launcher runs `run-eq.in`, then each numbered sampling input. It writes
-logs to `run-logs/` and stops at the first failed or incomplete PQ run.
-
-## Scientific behavior
-
-- The ambient NPT preset starts at 298.15 K and 1.01325 bar.
-- Coupling hints use PQ v0.6.4 defaults; compressibility remains material-specific.
-- NVT and NPT expose every thermostat and method-specific control in PQ v0.6.4.
-- NPT exposes both manostats, relaxation, compressibility, and cell response.
-- Sampling can follow an NVT equilibration and be split into linked runs.
-- Run-plan inputs use optional `run-eq.in`, then `run-01.in` through `run-999.in`.
-- Exported packages include `run.sh`, which logs every stage and stops unless
-  PQ reports normal completion.
-- Quantum-mechanical protocols use one calculator for the complete sequence.
-- Molecular mechanics supports GUFF, bonded + GUFF, and classical force fields.
-- MM packages include the selected molecule descriptor, GUFF, topology,
-  parameter, and intramolecular nonbonded files without modifying them.
-- Missing PQ or calculator installations warn without blocking input creation.
-- Velocity initialization is delegated to PQ through `init_velocities`.
-- Position perturbations are Gaussian, seeded, reversible, and revalidated.
-- Cell-less molecules receive a centered vacuum cell with 6 Å padding.
-- QM NPT requires a physical periodic cell. MM can derive the cell from density.
-- Typed PQ restarts are preserved and validated for molecular mechanics.
-- MM cutoff validation accounts for the physical or density-derived cell size.
-- Collision checks use periodic minimum-image distances.
-- Calculator choices are limited to methods in the targeted PQ release.
+PQSetup is available under the [MIT License](LICENSE).
