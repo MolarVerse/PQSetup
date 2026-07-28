@@ -17,6 +17,8 @@ import type { Atom, StructureAnalysis } from "./types";
 interface StructureViewerProps {
   analysis: StructureAnalysis;
   example: boolean;
+  generatedCellTreatment: "padding" | "density";
+  densityGcm3: number | null;
 }
 
 type Point3 = [number, number, number];
@@ -100,9 +102,12 @@ const CELL_EDGES: [number, number][] = [
 export default function StructureViewer({
   analysis,
   example,
+  generatedCellTreatment,
+  densityGcm3,
 }: StructureViewerProps) {
   const [rotation, setRotation] = useState<[number, number]>([-0.42, 0.58]);
   const [zoom, setZoom] = useState(1);
+  const [showGeneratedCell, setShowGeneratedCell] = useState(false);
   const stage = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(
     null,
@@ -124,6 +129,16 @@ export default function StructureViewer({
     return () => element.removeEventListener("wheel", handleWheel);
   }, []);
 
+  useEffect(() => {
+    setShowGeneratedCell(false);
+  }, [analysis.structure, generatedCellTreatment]);
+
+  const generatedCell = analysis.structure.cell_generated;
+  const displayCell = Boolean(
+    analysis.structure.cell && (!generatedCell || showGeneratedCell),
+  );
+  const padding = analysis.structure.cell_padding_angstrom ?? 6;
+
   const scene = useMemo(() => {
     const allAtoms = analysis.structure.atoms;
     const stride = Math.max(1, Math.ceil(allAtoms.length / 1200));
@@ -131,10 +146,10 @@ export default function StructureViewer({
       .map((atom, index) => ({ atom, index }))
       .filter((_, index) => index % stride === 0);
     const points: Point3[] = atoms.map(({ atom }) => atom.position);
-    const corners = analysis.structure.cell
+    const corners = displayCell && analysis.structure.cell
       ? cellCorners(analysis.structure.cell as Point3[])
       : [];
-    const center: Point3 = analysis.structure.cell
+    const center: Point3 = displayCell && analysis.structure.cell
       ? [0, 0, 0]
       : points.length
         ? ([0, 1, 2].map((axis) => {
@@ -197,7 +212,7 @@ export default function StructureViewer({
       cell: projectedCell,
       sampled: stride > 1,
     };
-  }, [analysis, rotation, zoom]);
+  }, [analysis, displayCell, rotation, zoom]);
 
   const collisionAtoms = useMemo(
     () =>
@@ -267,7 +282,13 @@ export default function StructureViewer({
           ref={stage}
           viewBox="0 0 600 420"
           role="img"
-          aria-label={`Interactive view of ${analysis.summary.formula || "the structure"}`}
+          aria-label={`Interactive view of ${
+            analysis.summary.formula || "the structure"
+          }${
+            generatedCell
+              ? `. Generated cell ${showGeneratedCell ? "shown" : "hidden"}`
+              : ""
+          }`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -282,7 +303,9 @@ export default function StructureViewer({
                 y1={scene.cell[left].y}
                 x2={scene.cell[right].x}
                 y2={scene.cell[right].y}
-                className="cell-edge"
+                className={`cell-edge ${
+                  generatedCell ? "generated-cell-edge" : ""
+                }`}
               />
             ))}
           {scene.bonds.map(({ left, right }) => {
@@ -359,6 +382,9 @@ export default function StructureViewer({
         {scene.sampled && (
           <div className="sample-label">Preview sampled for speed</div>
         )}
+        {generatedCell && showGeneratedCell && (
+          <div className="generated-cell-label">Generated preview box</div>
+        )}
       </div>
 
       <div className="view-controls" aria-label="View orientation">
@@ -382,6 +408,29 @@ export default function StructureViewer({
         </button>
       </div>
 
+      {generatedCell && (
+        <div className="generated-cell-note">
+          <span>
+            <strong>No periodic cell in source</strong>
+            <small>
+              {generatedCellTreatment === "density"
+                ? densityGcm3
+                  ? `PQ derives the run cell from ${densityGcm3} g cm⁻³. The optional box is a ${padding} Å preview envelope.`
+                  : `PQ derives the run cell from density. The optional box is a ${padding} Å preview envelope.`
+                : `PQSetup adds a centered run cell with ${padding} Å padding. The uploaded file is unchanged.`}
+            </small>
+          </span>
+          <button
+            type="button"
+            aria-pressed={showGeneratedCell}
+            onClick={() => setShowGeneratedCell((value) => !value)}
+          >
+            <Box size={14} aria-hidden="true" />
+            {showGeneratedCell ? "Hide box" : "Show box"}
+          </button>
+        </div>
+      )}
+
       <dl className="structure-facts">
         <div>
           <dt>Formula</dt>
@@ -395,7 +444,11 @@ export default function StructureViewer({
             {analysis.structure.cell ? (
               <>
                 <Box size={14} aria-hidden="true" />
-                {analysis.structure.cell_generated ? "Vacuum" : "Centered"}
+                {generatedCell
+                  ? generatedCellTreatment === "density"
+                    ? "Density-derived"
+                    : "Generated"
+                  : "Imported"}
               </>
             ) : (
               "None"

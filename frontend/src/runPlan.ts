@@ -1,3 +1,5 @@
+import type { PlannedInput } from "./types";
+
 export const MIN_SAMPLING_RUNS = 1;
 export const MAX_SAMPLING_RUNS = 99;
 export const MIN_CONTINUED_SAMPLING_RUNS = 2;
@@ -65,6 +67,31 @@ export function samplingRunCountForMode(
 
 export function samplingLabel(index: number): string {
   return String(index).padStart(2, "0");
+}
+
+export function plannedInputOptionLabel(
+  file: PlannedInput,
+  totalFiles: number,
+): string {
+  if (file.stage_id === "equilibration") {
+    return `eq · ${file.name} — Equilibration`;
+  }
+  const segmentIndex = file.segment_index ?? file.stage_index;
+  const segmentCount = file.segment_count ?? totalFiles;
+  return `${samplingLabel(segmentIndex)} · ${file.name} — Sampling ${segmentIndex} of ${segmentCount}`;
+}
+
+export function nextPlannedInputSelection(
+  currentName: string | null,
+  previousFirstName: string | null,
+  files: PlannedInput[],
+): string | null {
+  const firstName = files[0]?.name ?? null;
+  if (firstName !== previousFirstName) return firstName;
+  if (currentName && files.some((file) => file.name === currentName)) {
+    return currentName;
+  }
+  return firstName;
 }
 
 export function samplingRunSummary(

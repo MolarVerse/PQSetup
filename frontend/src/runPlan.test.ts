@@ -3,12 +3,15 @@ import {
   clampSamplingRunCount,
   commitContinuedSamplingRunCountDraft,
   compactRunFileNames,
+  nextPlannedInputSelection,
   parseContinuedSamplingRunCountDraft,
+  plannedInputOptionLabel,
   samplingLabel,
   samplingOutputMode,
   samplingRunCountForMode,
   samplingRunSummary,
 } from "./runPlan";
+import type { PlannedInput } from "./types";
 
 describe("run plan labels", () => {
   it("keeps sampling numbering independent from equilibration", () => {
@@ -58,5 +61,62 @@ describe("run plan labels", () => {
       "3 sampling files · 02–03 continued",
     );
     expect(samplingRunSummary(1, true)).toBe("1 sampling file · from eq");
+  });
+
+  it("labels equilibration and large sampling plans for a file selector", () => {
+    const shared = {
+      stage_index: 1,
+      stage_count: 100,
+      calculator_id: "molecular_mechanics",
+      calculator_label: "Molecular mechanics · GUFF",
+      input_text: "",
+      start_file: "structure.rst",
+      restart_file: "run.rst",
+    };
+    const equilibration = {
+      ...shared,
+      name: "run-eq.in",
+      stage_id: "equilibration",
+      stage_label: "NVT equilibration",
+      segment_index: null,
+      segment_count: null,
+    } satisfies PlannedInput;
+    const sampling = {
+      ...shared,
+      name: "run-99.in",
+      stage_id: "sampling",
+      stage_label: "Sampling 99",
+      segment_index: 99,
+      segment_count: 99,
+    } satisfies PlannedInput;
+
+    expect(plannedInputOptionLabel(equilibration, 100)).toBe(
+      "eq · run-eq.in — Equilibration",
+    );
+    expect(plannedInputOptionLabel(sampling, 100)).toBe(
+      "99 · run-99.in — Sampling 99 of 99",
+    );
+
+    expect(
+      nextPlannedInputSelection(
+        "run-01.in",
+        "run-01.in",
+        [equilibration, sampling],
+      ),
+    ).toBe("run-eq.in");
+    expect(
+      nextPlannedInputSelection(
+        "run-99.in",
+        "run-eq.in",
+        [equilibration, sampling],
+      ),
+    ).toBe("run-99.in");
+    expect(
+      nextPlannedInputSelection(
+        "run-98.in",
+        "run-eq.in",
+        [equilibration, sampling],
+      ),
+    ).toBe("run-eq.in");
   });
 });

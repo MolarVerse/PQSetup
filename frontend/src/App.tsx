@@ -3,6 +3,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CircleAlert,
   CircleHelp,
@@ -43,6 +44,7 @@ import {
   PRESSURE_ISOTROPIES,
   THERMOSTATS,
 } from "./conditionOptions";
+import { diagnosticStep } from "./diagnosticNavigation";
 import {
   activeSetupFiles,
   defaultSetupFileName,
@@ -55,7 +57,9 @@ import {
   commitContinuedSamplingRunCountDraft,
   compactRunFileNames,
   DEFAULT_CONTINUED_SAMPLING_RUNS,
+  nextPlannedInputSelection,
   parseContinuedSamplingRunCountDraft,
+  plannedInputOptionLabel,
   samplingLabel,
   samplingOutputMode,
   samplingRunCountForMode,
@@ -649,6 +653,7 @@ export default function App() {
     kind: "error" | "success" | "info";
     message: string;
   } | null>(null);
+  const generatedInputSelectId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
   const workflowNav = useRef<HTMLElement>(null);
   const workflowStepButtons = useRef<
@@ -658,10 +663,10 @@ export default function App() {
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
+  const firstGeneratedFileName = useRef<string | null>(null);
   const lastContinuedSamplingRunCount = useRef(
     DEFAULT_CONTINUED_SAMPLING_RUNS,
   );
-  const generatedFileTabs = useRef<Array<HTMLButtonElement | null>>([]);
   const molecularMechanics = isMolecularMechanics(setup);
   const methodSetupFiles = useMemo(
     () =>
@@ -739,20 +744,19 @@ export default function App() {
         samplingRunCount,
         setupFileReferences,
         analysis.structure,
-      )
+        )
         .then((result) => {
           if (sequence !== renderSequence.current) return;
+          const previousFirstName = firstGeneratedFileName.current;
+          firstGeneratedFileName.current = result.files[0]?.name ?? null;
           setRendered(result);
-          setSelectedFileKey((current) => {
-            if (
-              current &&
-              result.files.some((file) => file.name === current)
-            ) {
-              return current;
-            }
-            const first = result.files[0];
-            return first?.name ?? null;
-          });
+          setSelectedFileKey((current) =>
+            nextPlannedInputSelection(
+              current,
+              previousFirstName,
+              result.files,
+            ),
+          );
         })
         .catch((error) => {
           if (sequence === renderSequence.current) {
@@ -797,6 +801,15 @@ export default function App() {
   );
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
+  const equilibrationFiles = useMemo(
+    () =>
+      rendered?.files.filter((file) => file.stage_id === "equilibration") ?? [],
+    [rendered],
+  );
+  const samplingFiles = useMemo(
+    () => rendered?.files.filter((file) => file.stage_id === "sampling") ?? [],
+    [rendered],
+  );
   const selectedMethodLabel = molecularMechanics
     ? `Molecular mechanics · ${mmModeLabel(setup.mm_force_field)}`
     : selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
@@ -857,6 +870,11 @@ export default function App() {
       generatedCellNpt,
       rendered?.diagnostics,
     ],
+  );
+  const displayedDiagnostics = useMemo(
+    () =>
+      diagnostics.filter((item) => item.code !== "structure.cell_generated"),
+    [diagnostics],
   );
 
   const errorCount = diagnostics.filter(
@@ -2327,92 +2345,119 @@ export default function App() {
                 </p>
               </section>
               {rendered && rendered.files.length > 0 && (
-                <div className="generated-files" aria-label="Generated inputs">
-                  <section>
-                    <header>{selectedMethodLabel}</header>
-                    <div
-                      role="tablist"
-                      aria-label={`${selectedMethodLabel} input files`}
-                    >
-                      {rendered.files.map((file, index) => {
-                        const key = file.name;
-                        const active = selectedFileKey === key;
-                        const fallbackSamplingIndex =
-                          rendered.files
-                            .filter((item) => item.stage_id === "sampling")
-                            .findIndex((item) => item.name === file.name) + 1;
-                        const sequenceLabel =
-                          file.stage_id === "equilibration"
-                            ? "eq"
-                            : samplingLabel(
-                                file.segment_index ?? fallbackSamplingIndex,
-                              );
-                        return (
-                          <button
-                            ref={(node) => {
-                              generatedFileTabs.current[index] = node;
-                            }}
-                            type="button"
-                            role="tab"
-                            id={`generated-file-tab-${index}`}
-                            aria-selected={active}
-                            aria-controls="generated-input-panel"
-                            tabIndex={active ? 0 : -1}
-                            className={active ? "selected" : ""}
-                            key={key}
-                            onClick={() => setSelectedFileKey(key)}
-                            onKeyDown={(event) => {
-                              let nextIndex = index;
-                              if (event.key === "ArrowRight") {
-                                nextIndex = (index + 1) % rendered.files.length;
-                              } else if (event.key === "ArrowLeft") {
-                                nextIndex =
-                                  (index - 1 + rendered.files.length) %
-                                  rendered.files.length;
-                              } else if (event.key === "Home") {
-                                nextIndex = 0;
-                              } else if (event.key === "End") {
-                                nextIndex = rendered.files.length - 1;
-                              } else {
-                                return;
-                              }
-
-                              event.preventDefault();
-                              setSelectedFileKey(rendered.files[nextIndex].name);
-                              const nextTab =
-                                generatedFileTabs.current[nextIndex];
-                              nextTab?.focus();
-                              nextTab?.scrollIntoView({
-                                block: "nearest",
-                                inline: "nearest",
-                              });
-                            }}
-                          >
-                            <span className="file-sequence">
-                              {sequenceLabel}
-                            </span>
-                            <span>
-                              <strong>{file.name}</strong>
-                              <small>{file.stage_label}</small>
-                            </span>
-                            <CheckCircle2 size={15} aria-hidden="true" />
-                          </button>
-                        );
-                      })}
+                <section
+                  className="generated-inputs"
+                  aria-labelledby="generated-inputs-title"
+                >
+                  <header>
+                    <span>
+                      <strong id="generated-inputs-title">
+                        Generated inputs
+                      </strong>
+                      <small>{selectedMethodLabel}</small>
+                    </span>
+                    <span>
+                      {rendered.files.length}{" "}
+                      {rendered.files.length === 1 ? "file" : "files"}
+                    </span>
+                  </header>
+                  {rendered.files.length === 1 ? (
+                    <div className="single-input-file">
+                      <FileCode2 size={16} aria-hidden="true" />
+                      <span>
+                        <strong>{selectedFile?.name}</strong>
+                        <small>{selectedFile?.stage_label}</small>
+                      </span>
                     </div>
-                  </section>
-                </div>
+                  ) : (
+                    <div className="input-navigator">
+                      <button
+                        type="button"
+                        aria-label="Previous input"
+                        aria-controls="generated-input-preview"
+                        disabled={selectedFileIndex <= 0}
+                        onClick={() => {
+                          if (selectedFileIndex <= 0) return;
+                          setSelectedFileKey(
+                            rendered.files[selectedFileIndex - 1].name,
+                          );
+                        }}
+                      >
+                        <ChevronLeft size={16} aria-hidden="true" />
+                      </button>
+                      <label htmlFor={generatedInputSelectId}>
+                        <span className="visually-hidden">Generated input</span>
+                        <select
+                          id={generatedInputSelectId}
+                          aria-label="Generated input"
+                          aria-controls="generated-input-preview"
+                          value={selectedFile?.name ?? ""}
+                          onChange={(event) =>
+                            setSelectedFileKey(event.target.value)
+                          }
+                        >
+                          {equilibrationFiles.length > 0 && (
+                            <optgroup label="Equilibration">
+                              {equilibrationFiles.map((file) => (
+                                <option key={file.name} value={file.name}>
+                                  {plannedInputOptionLabel(
+                                    file,
+                                    rendered.files.length,
+                                  )}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {samplingFiles.length > 0 && (
+                            <optgroup label="Sampling">
+                              {samplingFiles.map((file) => (
+                                <option key={file.name} value={file.name}>
+                                  {plannedInputOptionLabel(
+                                    file,
+                                    rendered.files.length,
+                                  )}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </label>
+                      <output aria-live="polite">
+                        {selectedFileIndex + 1} of {rendered.files.length}
+                      </output>
+                      <button
+                        type="button"
+                        aria-label="Next input"
+                        aria-controls="generated-input-preview"
+                        disabled={
+                          selectedFileIndex < 0 ||
+                          selectedFileIndex >= rendered.files.length - 1
+                        }
+                        onClick={() => {
+                          if (
+                            selectedFileIndex < 0 ||
+                            selectedFileIndex >= rendered.files.length - 1
+                          ) {
+                            return;
+                          }
+                          setSelectedFileKey(
+                            rendered.files[selectedFileIndex + 1].name,
+                          );
+                        }}
+                      >
+                        <ChevronRight size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  )}
+                </section>
               )}
               <div
                 className="input-preview"
-                id="generated-input-panel"
-                role={rendered?.files.length ? "tabpanel" : undefined}
-                aria-labelledby={
-                  selectedFileIndex >= 0
-                    ? `generated-file-tab-${selectedFileIndex}`
-                    : undefined
-                }
-                tabIndex={rendered?.files.length ? 0 : undefined}
+                id="generated-input-preview"
+                role="region"
+                aria-label={`Input preview: ${
+                  selectedFile?.name ?? "preparing inputs"
+                }`}
               >
                 <div className="preview-title">
                   <span>
@@ -2484,7 +2529,14 @@ export default function App() {
         </main>
 
         <aside className="inspector">
-          <StructureViewer analysis={analysis} example={isExample} />
+          <StructureViewer
+            analysis={analysis}
+            example={isExample}
+            generatedCellTreatment={
+              molecularMechanics ? "density" : "padding"
+            }
+            densityGcm3={setup.density_g_cm3}
+          />
           <section className="preflight" aria-labelledby="preflight-title">
             <div className="preflight-heading">
               <div>
@@ -2565,32 +2617,32 @@ export default function App() {
                 </span>
               </li>
             </ul>
-            {diagnostics.length > 0 && (
+            {displayedDiagnostics.length > 0 && (
               <div className="diagnostics">
-                {diagnostics.slice(0, 4).map((item: Diagnostic, index) => (
-                  <button
-                    type="button"
-                    key={`${item.code}-${index}`}
-                    className={item.severity}
-                    onClick={() =>
-                      setActiveStep(
-                        item.code.startsWith("structure")
-                          ? "system"
-                          : item.code.startsWith("method") ||
-                              item.code.startsWith("mm.") ||
-                              item.code.startsWith("runner") ||
-                              item.code.startsWith("calculator") ||
-                              item.code.startsWith("pq.")
-                            ? "method"
-                            : "conditions",
-                      )
-                    }
-                  >
-                    <CircleAlert size={14} />
-                    <span>{item.message}</span>
-                    <ChevronRight size={14} />
-                  </button>
-                ))}
+                {displayedDiagnostics
+                  .slice(0, 4)
+                  .map((item: Diagnostic, index) =>
+                    item.severity === "info" ? (
+                      <div
+                        className="diagnostic-row info"
+                        key={`${item.code}-${index}`}
+                      >
+                        <CircleHelp size={14} aria-hidden="true" />
+                        <span>{item.message}</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        key={`${item.code}-${index}`}
+                        className={item.severity}
+                        onClick={() => setActiveStep(diagnosticStep(item.code))}
+                      >
+                        <CircleAlert size={14} aria-hidden="true" />
+                        <span>{item.message}</span>
+                        <ChevronRight size={14} aria-hidden="true" />
+                      </button>
+                    ),
+                  )}
               </div>
             )}
             <button
