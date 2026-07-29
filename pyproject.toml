@@ -38,6 +38,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+  "furo>=2024.8.6,<2027",
+  "sphinx>=8,<9",
+  "sphinx-copybutton>=0.5,<1",
+  "sphinx-design>=0.6,<1",
+]
 test = [
   "httpx>=0.27",
   "pytest>=8.0",
@@ -51,6 +57,7 @@ dev = [
 pqsetup = "pqsetup.cli:main"
 
 [project.urls]
+Documentation = "https://molarverse.github.io/PQSetup/"
 Repository = "https://github.com/MolarVerse/PQSetup"
 Issues = "https://github.com/MolarVerse/PQSetup/issues"
 PQ = "https://github.com/MolarVerse/PQ"

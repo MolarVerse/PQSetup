@@ -1,28 +1,16 @@
 <img src="https://raw.githubusercontent.com/MolarVerse/PQSetup/main/frontend/public/pq-logo.png" alt="PQSetup logo" width="200">
 
-<h1 align="center">PQSetup</h1>
+[![CI](https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml/badge.svg)](https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml)
+[![Docs](https://github.com/MolarVerse/PQSetup/actions/workflows/docs.yml/badge.svg)](https://molarverse.github.io/PQSetup/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-<p align="center">
-  Prepare and validate PQ simulation inputs before a run.
-</p>
+# PQSetup
 
-<p align="center">
-  <a href="https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml"><img src="https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white" alt="Python 3.11+">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2f6f8f.svg" alt="MIT License"></a>
-</p>
+Prepare and validate PQ simulation inputs in a local browser interface.
 
-PQSetup is a local graphical setup tool for
-[PQ](https://github.com/MolarVerse/PQ). It checks structures, guides ensemble
-and method selection, builds equilibration and sampling plans, and exports
-readable inputs with a fail-fast run script.
+## Install
 
-![PQSetup structure and preflight workflow](docs/assets/pqsetup-workspace.png)
-
-## Quick start
-
-PQSetup requires Python 3.11 or newer. A PQ installation is recommended but
-not required to prepare an input.
+PQSetup is currently installed from source and requires Python 3.11 or newer.
 
 ```bash
 git clone https://github.com/MolarVerse/PQSetup.git
@@ -30,69 +18,91 @@ cd PQSetup
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install .
+```
+
+The interface is included in the Python package. Node.js is not required.
+
+## Quick Start
+
+Open the graphical interface:
+
+```bash
 pqsetup
 ```
 
-The interface is bundled with the Python package, so Node.js is not needed to
-install or run PQSetup. It opens on `127.0.0.1` and does not submit or run a
-simulation.
-
-Check the local PQ installation and available external calculators:
+Inspect the selected PQ executable and available calculators:
 
 ```bash
 pqsetup doctor
 ```
 
-For an executable with a different name or location:
+Use a PQ executable with a different name or location:
 
 ```bash
-pqsetup --pq-executable /path/to/PQ
+pqsetup --pq-executable /path/to/PQ doctor
 ```
 
-The same path can be set with `PQ_EXECUTABLE`.
+Validate an existing input:
 
-## PQ compatibility
+```bash
+pqsetup validate run.in
+```
 
-PQSetup currently targets the stable PQ v0.6.4 input schema. It detects the
-selected executable's version and uses PQ's machine-readable CLI when
-available:
+See the [documentation](https://molarverse.github.io/PQSetup/) for server
+options, validation scopes, and complete setup examples.
 
-| PQ command | Used for |
+## Input
+
+| Structure | Extension | Handling |
+| --- | --- | --- |
+| PQ restart | `.rst` | Preserves atom names, molecule types, and available velocities or forces |
+| CIF | `.cif` | Read through ASE |
+| XYZ | `.xyz`, `.extxyz` | Reads standard and extended XYZ data |
+| Protein Data Bank | `.pdb` | Read through ASE |
+| MOL / SDF | `.mol`, `.sdf` | Read through ASE |
+| ASE trajectory | `.traj` | Read through ASE |
+
+Multi-frame ASE sources import the final frame. Structures without a cell
+receive a centered vacuum cell. Periodic coordinates follow PQ's
+origin-centered cell convention.
+
+## Workflow
+
+| Step | Result |
 | --- | --- |
-| `PQ --capabilities=json` | Version, compiled features, external calculators, defaults, and supported ranges |
-| `PQ --validate run.in --format=json --scope=installed` | Authoritative parser and setup validation |
+| System | Inspect coordinates, elements, periodic cells, and close contacts |
+| Method | Configure molecular mechanics or one supported QM calculator |
+| Conditions | Build NVE, NVT, or NPT sampling with optional NVT equilibration |
+| Prepare | Wrap periodic atoms and optionally perturb perfect crystal symmetry |
+| Review | Inspect every generated input before creating the package |
 
-This CLI contract is implemented for the planned PQ v0.7 release in
-[PQ pull request #322](https://github.com/MolarVerse/PQ/pull/322). With older
-PQ versions, PQSetup keeps local checks active and states when PQ validation
-was not run.
+PQSetup does not submit jobs or run the simulation.
 
-## What it prepares
+## Validation
 
-- XYZ and PQ restart structures, including collision and periodic-cell checks.
-- Vacuum, NVT, and NPT conditions with the controls supported by PQ v0.6.4.
-- QM and molecular-mechanics inputs with calculator availability diagnostics.
-- Optional NVT equilibration followed by one or more numbered sampling runs.
-- Seeded velocity initialization and optional Gaussian position perturbation.
-- `run-eq.in`, `run-01.in` through `run-999.in`, and a `run.sh` launcher.
+PQSetup checks the structure, plan, required files, and generated inputs
+locally. When the selected PQ executable advertises machine-readable
+validation, PQSetup also checks the inputs with PQ.
 
-Exported launchers write logs to `run-logs/` and stop at the first failed or
-incomplete PQ run.
+Environment detection reports what is available. It does not establish that a
+method, force field, or protocol is scientifically suitable.
 
-## Command line
+PQSetup targets the stable PQ v0.6.4 input schema.
 
-```bash
-pqsetup                              # open the local interface
-pqsetup doctor                       # inspect PQ and calculators
-pqsetup validate run.in              # check an existing input
-pqsetup serve --no-browser           # run without opening a browser
-```
+## Run Packages
 
-Use `--json` with `doctor` or `validate` for machine-readable output.
+| File | Purpose |
+| --- | --- |
+| `run-eq.in` | Optional NVT equilibration |
+| `run-01.in` … `run-999.in` | Sampling inputs and restart chain |
+| Structure restart | Prepared coordinates under the selected start filename |
+| `run.sh` | Fail-fast execution in the recorded order |
+| `pqproject.json` | Plan, environment, provenance, warnings, and file hashes |
+
+Uploaded force-field files and calculator templates are included in the
+package.
 
 ## Development
-
-Node.js 20 or newer is required only when changing the interface.
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -101,5 +111,3 @@ python -m pytest
 npm --prefix frontend test
 npm --prefix frontend run build
 ```
-
-PQSetup is available under the [MIT License](LICENSE).
