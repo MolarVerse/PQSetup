@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -88,6 +89,8 @@ import type {
   SimulationSetup,
   StructureAnalysis,
 } from "./types";
+
+const DOCUMENTATION_URL = "https://molarverse.github.io/PQSetup/";
 
 const STEPS = [
   { id: "system", label: "System", hint: "Structure" },
@@ -1535,6 +1538,19 @@ export default function App() {
             : undefined,
         run: () => void createRun(),
       },
+      {
+        id: "documentation",
+        group: "Actions",
+        label: "Open documentation",
+        detail: "Guides, validation, run packages, and command line",
+        keywords: ["docs", "help", "manual", "guide", "getting started"],
+        run: () =>
+          window.open(
+            DOCUMENTATION_URL,
+            "_blank",
+            "noopener,noreferrer",
+          ),
+      },
     ];
   }, [
     activeStep,
@@ -1948,6 +1964,17 @@ export default function App() {
           <kbd>{searchShortcut}</kbd>
         </button>
         <div className="header-status">
+          <a
+            className="header-docs-link"
+            href={DOCUMENTATION_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open PQSetup documentation"
+            title="Open documentation"
+          >
+            <BookOpen size={15} aria-hidden="true" />
+            <span>Docs</span>
+          </a>
           {bootstrap ? (
             <>
               <span

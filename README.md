@@ -8,6 +8,10 @@
 
 Prepare and validate PQ simulation inputs in a local browser interface.
 
+[Documentation](https://molarverse.github.io/PQSetup/) ·
+[Getting started](https://molarverse.github.io/PQSetup/getting-started.html) ·
+[Command line](https://molarverse.github.io/PQSetup/reference/cli.html)
+
 ## Install
 
 PQSetup is currently installed from source and requires Python 3.11 or newer.

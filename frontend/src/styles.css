@@ -192,6 +192,28 @@ kbd {
   white-space: nowrap;
 }
 
+.header-docs-link {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.header-docs-link:hover {
+  color: var(--accent-dark);
+  background: var(--surface-subtle);
+}
+
+.header-docs-link:focus-visible {
+  outline: 3px solid rgb(25 127 162 / 27%);
+  outline-offset: 2px;
+}
+
 .header-status .version {
   padding-left: 12px;
   border-left: 1px solid var(--border);
