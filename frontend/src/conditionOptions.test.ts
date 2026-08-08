@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MANOSTATS, THERMOSTATS } from "./conditionOptions";
 
-describe("PQ 0.6.4 condition options", () => {
+describe("PQ 0.7.0 condition options", () => {
   it("uses the exact thermostat keywords", () => {
     expect(THERMOSTATS.map((option) => option.value)).toEqual([
       "berendsen",

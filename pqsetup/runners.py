@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from .external_qm import advertised_script_names, external_qm_config
 from .models import ExternalQMCapabilities, RunnerStatus
@@ -275,4 +276,28 @@ def detect_runners(
     return [
         status.model_copy(deep=True)
         for status in _detect_runners(context, scripts, config.script_mode)
+    ]
+
+
+def apply_pq_capabilities(
+    statuses: list[RunnerStatus],
+    capabilities: dict[str, Any] | None,
+) -> list[RunnerStatus]:
+    if capabilities is None:
+        return statuses
+    input_capabilities = capabilities.get("input")
+    if not isinstance(input_capabilities, dict):
+        return statuses
+    advertised = input_capabilities.get("qm_programs")
+    if not isinstance(advertised, list) or not all(
+        isinstance(item, str) for item in advertised
+    ):
+        return statuses
+
+    available = set(advertised)
+    return [
+        status.model_copy(
+            update={"available_in_pq": status.id in available},
+        )
+        for status in statuses
     ]

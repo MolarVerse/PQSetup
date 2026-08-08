@@ -4,6 +4,7 @@ import type {
   ExternalQMProgram,
   ExternalQMScript,
   MMForceFieldMode,
+  RunnerStatus,
   SetupFile,
   SetupFileRole,
 } from "./types";
@@ -38,6 +39,23 @@ export const MM_MODES: MMModeOption[] = [
     description: "All interactions from topology and parameter files.",
   },
 ];
+
+export function preferredRunner(
+  runners: RunnerStatus[],
+): RunnerStatus | undefined {
+  const supported = runners.filter((runner) => runner.supported);
+  const available = supported.filter(
+    (runner) => runner.available_in_pq !== false,
+  );
+  return (
+    available.find((runner) => runner.id === "ase_xtb" && runner.ready) ??
+    available.find((runner) => runner.ready) ??
+    available.find((runner) => runner.id === "ase_xtb") ??
+    available[0] ??
+    supported.find((runner) => runner.id === "ase_xtb") ??
+    supported[0]
+  );
+}
 
 const FILE_SPECS: Record<SetupFileRole, Omit<SetupFileSpec, "optional">> = {
   moldescriptor: {
@@ -92,7 +110,7 @@ const FALLBACK_EXTERNAL_QM: ExternalQMCapabilities = {
       ],
     },
     pyscf: {
-      recommended_script: "pyscf_hf.py",
+      recommended_script: null,
       scripts: [
         {
           name: "pyscf_hf.py",

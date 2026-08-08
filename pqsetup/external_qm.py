@@ -26,7 +26,7 @@ FALLBACK_EXTERNAL_QM = ExternalQMCapabilities.model_validate(
                 ],
             },
             "pyscf": {
-                "recommended_script": "pyscf_hf.py",
+                "recommended_script": None,
                 "scripts": [
                     {"name": "pyscf_hf.py", "label": "UHF / STO-3G"},
                     {

@@ -67,6 +67,45 @@ def test_bootstrap_reports_pq_runners_and_presets(monkeypatch) -> None:
     assert "mace_cpp" not in runner_ids
 
 
+def test_bootstrap_respects_selected_pq_build_capabilities(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pqsetup.api,
+        "discover_pq",
+        lambda _: PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version="v0.7.0",
+            detail="Ready.",
+            capabilities={
+                "schema": "pq.capabilities",
+                "schema_version": 1,
+                "input": {"qm_programs": ["dftbplus", "pyscf", "turbomole"]},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        pqsetup.api,
+        "detect_runners",
+        lambda _: [
+            RunnerStatus(
+                id="ase_xtb",
+                label="ASE · xTB",
+                supported=True,
+                installed=True,
+                ready=True,
+                detail="ASE and DFTB+ detected.",
+            )
+        ],
+    )
+
+    payload = TestClient(create_app()).get("/api/bootstrap").json()
+
+    assert payload["runners"][0]["installed"]
+    assert payload["runners"][0]["ready"]
+    assert payload["runners"][0]["available_in_pq"] is False
+    assert payload["runners"][0]["detail"] == "ASE and DFTB+ detected."
+
+
 def test_untrusted_host_is_rejected() -> None:
     response = TestClient(create_app()).get(
         "/api/health",
@@ -470,3 +509,31 @@ def test_doctor_reports_incomplete_setup_without_calling_it_missing(capsys) -> N
     assert "DFTB+          setup incomplete · DFTB+ detected." in output
     assert "missing" not in output
     assert "ready" not in output
+
+
+def test_doctor_reports_selected_pq_build_support_separately(capsys) -> None:
+    _print_doctor(
+        DoctorReport(
+            pq=PQStatus(
+                found=True,
+                executable="/tools/PQ",
+                version="v0.7.0",
+                detail="Detected.",
+            ),
+            runners=[
+                RunnerStatus(
+                    id="ase_xtb",
+                    label="ASE · xTB",
+                    supported=True,
+                    installed=True,
+                    ready=True,
+                    available_in_pq=False,
+                    detail="ASE and DFTB+ detected.",
+                )
+            ],
+            diagnostics=[],
+        )
+    )
+
+    output = capsys.readouterr().out
+    assert "ASE · xTB      calculator ready · PQ build mismatch" in output

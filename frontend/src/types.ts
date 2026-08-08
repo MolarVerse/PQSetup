@@ -95,6 +95,7 @@ export interface RunnerStatus {
   ready: boolean;
   executable: string | null;
   version: string | null;
+  available_in_pq: boolean | null;
   detail: string;
 }
 

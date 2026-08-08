@@ -4,7 +4,7 @@ Compatibility
 PQ inputs
 ---------
 
-PQSetup currently writes inputs for the stable PQ v0.6.4 schema. It does not
+PQSetup currently writes inputs for the stable PQ v0.7.0 release. It does not
 expose unreleased keywords merely because they exist on a development branch.
 
 .. list-table::
@@ -18,13 +18,18 @@ expose unreleased keywords merely because they exist on a development branch.
      - Available
      - ``portable`` during export and ``installed`` from the CLI
    * - Does not advertise the validation contract
-     - Available for v0.6.4 inputs
+     - Available for v0.7.0 inputs
      - Not run; local checks remain active
    * - Not detected
      - Portable export remains available
      - Not run; the missing executable is reported
 
 Calculator availability is reported separately from PQ parser support.
+
+The guided QM methods are DFTB+, ASE–DFTB+, ASE–xTB, PySCF, Turbomole,
+MACE-MP, and MACE-OFF. PQ 0.7.0 also accepts FeNNol inputs, but PQSetup does
+not yet package its binary model file and therefore does not present a partial
+FeNNol workflow.
 
 Structure formats
 -----------------

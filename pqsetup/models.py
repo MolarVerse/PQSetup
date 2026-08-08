@@ -103,6 +103,7 @@ class RunnerStatus(BaseModel):
     ready: bool
     executable: str | None = None
     version: str | None = None
+    available_in_pq: bool | None = None
     detail: str
 
 

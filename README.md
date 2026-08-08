@@ -91,7 +91,7 @@ validation, PQSetup also checks the inputs with PQ.
 Environment detection reports what is available. It does not establish that a
 method, force field, or protocol is scientifically suitable.
 
-PQSetup targets the stable PQ v0.6.4 input schema.
+PQSetup writes inputs for the stable PQ v0.7.0 release.
 
 ## Run Packages
 

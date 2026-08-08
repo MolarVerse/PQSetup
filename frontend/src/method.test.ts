@@ -6,12 +6,17 @@ import {
   missingSetupFileRoles,
   mmModeLabel,
   packagedSetupFileName,
+  preferredRunner,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
   setupFileSpecs,
 } from "./method";
-import type { ExternalQMCapabilities, SetupFile } from "./types";
+import type {
+  ExternalQMCapabilities,
+  RunnerStatus,
+  SetupFile,
+} from "./types";
 
 const files: SetupFile[] = [
   { role: "moldescriptor", name: "molecules.dat", content: "water" },
@@ -20,6 +25,41 @@ const files: SetupFile[] = [
   { role: "parameter", name: "parameter.dat", content: "parameters" },
   { role: "intra_nonbonded", name: "intra.dat", content: "pairs" },
 ];
+
+function runner(
+  id: string,
+  availableInPQ: boolean | null,
+  ready = true,
+): RunnerStatus {
+  return {
+    id,
+    label: id,
+    supported: true,
+    installed: ready,
+    ready,
+    executable: null,
+    version: null,
+    available_in_pq: availableInPQ,
+    detail: ready ? "Detected." : "Not detected.",
+  };
+}
+
+describe("calculator preference", () => {
+  it("does not default to a method missing from the selected PQ build", () => {
+    expect(
+      preferredRunner([
+        runner("ase_xtb", false),
+        runner("dftbplus", true),
+      ])?.id,
+    ).toBe("dftbplus");
+    expect(
+      preferredRunner([
+        runner("ase_xtb", null),
+        runner("dftbplus", null),
+      ])?.id,
+    ).toBe("ase_xtb");
+  });
+});
 
 describe("molecular mechanics method", () => {
   it("exposes only files used by each force-field mode", () => {
@@ -73,6 +113,14 @@ describe("QM companion files", () => {
       qmSetupFileSpecs("dftbplus", "NPT").map((file) => file.role),
     ).toEqual(["moldescriptor", "dftb_template"]);
     expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
+  });
+
+  it("requires an explicit PySCF method without installed capabilities", () => {
+    expect(recommendedRunnerScript(null, "pyscf")).toBeNull();
+    expect(selectedExternalQMScript(null, "pyscf", null)).toBeNull();
+    expect(
+      selectedExternalQMScript(null, "pyscf", "pyscf_hf.py")?.name,
+    ).toBe("pyscf_hf.py");
   });
 
   it("uses advertised scripts, labels, and dependencies", () => {

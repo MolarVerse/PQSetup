@@ -66,7 +66,8 @@ Project manifest
 * the scientific plan and execution order;
 * input, structure, setup-file, and run-script SHA-256 hashes;
 * structure and preparation provenance;
-* the PQ and calculator environment seen during export;
+* the PQ build, calculator readiness, and method availability seen during
+  export;
 * warnings and the result of each PQ validation layer.
 
 The manifest makes it possible to inspect what was prepared without parsing

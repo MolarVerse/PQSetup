@@ -183,6 +183,8 @@ def test_plan_export_manifest_and_archive_are_self_consistent(monkeypatch) -> No
         assert manifest["environment"]["calculator"] == {
             "id": "ase_xtb",
             "detected": True,
+            "calculator_ready": True,
+            "available_in_pq": None,
             "ready": True,
             "version": "1.0",
             "detail": "Detected.",
@@ -357,6 +359,42 @@ def test_manifest_distinguishes_detection_from_incomplete_setup(monkeypatch) -> 
     warnings = {item["code"] for item in manifest["diagnostics"]}
     assert "runner.incomplete" in warnings
     assert "runner.not_detected" not in warnings
+
+
+def test_manifest_records_selected_pq_build_mismatch(monkeypatch) -> None:
+    monkeypatch.setattr(
+        pqsetup.api,
+        "discover_pq",
+        lambda _: PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version="v0.7.0",
+            source="test",
+            detail="Ready.",
+            capabilities={
+                "schema": "pq.capabilities",
+                "schema_version": 1,
+                "input": {"qm_programs": ["dftbplus", "pyscf", "turbomole"]},
+            },
+        ),
+    )
+    monkeypatch.setattr(pqsetup.api, "detect_runners", lambda _: [_runner()])
+    response = TestClient(create_app()).post(
+        "/api/project/export",
+        json=_project_payload(),
+    )
+
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        manifest = json.loads(archive.read("pqproject.json"))
+    calculator = manifest["environment"]["calculator"]
+    assert calculator["detected"]
+    assert calculator["calculator_ready"]
+    assert calculator["available_in_pq"] is False
+    assert not calculator["ready"]
+    warning_codes = [item["code"] for item in manifest["diagnostics"]]
+    assert warning_codes.count("environment.pq_method_unavailable") == 1
+    assert "runner.incomplete" not in warning_codes
 
 
 def test_legacy_export_without_protocol_fields_remains_schema_one(
