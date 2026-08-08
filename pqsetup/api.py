@@ -38,7 +38,7 @@ from .models import (
 from .pq_validation import PQValidationError, validate_pq_input
 from .presets import list_presets
 from .release import TARGET_PQ_RELEASE
-from .runners import detect_runners
+from .runners import apply_pq_capabilities, detect_runners
 from .run_plan import plan_requested, render_run_plan
 from .run_script import RUN_SCRIPT_NAME, render_run_script
 from .setup_files import required_qm_file_roles
@@ -65,10 +65,13 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=_TRUSTED_HOSTS)
     pq = discover_pq(pq_executable)
     runner_context = pq.executable if pq.found else None
-    runners = (
-        detect_runners(runner_context, external_qm=pq.external_qm)
-        if pq.external_qm is not None
-        else detect_runners(runner_context)
+    runners = apply_pq_capabilities(
+        (
+            detect_runners(runner_context, external_qm=pq.external_qm)
+            if pq.external_qm is not None
+            else detect_runners(runner_context)
+        ),
+        pq.capabilities,
     )
 
     @app.get("/api/health")
@@ -440,7 +443,13 @@ def _export_plan(
         else {
             "id": runner_id,
             "detected": bool(status and status.installed),
-            "ready": bool(status and status.ready),
+            "calculator_ready": bool(status and status.ready),
+            "available_in_pq": status.available_in_pq if status else None,
+            "ready": bool(
+                status
+                and status.ready
+                and status.available_in_pq is not False
+            ),
             "version": status.version if status else None,
             "detail": (
                 status.detail

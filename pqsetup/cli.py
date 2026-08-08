@@ -14,7 +14,7 @@ from .executable import discover_pq
 from .input_writer import validate_input_file
 from .models import DoctorReport
 from .pq_validation import PQValidationError, validate_pq_input
-from .runners import detect_runners
+from .runners import apply_pq_capabilities, detect_runners
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -96,13 +96,16 @@ def main(arguments: list[str] | None = None) -> int:
         )
         report = DoctorReport(
             pq=pq,
-            runners=(
-                detect_runners(
-                    pq.executable if pq.found else None,
-                    external_qm=pq.external_qm,
-                )
-                if pq.external_qm is not None
-                else detect_runners(pq.executable if pq.found else None)
+            runners=apply_pq_capabilities(
+                (
+                    detect_runners(
+                        pq.executable if pq.found else None,
+                        external_qm=pq.external_qm,
+                    )
+                    if pq.external_qm is not None
+                    else detect_runners(pq.executable if pq.found else None)
+                ),
+                pq.capabilities,
             ),
             diagnostics=[],
         )
@@ -204,6 +207,15 @@ def _print_doctor(report: DoctorReport) -> None:
     for runner in report.runners:
         if not runner.supported:
             state = "unsupported"
+        elif runner.available_in_pq is False and runner.ready:
+            state = "calculator ready · PQ build mismatch"
+        elif runner.available_in_pq is False and runner.installed:
+            state = (
+                f"calculator setup incomplete · {runner.detail} "
+                "· PQ build mismatch"
+            )
+        elif runner.available_in_pq is False:
+            state = "calculator not detected · PQ build mismatch"
         elif runner.ready:
             state = "detected"
         elif runner.installed:

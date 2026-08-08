@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pqsetup.runners as runners
-from pqsetup.models import ExternalQMCapabilities
+from pqsetup.models import ExternalQMCapabilities, RunnerStatus
 
 
 def _detect(
@@ -49,6 +49,32 @@ def test_ase_xtb_uses_dftbplus_backend(monkeypatch) -> None:
         "mace_mp",
         "mace_off",
     }
+
+
+def test_selected_pq_build_reports_method_availability_separately() -> None:
+    detected = RunnerStatus(
+        id="ase_xtb",
+        label="ASE · xTB",
+        supported=True,
+        installed=True,
+        ready=True,
+        detail="ASE and DFTB+ detected.",
+    )
+
+    statuses = runners.apply_pq_capabilities(
+        [detected],
+        {
+            "schema": "pq.capabilities",
+            "schema_version": 1,
+            "input": {"qm_programs": ["dftbplus", "pyscf", "turbomole"]},
+        },
+    )
+
+    assert statuses[0].installed
+    assert statuses[0].supported
+    assert statuses[0].ready
+    assert statuses[0].available_in_pq is False
+    assert statuses[0].detail == "ASE and DFTB+ detected."
 
 
 def test_selected_development_pq_finds_canonical_scripts(

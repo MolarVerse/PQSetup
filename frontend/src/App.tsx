@@ -55,6 +55,7 @@ import {
   MM_MODES,
   mmModeLabel,
   packagedSetupFileName,
+  preferredRunner,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
@@ -783,15 +784,27 @@ export default function App() {
       .then((value) => {
         if (!current) return;
         setBootstrap(value);
-        const preferred =
-          value.runners.find((runner) => runner.id === "ase_xtb") ??
-          value.runners.find((runner) => runner.supported);
+        const preferred = preferredRunner(value.runners);
         if (preferred) {
-          setSetup((existing) =>
-            isMolecularMechanics(existing) || existing.runner
-              ? existing
-              : { ...existing, runner: preferred.id },
-          );
+          setSetup((existing) => {
+            const selected = value.runners.find(
+              (runner) => runner.id === existing.runner,
+            );
+            if (
+              isMolecularMechanics(existing) ||
+              (existing.runner && selected?.available_in_pq !== false)
+            ) {
+              return existing;
+            }
+            return {
+              ...existing,
+              runner: preferred.id,
+              runner_script: recommendedRunnerScript(
+                value.pq.external_qm,
+                preferred.id,
+              ),
+            };
+          });
         }
       })
       .catch((error) => {
@@ -901,6 +914,9 @@ export default function App() {
       setup.runner &&
       !selectedRunnerStatus?.ready,
   );
+  const pqMethodUnavailable = Boolean(
+    !molecularMechanics && selectedRunnerStatus?.available_in_pq === false,
+  );
   const portableValidationAvailable = Boolean(
     bootstrap?.pq.validation_scopes.includes("portable"),
   );
@@ -964,7 +980,10 @@ export default function App() {
   const stepState = useMemo<Record<StepId, "ok" | "warn" | "idle">>(
     () => ({
       system: analysis.valid ? "ok" : "warn",
-      method: !methodReady || calculatorMissing ? "warn" : "ok",
+      method:
+        !methodReady || calculatorMissing || pqMethodUnavailable
+          ? "warn"
+          : "ok",
       conditions: diagnostics.some(
         (item) =>
           item.severity === "error" &&
@@ -984,6 +1003,7 @@ export default function App() {
       calculatorMissing,
       diagnostics,
       methodReady,
+      pqMethodUnavailable,
       ready,
       rendered,
     ],
@@ -1132,9 +1152,12 @@ export default function App() {
             id: `calculator-${runner.id}`,
             group: "Scientific setup",
             label: runner.label,
-            detail: runner.ready
-              ? "Calculator ready"
-              : `${runner.detail} Inputs can still be created.`,
+            detail:
+              runner.available_in_pq === false
+                ? "Selected PQ build does not include this method. Inputs can still be created."
+                : runner.ready
+                  ? "Calculator ready"
+                  : `${runner.detail} Inputs can still be created.`,
             keywords: [
               "calculator",
               "runner",
@@ -1147,10 +1170,16 @@ export default function App() {
               chooseCalculator(runner.id);
               goToControl("method");
               setNotice({
-                kind: runner.ready ? "success" : "info",
-                message: runner.ready
-                  ? `${runner.label} selected.`
-                  : `${runner.label} selected but was not detected.`,
+                kind:
+                  runner.ready && runner.available_in_pq !== false
+                    ? "success"
+                    : "info",
+                message:
+                  runner.available_in_pq === false
+                    ? `${runner.label} selected. Use a PQ build that includes it when running.`
+                    : runner.ready
+                      ? `${runner.label} selected.`
+                      : `${runner.label} selected but was not detected.`,
               });
             },
           }),
@@ -1792,9 +1821,7 @@ export default function App() {
       return;
     }
 
-    const preferred =
-      bootstrap?.runners.find((runner) => runner.id === "ase_xtb") ??
-      bootstrap?.runners.find((runner) => runner.supported);
+    const preferred = preferredRunner(bootstrap?.runners ?? []);
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
@@ -2001,7 +2028,7 @@ export default function App() {
                 </span>
               </span>
               <span className="version">
-                Schema {bootstrap.target_pq_release}
+                Input target {bootstrap.target_pq_release}
               </span>
             </>
           ) : bootstrapError ? (
@@ -2159,7 +2186,7 @@ export default function App() {
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
-                    Target schema <strong>{bootstrap.target_pq_release}</strong>
+                    Input target <strong>{bootstrap.target_pq_release}</strong>
                   </span>
                 </div>
               )}
@@ -2211,11 +2238,14 @@ export default function App() {
                       .filter((runner) => runner.supported)
                       .map((runner) => {
                         const selected = setup.runner === runner.id;
-                        const runnerState = runner.ready
-                          ? "ready"
-                          : runner.installed
+                        const runnerState =
+                          runner.available_in_pq === false
                             ? "incomplete"
-                            : "missing";
+                            : runner.ready
+                              ? "ready"
+                              : runner.installed
+                                ? "incomplete"
+                                : "missing";
                         return (
                           <div
                             className={`calculator-option ${
@@ -2247,24 +2277,31 @@ export default function App() {
                               <span
                                 className={`runner-state ${runnerState}`}
                               >
-                                {runner.ready
-                                  ? "Ready"
-                                  : runner.installed
-                                    ? "Setup incomplete"
-                                    : "Not detected"}
+                                {runner.available_in_pq === false
+                                  ? "PQ build mismatch"
+                                  : runner.ready
+                                    ? "Ready"
+                                    : runner.installed
+                                      ? "Setup incomplete"
+                                      : "Not detected"}
                               </span>
                             </label>
-                            {selected && !runner.ready && (
-                              <div
-                                className="calculator-warning"
-                                role="status"
-                              >
-                                <CircleAlert size={14} aria-hidden="true" />
-                                <span>
-                                  {runner.detail} Inputs can still be created.
-                                </span>
-                              </div>
-                            )}
+                            {selected &&
+                              (!runner.ready ||
+                                runner.available_in_pq === false) && (
+                                <div
+                                  className="calculator-warning"
+                                  role="status"
+                                >
+                                  <CircleAlert size={14} aria-hidden="true" />
+                                  <span>
+                                    {runner.available_in_pq === false
+                                      ? `Selected PQ build does not include ${runner.label}. `
+                                      : `${runner.detail} `}
+                                    Inputs can still be created.
+                                  </span>
+                                </div>
+                              )}
                           </div>
                         );
                       })}
@@ -3389,10 +3426,16 @@ export default function App() {
                   </small>
                 </span>
               </li>
-              <li className={methodReady && !calculatorMissing ? "ok" : "warn"}>
+              <li
+                className={
+                  methodReady && !calculatorMissing && !pqMethodUnavailable
+                    ? "ok"
+                    : "warn"
+                }
+              >
                 <StatusDot
                   status={
-                    methodReady && !calculatorMissing
+                    methodReady && !calculatorMissing && !pqMethodUnavailable
                       ? "ok"
                       : methodReady || molecularMechanics
                         ? "warn"
@@ -3420,9 +3463,11 @@ export default function App() {
                             ? `Add ${missingMethodFiles.length} required ${
                                 missingMethodFiles.length === 1 ? "file" : "files"
                               }.`
-                            : calculatorMissing
-                              ? `${selectedMethodLabel} was not detected.`
-                              : `${selectedMethodLabel} is ready.`}
+                            : pqMethodUnavailable
+                              ? `Selected PQ build does not include ${selectedCalculatorLabel}.`
+                              : calculatorMissing
+                                ? `${selectedMethodLabel} was not detected.`
+                                : `${selectedMethodLabel} is ready.`}
                   </small>
                 </span>
               </li>

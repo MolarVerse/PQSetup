@@ -84,7 +84,7 @@ warnings remain visible and are recorded in the project manifest.
 
    The restart relationship and final PQ input are visible before export.
 
-The exported input header identifies PQSetup and the targeted PQ schema. It is
+The exported input header identifies PQSetup and the target PQ release. It is
 designed to make provenance obvious without obscuring the settings that
 matter.
 

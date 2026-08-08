@@ -198,7 +198,6 @@ def test_plan_owns_restart_filenames() -> None:
     ("runner_id", "script"),
     [
         ("dftbplus", "dftbplus_periodic_stress"),
-        ("pyscf", "pyscf_hf.py"),
         ("turbomole", "turbomole_rimp2"),
     ],
 )
@@ -237,6 +236,27 @@ def test_external_calculators_use_canonical_release_scripts(
 
     assert result.valid
     assert f"qm_script = {script};" in result.files[0].input_text
+
+
+def test_release_fallback_requires_an_explicit_pyscf_method() -> None:
+    missing = _render(
+        RunPlanRequest(
+            setup=_setup(runner="pyscf"),
+        )
+    )
+    selected = _render(
+        RunPlanRequest(
+            setup=_setup(
+                runner="pyscf",
+                runner_script="pyscf_hf.py",
+            ),
+        )
+    )
+
+    assert not missing.valid
+    assert {item.code for item in missing.diagnostics} == {"runner.script"}
+    assert selected.valid
+    assert "qm_script = pyscf_hf.py;" in selected.files[0].input_text
 
 
 def test_external_calculator_rejects_an_arbitrary_script() -> None:
