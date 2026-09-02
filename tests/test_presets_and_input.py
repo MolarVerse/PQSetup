@@ -73,6 +73,44 @@ def test_incomplete_mm_optimization_package_is_rejected() -> None:
     assert {item.code for item in result.diagnostics} == {"workflow.unsupported"}
 
 
+def test_qm_rpmd_requires_bead_count() -> None:
+    missing = render_input(
+        SimulationSetup(
+            job_type="qm-rpmd",
+            ensemble="NVT",
+            thermostat="berendsen",
+        )
+    )
+    assert not missing.valid
+    assert "workflow.rpmd_n_replica" in {
+        item.code for item in missing.diagnostics
+    }
+
+    too_few = render_input(
+        SimulationSetup(
+            job_type="qm-rpmd",
+            ensemble="NVT",
+            thermostat="berendsen",
+            extra_settings={"rpmd_n_replica": 1},
+        )
+    )
+    assert not too_few.valid
+    assert "workflow.rpmd_n_replica" in {
+        item.code for item in too_few.diagnostics
+    }
+
+    ok = render_input(
+        SimulationSetup(
+            job_type="qm-rpmd",
+            ensemble="NVT",
+            thermostat="berendsen",
+            extra_settings={"rpmd_n_replica": 32},
+        )
+    )
+    assert ok.valid
+    assert "rpmd_n_replica = 32;" in ok.input_text
+
+
 def test_unreleased_and_unknown_runners_fail_without_probing(
     monkeypatch,
 ) -> None:
