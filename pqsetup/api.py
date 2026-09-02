@@ -654,7 +654,7 @@ def _add_validation_manifest(
 def _validate_setup_file_contents(request: ExportRequest) -> None:
     total_bytes = 0
     for item in request.setup_files:
-        if Path(item.name).name != item.name:
+        if item.name in {".", ".."} or Path(item.name).name != item.name:
             raise HTTPException(
                 status_code=422,
                 detail=f"Setup file '{item.name}' must be a filename.",
