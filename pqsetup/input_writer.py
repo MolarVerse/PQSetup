@@ -256,6 +256,16 @@ def validate_setup(
                 ),
             )
         )
+    if setup.job_type == "mm-opt" and setup.ensemble != "OPT":
+        diagnostics.append(
+            _error(
+                "workflow.mm_opt_ensemble",
+                (
+                    "mm-opt is an optimization job type and cannot use an "
+                    "MD ensemble."
+                ),
+            )
+        )
     if not setup.start_file:
         diagnostics.append(_error("input.start_file", "Start file is required."))
     if not setup.file_prefix:
