@@ -73,6 +73,18 @@ def test_incomplete_mm_optimization_package_is_rejected() -> None:
     assert {item.code for item in result.diagnostics} == {"workflow.unsupported"}
 
 
+def test_mm_opt_with_md_ensemble_is_rejected() -> None:
+    result = render_input(
+        SimulationSetup(
+            job_type="mm-opt",
+            ensemble="NVT",
+            thermostat="berendsen",
+            runner=None,
+        )
+    )
+
+    assert not result.valid
+    assert "workflow.mm_opt_ensemble" in {item.code for item in result.diagnostics}
 def test_qm_rpmd_requires_bead_count() -> None:
     missing = render_input(
         SimulationSetup(

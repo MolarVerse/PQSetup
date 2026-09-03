@@ -256,6 +256,16 @@ def validate_setup(
                 ),
             )
         )
+    if setup.job_type == "mm-opt" and setup.ensemble != "OPT":
+        diagnostics.append(
+            _error(
+                "workflow.mm_opt_ensemble",
+                (
+                    "mm-opt is an optimization job type and cannot use an "
+                    "MD ensemble."
+                ),
+            )
+        )
     if setup.job_type == "qm-rpmd":
         beads = setup.extra_settings.get("rpmd_n_replica")
         if beads is None:
