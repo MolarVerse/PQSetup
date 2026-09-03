@@ -256,6 +256,24 @@ def validate_setup(
                 ),
             )
         )
+    if setup.job_type == "qm-rpmd":
+        beads = setup.extra_settings.get("rpmd_n_replica")
+        if beads is None:
+            beads = setup.extra_settings.get("rpmd-n-replica")
+        try:
+            bead_count = int(beads)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            bead_count = None
+        if bead_count is None or bead_count < 2:
+            diagnostics.append(
+                _error(
+                    "workflow.rpmd_n_replica",
+                    (
+                        "qm-rpmd requires extra_settings['rpmd_n_replica'] "
+                        "with at least 2 beads."
+                    ),
+                )
+            )
     if not setup.start_file:
         diagnostics.append(_error("input.start_file", "Start file is required."))
     if not setup.file_prefix:
