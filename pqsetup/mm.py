@@ -310,7 +310,7 @@ def _filename_diagnostics(
         ]
     if encoded_length > 255:
         return [_error(f"mm.{MM_FILE_FIELDS[role]}", f"{label} filename is too long.")]
-    if Path(name).name != name:
+    if name in {".", ".."} or Path(name).name != name:
         return [
             _error(
                 f"mm.{MM_FILE_FIELDS[role]}",

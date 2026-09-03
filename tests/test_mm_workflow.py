@@ -446,6 +446,30 @@ def test_export_rejects_unsafe_setup_filenames(
     assert "invalid character" in response.text.lower()
 
 
+@pytest.mark.parametrize("dot_name", [".", ".."])
+def test_export_rejects_dot_setup_filenames(
+    monkeypatch: pytest.MonkeyPatch,
+    dot_name: str,
+) -> None:
+    payload = _export_payload("off")
+    setup = payload["setup"]
+    setup_files = payload["setup_files"]
+    assert isinstance(setup, dict)
+    assert isinstance(setup_files, list)
+    setup["moldescriptor_file"] = dot_name
+    setup_files[0]["name"] = dot_name
+
+    response = _stable_client(monkeypatch).post(
+        "/api/project/export",
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    detail = response.text.lower()
+    assert "filename" in detail
+    assert ("path" in detail) or ("setup file" in detail)
+
+
 @pytest.mark.parametrize("runtime_name", ["water-mm-01.rst", "run-logs"])
 def test_export_reserves_runtime_paths(
     monkeypatch: pytest.MonkeyPatch,
