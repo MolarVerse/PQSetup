@@ -232,7 +232,7 @@ def _filename_diagnostics(
         return [_error(f"qm.{field_name}", f"{label} filename is invalid.")]
     if encoded_length > 255:
         return [_error(f"qm.{field_name}", f"{label} filename is too long.")]
-    if Path(name).name != name:
+    if name in {".", ".."} or Path(name).name != name:
         return [
             _error(
                 f"qm.{field_name}",
