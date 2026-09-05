@@ -85,6 +85,8 @@ def test_mm_opt_with_md_ensemble_is_rejected() -> None:
 
     assert not result.valid
     assert "workflow.mm_opt_ensemble" in {item.code for item in result.diagnostics}
+
+
 def test_qm_rpmd_requires_bead_count() -> None:
     missing = render_input(
         SimulationSetup(
@@ -121,6 +123,29 @@ def test_qm_rpmd_requires_bead_count() -> None:
     )
     assert ok.valid
     assert "rpmd_n_replica = 32;" in ok.input_text
+
+
+def test_start_file_cannot_equal_restart_file() -> None:
+    result = render_input(
+        SimulationSetup(start_file="pq-run.rst", file_prefix="pq-run")
+    )
+
+    assert not result.valid
+    assert "input.restart_collision" in {
+        item.code for item in result.diagnostics
+    }
+
+    casefold_result = render_input(
+        SimulationSetup(
+            start_file="Structure.rst",
+            restart_file="structure.rst",
+            file_prefix="run",
+        )
+    )
+    assert not casefold_result.valid
+    assert "input.restart_collision" in {
+        item.code for item in casefold_result.diagnostics
+    }
 
 
 def test_unreleased_and_unknown_runners_fail_without_probing(

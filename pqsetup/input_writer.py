@@ -294,6 +294,19 @@ def validate_setup(
         diagnostics.append(
             _error("input.restart_file", "Restart filename is too long.")
         )
+    if (
+        setup.start_file
+        and setup.start_file.casefold() == restart_filename(setup).casefold()
+    ):
+        diagnostics.append(
+            _error(
+                "input.restart_collision",
+                (
+                    "Start file and restart file must differ so PQ does not "
+                    "overwrite the starting structure."
+                ),
+            )
+        )
     if len(setup.file_prefix) > 128:
         diagnostics.append(_error("input.file_prefix", "Run name is too long."))
     if setup.ensemble != "OPT":
