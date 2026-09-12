@@ -8,41 +8,47 @@
 
 Prepare and validate PQ simulation inputs in a local browser interface.
 
+PQSetup builds the input package. [PQ](https://github.com/MolarVerse/PQ) runs it.
+
 [Documentation](https://molarverse.github.io/PQSetup/) ·
 [Getting started](https://molarverse.github.io/PQSetup/getting-started.html) ·
 [Command line](https://molarverse.github.io/PQSetup/reference/cli.html)
 
 ## Install
 
-PQSetup is currently installed from source and requires Python 3.11 or newer.
+Python 3.11 or newer. The UI ships inside the package; Node.js is not required.
 
 ```bash
-git clone https://github.com/MolarVerse/PQSetup.git
-cd PQSetup
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install "git+https://github.com/MolarVerse/PQSetup.git"
+```
+
+From a local clone (contributors):
+
+```bash
 python -m pip install .
 ```
 
-The interface is included in the Python package. Node.js is not required.
-
 ## Quick Start
-
-Open the graphical interface:
 
 ```bash
 pqsetup
 ```
 
-Inspect the selected PQ executable and available calculators:
+Keep the water example, choose a method, review the inputs, download the
+package, then run it where PQ is installed:
+
+```bash
+unzip water-nvt.zip -d water-nvt
+cd water-nvt
+./run.sh /path/to/PQ
+```
+
+Check what this machine can see:
 
 ```bash
 pqsetup doctor
-```
-
-Use a PQ executable with a different name or location:
-
-```bash
 pqsetup --pq-executable /path/to/PQ doctor
 ```
 
