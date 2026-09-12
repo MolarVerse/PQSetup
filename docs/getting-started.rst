@@ -1,8 +1,12 @@
 Getting started
 ===============
 
-PQSetup is currently a pre-release project installed from source. The
-graphical interface and its static assets are included in the Python package.
+PQSetup prepares PQ input packages in a local browser. It does not install or
+run PQ. Install `PQ <https://github.com/MolarVerse/PQ>`_ separately to validate
+deeply and to execute ``run.sh``.
+
+You can design and export packages without a detected calculator or PQ
+executable. Missing checks are reported instead of silently passed.
 
 Requirements
 ------------
@@ -11,38 +15,22 @@ Requirements
 * A PQ executable to validate and run the generated inputs
 * The calculator and supporting files required by the chosen method
 
-You can design and export portable inputs without a detected calculator or PQ
-executable. PQSetup reports the missing checks instead of silently passing
-them.
-
 Install
 -------
 
 .. code-block:: bash
 
-   git clone https://github.com/MolarVerse/PQSetup.git
-   cd PQSetup
    python3 -m venv .venv
    source .venv/bin/activate
+   python -m pip install "git+https://github.com/MolarVerse/PQSetup.git"
+
+From a local clone:
+
+.. code-block:: bash
+
    python -m pip install .
 
 Node.js is only needed when changing the interface.
-
-Check the environment
----------------------
-
-.. code-block:: bash
-
-   pqsetup doctor
-
-``doctor`` reports the selected PQ executable and the external calculators
-that PQSetup can detect. To use a different executable:
-
-.. code-block:: bash
-
-   pqsetup --pq-executable /opt/pq/bin/PQ doctor
-
-The same path can be supplied through ``PQ_EXECUTABLE``.
 
 Open the interface
 ------------------
@@ -61,15 +49,29 @@ avoid opening a browser:
 Create the first package
 ------------------------
 
-#. Import a structure, or keep the water example.
+#. Keep the water example, or import a structure.
 #. Choose molecular mechanics or one QM calculator.
 #. Set the sampling ensemble and duration. Add NVT equilibration if needed.
 #. Review optional coordinate preparation.
 #. Inspect every generated input, then create the package.
 
 Presets are editable starting points, not validated production protocols.
-Check the timestep, duration, coupling constants, method, and system size for
-the actual scientific question.
+
+Check the environment
+---------------------
+
+.. code-block:: bash
+
+   pqsetup doctor
+
+``doctor`` reports the selected PQ executable and the external calculators
+that PQSetup can detect. To use a different executable:
+
+.. code-block:: bash
+
+   pqsetup --pq-executable /opt/pq/bin/PQ doctor
+
+The same path can be supplied through ``PQ_EXECUTABLE``.
 
 Run the package
 ---------------
