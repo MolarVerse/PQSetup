@@ -175,5 +175,5 @@ def discover_pq(
             return status
     return PQStatus(
         found=False,
-        detail=("PQ was not found. Set PQ_EXECUTABLE or choose it in settings."),
+        detail=("PQ was not found. Set PQ_EXECUTABLE or pass --pq-executable."),
     )
