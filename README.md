@@ -115,7 +115,7 @@ package.
 ## Development
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[test]"
 npm --prefix frontend ci
 python -m pytest
 npm --prefix frontend test
