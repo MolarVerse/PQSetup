@@ -59,6 +59,15 @@ describe("calculator preference", () => {
       ])?.id,
     ).toBe("ase_xtb");
   });
+
+  it("prefers a ready calculator over the ase_xtb fallback", () => {
+    expect(
+      preferredRunner([
+        runner("ase_xtb", true, false),
+        runner("dftbplus", true, true),
+      ])?.id,
+    ).toBe("dftbplus");
+  });
 });
 
 describe("molecular mechanics method", () => {
