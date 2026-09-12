@@ -787,13 +787,15 @@ export default function App() {
         const preferred = preferredRunner(value.runners);
         if (preferred) {
           setSetup((existing) => {
+            if (isMolecularMechanics(existing)) {
+              return existing;
+            }
             const selected = value.runners.find(
               (runner) => runner.id === existing.runner,
             );
-            if (
-              isMolecularMechanics(existing) ||
-              (existing.runner && selected?.available_in_pq !== false)
-            ) {
+            // Keep a ready selection; otherwise take the preferred runner
+            // (ready first, then the usual fallback).
+            if (selected?.ready && selected.available_in_pq !== false) {
               return existing;
             }
             return {
@@ -981,7 +983,7 @@ export default function App() {
     () => ({
       system: analysis.valid ? "ok" : "warn",
       method:
-        !methodReady || calculatorMissing || pqMethodUnavailable
+        !methodReady || pqMethodUnavailable
           ? "warn"
           : "ok",
       conditions: diagnostics.some(
@@ -1000,7 +1002,6 @@ export default function App() {
     }),
     [
       analysis,
-      calculatorMissing,
       diagnostics,
       methodReady,
       pqMethodUnavailable,
@@ -1179,7 +1180,7 @@ export default function App() {
                     ? `${runner.label} selected. Use a PQ build that includes it when running.`
                     : runner.ready
                       ? `${runner.label} selected.`
-                      : `${runner.label} selected but was not detected.`,
+                      : `${runner.label} selected; not detected here. Export still works.`,
               });
             },
           }),
@@ -3428,14 +3429,12 @@ export default function App() {
               </li>
               <li
                 className={
-                  methodReady && !calculatorMissing && !pqMethodUnavailable
-                    ? "ok"
-                    : "warn"
+                  methodReady && !pqMethodUnavailable ? "ok" : "warn"
                 }
               >
                 <StatusDot
                   status={
-                    methodReady && !calculatorMissing && !pqMethodUnavailable
+                    methodReady && !pqMethodUnavailable
                       ? "ok"
                       : methodReady || molecularMechanics
                         ? "warn"
@@ -3466,7 +3465,7 @@ export default function App() {
                             : pqMethodUnavailable
                               ? `Selected PQ build does not include ${selectedCalculatorLabel}.`
                               : calculatorMissing
-                                ? `${selectedMethodLabel} was not detected.`
+                                ? `${selectedMethodLabel} not detected here; export still works.`
                                 : `${selectedMethodLabel} is ready.`}
                   </small>
                 </span>
