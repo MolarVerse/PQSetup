@@ -1,0 +1,258 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release commit
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          release_sha=$(git rev-parse HEAD)
+          tag_sha=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+          test "$release_sha" = "$tag_sha"
+          git merge-base --is-ancestor "$release_sha" origin/main
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Verify release version
+        run: |
+          python - "$RELEASE_TAG" <<'PY'
+          import json
+          import re
+          import sys
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text())["project"]
+          source = Path("pqsetup/__init__.py").read_text()
+          match = re.search(r'^__version__ = "([^"]+)"$', source, re.MULTILINE)
+          if match is None:
+              raise SystemExit("PQSetup version is missing")
+          version = match.group(1)
+          tag = sys.argv[1]
+          tag_pattern = (
+              r"^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+              r"(?:(?:a|b|rc)(?:0|[1-9]\d*))?$"
+          )
+          if not re.fullmatch(tag_pattern, tag):
+              raise SystemExit(f"tag {tag} is not a supported release tag")
+          if project["name"] != "MolarVerse-PQSetup":
+              raise SystemExit("unexpected Python distribution name")
+          if tag != f"v{version}":
+              raise SystemExit(f"tag {tag} does not match version {version}")
+
+          frontend = json.loads(Path("frontend/package.json").read_text())["version"]
+          lockfile = json.loads(Path("frontend/package-lock.json").read_text())
+          changelog = Path("CHANGELOG.md").read_text()
+          if (
+              frontend != version
+              or lockfile["version"] != version
+              or lockfile["packages"][""]["version"] != version
+          ):
+              raise SystemExit("frontend version does not match the release")
+          if not re.search(
+              rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
+              changelog,
+              re.MULTILINE,
+          ):
+              raise SystemExit("release is missing from CHANGELOG.md")
+          PY
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade ".[test]" build twine
+      - name: Run Python tests
+        run: python -m pytest
+      - name: Build bundled interface
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - name: Verify bundled interface
+        run: git diff --exit-code -- pqsetup/static
+      - name: Build Python distributions
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+          wheel=$(find dist -name '*.whl' -print -quit)
+          sdist=$(find dist -name '*.tar.gz' -print -quit)
+          python scripts/verify_distribution.py "$wheel" "$sdist"
+      - name: Upload Python distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  smoke:
+    needs: build
+    strategy:
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+        python-version:
+          - "3.11"
+          - "3.12"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-distributions
+          path: dist
+      - name: Install wheel
+        run: |
+          wheel=$(find dist -name '*.whl' -print -quit)
+          python -m pip install "$wheel"
+      - name: Verify installed application
+        run: |
+          python -m pip check
+          python - <<'PY'
+          import os
+          from importlib.resources import files
+
+          import pqsetup
+
+          assert (files("pqsetup") / "static" / "index.html").is_file()
+          assert pqsetup.__version__ == os.environ["RELEASE_TAG"].removeprefix("v")
+          PY
+          pqsetup --version
+          pqsetup --help
+      - name: Smoke-test local server
+        run: |
+          pqsetup serve --no-browser --port 8765 > pqsetup.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8765/api/health > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if ! curl --fail --silent http://127.0.0.1:8765/api/health; then
+            cat pqsetup.log
+            exit 1
+          fi
+          curl --fail --silent http://127.0.0.1:8765/ > /dev/null
+          kill "$server_pid" 2>/dev/null || true
+          wait "$server_pid" || true
+          trap - EXIT
+
+  publish-pypi:
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: pypi
+      url: https://pypi.org/p/molarverse-pqsetup
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-distributions
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
+
+  verify-pypi:
+    needs: publish-pypi
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the published version
+        run: |
+          version=${RELEASE_TAG#v}
+          for attempt in {1..12}; do
+            if python -m pip install --no-cache-dir "MolarVerse-PQSetup==$version"; then
+              break
+            fi
+            if [[ "$attempt" == 12 ]]; then
+              exit 1
+            fi
+            sleep 10
+          done
+          pqsetup --version
+          python -m pip check
+      - name: Verify published metadata
+        run: |
+          version=${RELEASE_TAG#v}
+          python - "$version" <<'PY'
+          import json
+          import sys
+          import urllib.request
+
+          version = sys.argv[1]
+          with urllib.request.urlopen(
+              f"https://pypi.org/pypi/molarverse-pqsetup/{version}/json"
+          ) as response:
+              payload = json.load(response)
+          if payload["info"]["name"] != "MolarVerse-PQSetup":
+              raise SystemExit("published distribution name does not match")
+          if payload["info"]["version"] != version:
+              raise SystemExit("published version does not match")
+          filenames = {item["filename"] for item in payload["urls"]}
+          if not any(name.endswith(".whl") for name in filenames):
+              raise SystemExit("published release has no wheel")
+          if not any(name.endswith(".tar.gz") for name in filenames):
+              raise SystemExit("published release has no source distribution")
+          PY
+
+  github-release:
+    needs:
+      - smoke
+      - verify-pypi
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-distributions
+          path: dist
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist || exit 1
+          sha256sum ./*.whl ./*.tar.gz > SHA256SUMS
+          release_flags=()
+          if [[ "$RELEASE_TAG" =~ (a|b|rc)[0-9]+$ ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            ./*.whl ./*.tar.gz ./SHA256SUMS \
+            --generate-notes \
+            --title "PQSetup ${RELEASE_TAG#v}" \
+            --verify-tag \
+            --repo "$GITHUB_REPOSITORY" \
+            "${release_flags[@]}"

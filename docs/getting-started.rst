@@ -22,7 +22,7 @@ Install
 
    python3 -m venv .venv
    source .venv/bin/activate
-   python -m pip install "git+https://github.com/MolarVerse/PQSetup.git"
+   python -m pip install MolarVerse-PQSetup
 
 From a local clone:
 
