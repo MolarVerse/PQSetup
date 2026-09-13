@@ -22,11 +22,9 @@ PQSetup requires Python 3.11 or newer.
 
 .. code-block:: bash
 
-   git clone https://github.com/MolarVerse/PQSetup.git
-   cd PQSetup
    python3 -m venv .venv
    source .venv/bin/activate
-   python -m pip install .
+   python -m pip install MolarVerse-PQSetup
    pqsetup
 
 The interface is included in the Python package. Node.js is not required.

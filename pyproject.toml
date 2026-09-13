@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pqsetup"
+name = "MolarVerse-PQSetup"
 dynamic = ["version"]
 description = "Prepare and validate PQ simulation inputs."
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [
   { name = "MolarVerse" },
 ]
@@ -55,6 +55,7 @@ pqsetup = "pqsetup.cli:main"
 [project.urls]
 Documentation = "https://molarverse.github.io/PQSetup/"
 Repository = "https://github.com/MolarVerse/PQSetup"
+Changelog = "https://github.com/MolarVerse/PQSetup/blob/main/CHANGELOG.md"
 Issues = "https://github.com/MolarVerse/PQSetup/issues"
 PQ = "https://github.com/MolarVerse/PQ"
 
@@ -63,6 +64,24 @@ path = "pqsetup/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["pqsetup"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/pqsetup",
+  "/frontend",
+  "/docs",
+  "/scripts",
+  "/tests",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+  "/THIRD_PARTY_NOTICES.md",
+  "/pyproject.toml",
+]
+exclude = [
+  "/docs/_build",
+  "/frontend/node_modules",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

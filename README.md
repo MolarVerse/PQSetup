@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml/badge.svg)](https://github.com/MolarVerse/PQSetup/actions/workflows/ci.yml)
 [![Docs](https://github.com/MolarVerse/PQSetup/actions/workflows/docs.yml/badge.svg)](https://molarverse.github.io/PQSetup/)
+[![PyPI](https://img.shields.io/pypi/v/molarverse-pqsetup.svg)](https://pypi.org/project/molarverse-pqsetup/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 # PQSetup
@@ -21,7 +22,7 @@ Python 3.11 or newer. The UI ships inside the package; Node.js is not required.
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install "git+https://github.com/MolarVerse/PQSetup.git"
+python -m pip install MolarVerse-PQSetup
 ```
 
 From a local clone (contributors):

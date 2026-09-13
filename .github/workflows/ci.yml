@@ -36,7 +36,13 @@ jobs:
 
       - name: Build wheel
         if: runner.os == 'Linux'
-        run: python -m pip wheel --no-deps . --wheel-dir dist
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+          wheel=$(find dist -name '*.whl' -print -quit)
+          sdist=$(find dist -name '*.tar.gz' -print -quit)
+          python scripts/verify_distribution.py "$wheel" "$sdist"
 
       - name: Smoke-test wheel
         if: runner.os == 'Linux'
