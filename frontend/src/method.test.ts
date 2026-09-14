@@ -118,9 +118,13 @@ describe("QM companion files", () => {
     expect(qmSetupFileSpecs("ase_xtb", "NPT").map((file) => file.role)).toEqual(
       ["moldescriptor"],
     );
+    expect(qmSetupFileSpecs("ase_xtb", "NPT")[0]?.optional).toBe(true);
     expect(
       qmSetupFileSpecs("dftbplus", "NPT").map((file) => file.role),
     ).toEqual(["moldescriptor", "dftb_template"]);
+    expect(
+      qmSetupFileSpecs("dftbplus", "NVT").every((file) => file.optional),
+    ).toBe(true);
     expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
   });
 

@@ -189,7 +189,10 @@ export function qmSetupFileSpecs(
     const role = WORKING_FILE_ROLES[dependency];
     if (role) roles.add(role);
   });
-  return [...roles].map((role) => ({ ...FILE_SPECS[role], optional: false }));
+  return [...roles].map((role) => ({
+    ...FILE_SPECS[role],
+    optional: role === "moldescriptor" || role === "dftb_template",
+  }));
 }
 
 export function externalQMProgram(
