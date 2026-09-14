@@ -19,6 +19,7 @@ from pqsetup.models import (
     RunPlanRequest,
     RunnerStatus,
     SetupFile,
+    SetupFileReference,
     SimulationSetup,
     Structure,
 )
@@ -59,7 +60,22 @@ def test_water_companions_are_bundled() -> None:
     assert "__PQ_SLAKOS_3OB__" not in filled
 
 
-def test_plan_render_seeds_dftb_without_upload() -> None:
+def _pq_with_slakos(tmp_path: Path) -> PQStatus:
+    pq_bin = tmp_path / "bin" / "PQ"
+    pq_bin.parent.mkdir(parents=True)
+    pq_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    sk = tmp_path / "share" / "PQ" / "slakos" / "3ob" / "skfiles"
+    sk.mkdir(parents=True)
+    (sk / "H-H.skf").write_text("x", encoding="utf-8")
+    (sk / "O-H.skf").write_text("x", encoding="utf-8")
+    return PQStatus(
+        found=True,
+        executable=str(pq_bin),
+        detail="test PQ with slakos",
+    )
+
+
+def test_plan_render_seeds_dftb_when_slakos_present(tmp_path: Path) -> None:
     result = render_run_plan(
         RunPlanRequest(
             setup=SimulationSetup(
@@ -68,11 +84,47 @@ def test_plan_render_seeds_dftb_without_upload() -> None:
             ),
             setup_files=[],
         ),
-        pq=PQStatus(found=False, detail="PQ was not found."),
+        pq=_pq_with_slakos(tmp_path),
         runners=[_runner("dftbplus")],
     )
     assert result.valid
     assert "dftb_file = dftb_in.template;" in result.files[0].input_text
+
+
+def test_plan_render_requires_template_when_slakos_missing(tmp_path: Path) -> None:
+    pq_bin = tmp_path / "PQ"
+    pq_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    result = render_run_plan(
+        RunPlanRequest(
+            structure=WATER,
+            setup=SimulationSetup(
+                runner="dftbplus",
+                runner_script="dftbplus_periodic_stress",
+            ),
+            setup_files=[],
+        ),
+        pq=PQStatus(found=True, executable=str(pq_bin), detail="PQ without slakos"),
+        runners=[_runner("dftbplus")],
+    )
+    assert not result.valid
+    assert any("template" in item.message.lower() for item in result.diagnostics)
+
+
+def test_plan_keeps_custom_moldescriptor_name() -> None:
+    from pqsetup.companions import with_seeded_setup_references
+
+    setup, refs = with_seeded_setup_references(
+        SimulationSetup(
+            runner="pyscf",
+            runner_script="pyscf_hf",
+            ensemble="NPT",
+            pressure_bar=1.0,
+        ),
+        [SetupFileReference(role="moldescriptor", name="mymol.dat")],
+        ["moldescriptor"],
+    )
+    assert setup.moldescriptor_file == "mymol.dat"
+    assert refs[0].name == "mymol.dat"
 
 
 def test_plan_render_skips_seed_for_non_water() -> None:

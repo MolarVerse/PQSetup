@@ -124,7 +124,12 @@ def render_run_plan(
         if script is not None and setup.runner_script != script.name:
             setup = setup.model_copy(update={"runner_script": script.name})
         required = list(required_qm_file_roles(setup, external_qm))
-        roles_to_seed = seedable_roles_for_structure(required, request.structure)
+        pq_executable = pq.executable if pq is not None and pq.found else None
+        roles_to_seed = seedable_roles_for_structure(
+            required,
+            request.structure,
+            pq_executable=pq_executable,
+        )
         setup, setup_files = with_seeded_setup_references(
             setup,
             list(request.setup_files),

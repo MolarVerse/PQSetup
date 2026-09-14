@@ -85,10 +85,6 @@ def structure_fits_water_companions(structure: Structure) -> bool:
     return bool(symbols) and symbols <= _WATER_ELEMENTS
 
 
-# Keep old name used by api/tests
-structure_fits_water_dftb = structure_fits_water_companions
-
-
 def with_seeded_setup_references(
     setup: SimulationSetup,
     setup_files: list[SetupFileReference],
@@ -98,17 +94,27 @@ def with_seeded_setup_references(
     by_role = {item.role: item for item in setup_files}
     setup_updates: dict[str, str] = {}
     refs = list(setup_files)
+
+    for item in setup_files:
+        field = QM_FILE_FIELDS.get(item.role)
+        if field is None or not item.name:
+            continue
+        if getattr(setup, field) is None:
+            setup_updates[field] = item.name
+
     for role in roles_to_seed:
-        if role not in SEEDABLE_ROLES:
+        if role not in SEEDABLE_ROLES or role in by_role:
             continue
         field = QM_FILE_FIELDS[role]
-        default_name = DEFAULT_COMPANION_NAMES[role]
-        current_name = getattr(setup, field)
-        name = current_name or default_name
-        if current_name is None:
+        name = (
+            setup_updates.get(field)
+            or getattr(setup, field)
+            or DEFAULT_COMPANION_NAMES[role]
+        )
+        if getattr(setup, field) is None and field not in setup_updates:
             setup_updates[field] = name
-        if role not in by_role:
-            refs.append(SetupFileReference(role=role, name=name))
+        refs.append(SetupFileReference(role=role, name=name))
+
     if setup_updates:
         setup = setup.model_copy(update=setup_updates)
     return setup, refs
@@ -117,11 +123,18 @@ def with_seeded_setup_references(
 def seedable_roles_for_structure(
     required_roles: list[SetupFileRole],
     structure: Structure | None,
+    *,
+    pq_executable: str | None = None,
 ) -> list[SetupFileRole]:
     roles = [role for role in required_roles if role in SEEDABLE_ROLES]
     if structure is not None and not structure_fits_water_companions(structure):
         return []
-    return roles
+    seeded: list[SetupFileRole] = []
+    for role in roles:
+        if role == "dftb_template" and discover_slakos_3ob(pq_executable) is None:
+            continue
+        seeded.append(role)
+    return seeded
 
 
 def seed_missing_setup_files(
