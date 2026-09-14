@@ -346,8 +346,6 @@ def _with_seeded_companions(
                 ),
             )
         roles_to_seed.append(role)
-    if not roles_to_seed:
-        return request
 
     refs = [
         SetupFileReference(role=item.role, name=item.name, content=item.content)
@@ -358,6 +356,9 @@ def _with_seeded_companions(
         refs,
         roles_to_seed,
     )
+    if not roles_to_seed:
+        return request.model_copy(update={"setup": setup, "setup_files": files})
+
     seeded = seed_missing_setup_files(
         setup,
         files,

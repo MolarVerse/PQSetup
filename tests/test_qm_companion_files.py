@@ -39,7 +39,7 @@ def _runner(runner_id: str) -> RunnerStatus:
     )
 
 
-def test_direct_dftb_requires_and_writes_its_template() -> None:
+def test_direct_dftb_requires_and_writes_its_template(tmp_path: Path) -> None:
     setup = SimulationSetup(
         runner="dftbplus",
         dftb_template_file="dftb_in.template",
@@ -61,11 +61,22 @@ def test_direct_dftb_requires_and_writes_its_template() -> None:
     assert result.valid
     assert "dftb_file = dftb_in.template;" in result.files[0].input_text
 
+    pq_bin = tmp_path / "bin" / "PQ"
+    pq_bin.parent.mkdir(parents=True)
+    pq_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    sk = tmp_path / "share" / "PQ" / "slakos" / "3ob" / "skfiles"
+    sk.mkdir(parents=True)
+    (sk / "H-H.skf").write_text("x", encoding="utf-8")
+    (sk / "O-H.skf").write_text("x", encoding="utf-8")
     seeded = render_run_plan(
         RunPlanRequest(
             setup=setup.model_copy(update={"dftb_template_file": None}),
         ),
-        pq=_pq(),
+        pq=PQStatus(
+            found=True,
+            executable=str(pq_bin),
+            detail="test PQ with slakos",
+        ),
         runners=[_runner("dftbplus")],
     )
     assert seeded.valid

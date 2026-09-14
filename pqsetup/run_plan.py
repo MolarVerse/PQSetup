@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from .companions import seedable_roles_for_structure, with_seeded_setup_references
+from .companions import (
+    discover_slakos_3ob,
+    seedable_roles_for_structure,
+    structure_fits_water_companions,
+    with_seeded_setup_references,
+)
 from .external_qm import selected_external_qm_script
 from .input_writer import render_input, restart_filename
 from .mm import (
@@ -135,13 +140,39 @@ def render_run_plan(
             list(request.setup_files),
             roles_to_seed,
         )
-        diagnostics.extend(
-            validate_qm_setup_files(
-                setup,
-                setup_files,
-                external_qm,
+        slakos_hint = False
+        if (
+            "dftb_template" in required
+            and "dftb_template" not in roles_to_seed
+            and not any(item.role == "dftb_template" for item in setup_files)
+            and (
+                request.structure is None
+                or structure_fits_water_companions(request.structure)
             )
+            and discover_slakos_3ob(pq_executable) is None
+        ):
+            diagnostics.append(
+                _error(
+                    "qm.dftb_template_file",
+                    (
+                        "Upload a DFTB+ template, or install PQ's 3ob slakos set "
+                        "so the bundled water template can be filled in."
+                    ),
+                )
+            )
+            slakos_hint = True
+        file_diagnostics = validate_qm_setup_files(
+            setup,
+            setup_files,
+            external_qm,
         )
+        if slakos_hint:
+            file_diagnostics = [
+                item
+                for item in file_diagnostics
+                if item.code != "qm.dftb_template_file"
+            ]
+        diagnostics.extend(file_diagnostics)
         if method_id not in PQ_QM_PROGRAMS:
             diagnostics.append(
                 _error(
