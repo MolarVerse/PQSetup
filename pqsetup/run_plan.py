@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from .companions import seedable_roles_for_structure, with_seeded_setup_references
 from .external_qm import selected_external_qm_script
-from .companions import with_seeded_setup_references
 from .input_writer import render_input, restart_filename
 from .mm import (
     mm_method_label,
@@ -123,10 +123,12 @@ def render_run_plan(
             return PlanRenderResult(files=[], diagnostics=diagnostics, valid=False)
         if script is not None and setup.runner_script != script.name:
             setup = setup.model_copy(update={"runner_script": script.name})
+        required = list(required_qm_file_roles(setup, external_qm))
+        roles_to_seed = seedable_roles_for_structure(required, request.structure)
         setup, setup_files = with_seeded_setup_references(
             setup,
             list(request.setup_files),
-            list(required_qm_file_roles(setup, external_qm)),
+            roles_to_seed,
         )
         diagnostics.extend(
             validate_qm_setup_files(

@@ -14,10 +14,11 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .companions import (
-    DEFAULT_COMPANION_NAMES,
     SEEDABLE_ROLES,
+    discover_slakos_3ob,
+    role_needs_seed,
     seed_missing_setup_files,
-    structure_fits_water_dftb,
+    structure_fits_water_companions,
     with_seeded_setup_references,
 )
 from .executable import discover_pq
@@ -40,6 +41,7 @@ from .models import (
     RunnerStatus,
     SetupFile,
     SetupFileReference,
+    SetupFileRole,
     SimulationSetup,
     StructureAnalysis,
 )
@@ -49,7 +51,7 @@ from .release import TARGET_PQ_RELEASE
 from .runners import apply_pq_capabilities, detect_runners
 from .run_plan import plan_requested, render_run_plan
 from .run_script import RUN_SCRIPT_NAME, render_run_script
-from .setup_files import QM_FILE_FIELDS, required_qm_file_roles
+from .setup_files import required_qm_file_roles
 from .structures import (
     analyze_structure,
     format_pq_restart,
@@ -314,63 +316,52 @@ def _with_seeded_companions(
     external_qm,
 ) -> ExportRequest:
     required = list(required_qm_file_roles(request.setup, external_qm))
-    if not required:
+    files = [
+        SetupFile(role=item.role, name=item.name, content=item.content or "")
+        for item in request.setup_files
+    ]
+    roles_to_seed: list[SetupFileRole] = []
+    for role in required:
+        if role not in SEEDABLE_ROLES or not role_needs_seed(role, files):
+            continue
+        if not structure_fits_water_companions(request.structure):
+            label = (
+                "DFTB+ template"
+                if role == "dftb_template"
+                else "molecule descriptor"
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Upload a {label} for this structure. "
+                    "The bundled companion only covers H and O."
+                ),
+            )
+        if role == "dftb_template" and discover_slakos_3ob(pq_executable) is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Upload a DFTB+ template, or install PQ's 3ob slakos set "
+                    "so the bundled water template can be filled in."
+                ),
+            )
+        roles_to_seed.append(role)
+    if not roles_to_seed:
         return request
 
     refs = [
         SetupFileReference(role=item.role, name=item.name, content=item.content)
-        for item in request.setup_files
+        for item in files
     ]
-    setup, refs = with_seeded_setup_references(request.setup, refs, required)
-
-    by_role = {
-        item.role: SetupFile(
-            role=item.role,
-            name=item.name,
-            content=item.content or "",
-        )
-        for item in request.setup_files
-    }
-    default_names = {
-        **DEFAULT_COMPANION_NAMES,
-        "turbomole_define_template": "tm_define.template",
-    }
-    files: list[SetupFile] = []
-    for role in required:
-        name = getattr(setup, QM_FILE_FIELDS[role]) or default_names[role]
-        existing = by_role.get(role)
-        files.append(
-            SetupFile(
-                role=role,
-                name=name,
-                content=existing.content if existing is not None else "",
-            )
-        )
-    for role, item in by_role.items():
-        if role not in {entry.role for entry in files}:
-            files.append(item)
-
-    will_seed_dftb = (
-        "dftb_template" in required
-        and "dftb_template" in SEEDABLE_ROLES
-        and not (
-            (existing := by_role.get("dftb_template")) is not None
-            and existing.content.strip()
-        )
+    setup, _refs = with_seeded_setup_references(
+        request.setup,
+        refs,
+        roles_to_seed,
     )
-    if will_seed_dftb and not structure_fits_water_dftb(request.structure):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Upload a DFTB+ template for this structure. "
-                "The bundled template only covers H and O."
-            ),
-        )
-
     seeded = seed_missing_setup_files(
         setup,
         files,
-        required,
+        roles_to_seed,
         pq_executable=pq_executable,
     )
     return request.model_copy(update={"setup": setup, "setup_files": seeded})

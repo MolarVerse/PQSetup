@@ -75,6 +75,25 @@ def test_plan_render_seeds_dftb_without_upload() -> None:
     assert "dftb_file = dftb_in.template;" in result.files[0].input_text
 
 
+def test_plan_render_skips_seed_for_non_water() -> None:
+    methane = WATER.model_copy(deep=True)
+    methane.atoms[0].symbol = "C"
+    result = render_run_plan(
+        RunPlanRequest(
+            structure=methane,
+            setup=SimulationSetup(
+                runner="dftbplus",
+                runner_script="dftbplus_periodic_stress",
+            ),
+            setup_files=[],
+        ),
+        pq=PQStatus(found=False, detail="PQ was not found."),
+        runners=[_runner("dftbplus")],
+    )
+    assert not result.valid
+    assert any("DFTB" in item.message or "template" in item.message.lower() for item in result.diagnostics)
+
+
 def test_export_seeds_dftb_template_without_upload() -> None:
     client = TestClient(create_app())
     response = client.post(
@@ -158,6 +177,95 @@ def test_discover_slakos_near_pq_build() -> None:
     found = discover_slakos_3ob(pq)
     assert found is not None
     assert (found / "O-H.skf").is_file()
+
+
+def test_discover_slakos_installed_share_layout(tmp_path: Path) -> None:
+    pq_bin = tmp_path / "bin" / "PQ"
+    pq_bin.parent.mkdir(parents=True)
+    pq_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    sk = tmp_path / "share" / "PQ" / "slakos" / "3ob" / "skfiles"
+    sk.mkdir(parents=True)
+    (sk / "H-H.skf").write_text("x", encoding="utf-8")
+    (sk / "O-H.skf").write_text("x", encoding="utf-8")
+    assert discover_slakos_3ob(str(pq_bin)) == sk.resolve()
+
+
+def test_export_rejects_seed_when_slakos_missing(tmp_path: Path) -> None:
+    pq_bin = tmp_path / "PQ"
+    pq_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    pq_bin.chmod(0o755)
+    client = TestClient(create_app(pq_executable=str(pq_bin)))
+    response = client.post(
+        "/api/project/export",
+        json={
+            "project_name": "water-dftb",
+            "structure": WATER.model_dump(mode="json"),
+            "setup": {
+                "job_type": "qm-md",
+                "ensemble": "NVT",
+                "start_file": "water-example.rst",
+                "file_prefix": "water",
+                "steps": 3,
+                "timestep_fs": 0.5,
+                "temperature_k": 298.15,
+                "thermostat": "velocity_rescaling",
+                "initialize_velocities": True,
+                "runner": "dftbplus",
+                "runner_script": "dftbplus_periodic_stress",
+                "mm_force_field": "off",
+            },
+            "equilibration": {
+                "enabled": False,
+                "steps": 5,
+                "timestep_fs": 0.5,
+                "temperature_k": 298.15,
+            },
+            "sampling_run_count": 1,
+            "setup_files": [],
+            "preparation": None,
+        },
+    )
+    assert response.status_code == 422
+    assert "slakos" in str(response.json()).lower() or "template" in str(response.json()).lower()
+
+
+def test_export_rejects_seeded_moldescriptor_for_non_water() -> None:
+    methane = WATER.model_copy(deep=True)
+    methane.atoms[0].symbol = "C"
+    client = TestClient(create_app())
+    response = client.post(
+        "/api/project/export",
+        json={
+            "project_name": "methane-npt",
+            "structure": methane.model_dump(mode="json"),
+            "setup": {
+                "job_type": "qm-md",
+                "ensemble": "NPT",
+                "start_file": "water-example.rst",
+                "file_prefix": "methane",
+                "steps": 3,
+                "timestep_fs": 0.5,
+                "temperature_k": 298.15,
+                "pressure_bar": 1.0,
+                "thermostat": "velocity_rescaling",
+                "initialize_velocities": True,
+                "runner": "pyscf",
+                "runner_script": "pyscf_hf",
+                "mm_force_field": "off",
+            },
+            "equilibration": {
+                "enabled": False,
+                "steps": 5,
+                "timestep_fs": 0.5,
+                "temperature_k": 298.15,
+            },
+            "sampling_run_count": 1,
+            "setup_files": [],
+            "preparation": None,
+        },
+    )
+    assert response.status_code == 422
+    assert "H and O" in str(response.json())
 
 
 def test_seed_keeps_custom_dftb_template() -> None:
