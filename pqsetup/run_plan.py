@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from .external_qm import selected_external_qm_script
+from .companions import with_seeded_setup_references
 from .input_writer import render_input, restart_filename
 from .mm import (
     mm_method_label,
@@ -25,7 +26,7 @@ from .release import (
     PQ_RUNNER_LABELS,
     TARGET_PQ_RELEASE,
 )
-from .setup_files import validate_qm_setup_files
+from .setup_files import required_qm_file_roles, validate_qm_setup_files
 
 
 _RUNNER_STATUS_ALIASES = {"mace": "mace_mp"}
@@ -122,10 +123,15 @@ def render_run_plan(
             return PlanRenderResult(files=[], diagnostics=diagnostics, valid=False)
         if script is not None and setup.runner_script != script.name:
             setup = setup.model_copy(update={"runner_script": script.name})
+        setup, setup_files = with_seeded_setup_references(
+            setup,
+            list(request.setup_files),
+            list(required_qm_file_roles(setup, external_qm)),
+        )
         diagnostics.extend(
             validate_qm_setup_files(
                 setup,
-                request.setup_files,
+                setup_files,
                 external_qm,
             )
         )

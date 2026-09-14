@@ -13,6 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
+from .companions import (
+    DEFAULT_COMPANION_NAMES,
+    SEEDABLE_ROLES,
+    seed_missing_setup_files,
+    structure_fits_water_dftb,
+    with_seeded_setup_references,
+)
 from .executable import discover_pq
 from .input_writer import render_input
 from .mm import (
@@ -31,6 +38,7 @@ from .models import (
     RenderResult,
     RunPlanRequest,
     RunnerStatus,
+    SetupFile,
     SetupFileReference,
     SimulationSetup,
     StructureAnalysis,
@@ -41,7 +49,7 @@ from .release import TARGET_PQ_RELEASE
 from .runners import apply_pq_capabilities, detect_runners
 from .run_plan import plan_requested, render_run_plan
 from .run_script import RUN_SCRIPT_NAME, render_run_script
-from .setup_files import required_qm_file_roles
+from .setup_files import QM_FILE_FIELDS, required_qm_file_roles
 from .structures import (
     analyze_structure,
     format_pq_restart,
@@ -136,6 +144,11 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
 
     @app.post("/api/project/export")
     def export_project(request: ExportRequest) -> Response:
+        request = _with_seeded_companions(
+            request,
+            pq_executable=pq.executable if pq.found else None,
+            external_qm=pq.external_qm,
+        )
         if (
             request.structure.cell_generated
             and request.setup.ensemble == "NPT"
@@ -292,6 +305,75 @@ def _safe_name(value: str) -> str:
         if character.isalnum() or character in {"-", "_"}
     ).strip("-_")
     return name or "pq-run"
+
+
+def _with_seeded_companions(
+    request: ExportRequest,
+    *,
+    pq_executable: str | None,
+    external_qm,
+) -> ExportRequest:
+    required = list(required_qm_file_roles(request.setup, external_qm))
+    if not required:
+        return request
+
+    refs = [
+        SetupFileReference(role=item.role, name=item.name, content=item.content)
+        for item in request.setup_files
+    ]
+    setup, refs = with_seeded_setup_references(request.setup, refs, required)
+
+    by_role = {
+        item.role: SetupFile(
+            role=item.role,
+            name=item.name,
+            content=item.content or "",
+        )
+        for item in request.setup_files
+    }
+    default_names = {
+        **DEFAULT_COMPANION_NAMES,
+        "turbomole_define_template": "tm_define.template",
+    }
+    files: list[SetupFile] = []
+    for role in required:
+        name = getattr(setup, QM_FILE_FIELDS[role]) or default_names[role]
+        existing = by_role.get(role)
+        files.append(
+            SetupFile(
+                role=role,
+                name=name,
+                content=existing.content if existing is not None else "",
+            )
+        )
+    for role, item in by_role.items():
+        if role not in {entry.role for entry in files}:
+            files.append(item)
+
+    will_seed_dftb = (
+        "dftb_template" in required
+        and "dftb_template" in SEEDABLE_ROLES
+        and not (
+            (existing := by_role.get("dftb_template")) is not None
+            and existing.content.strip()
+        )
+    )
+    if will_seed_dftb and not structure_fits_water_dftb(request.structure):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Upload a DFTB+ template for this structure. "
+                "The bundled template only covers H and O."
+            ),
+        )
+
+    seeded = seed_missing_setup_files(
+        setup,
+        files,
+        required,
+        pq_executable=pq_executable,
+    )
+    return request.model_copy(update={"setup": setup, "setup_files": seeded})
 
 
 def _export_plan(

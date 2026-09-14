@@ -61,17 +61,15 @@ def test_direct_dftb_requires_and_writes_its_template() -> None:
     assert result.valid
     assert "dftb_file = dftb_in.template;" in result.files[0].input_text
 
-    missing = render_run_plan(
+    seeded = render_run_plan(
         RunPlanRequest(
             setup=setup.model_copy(update={"dftb_template_file": None}),
         ),
         pq=_pq(),
         runners=[_runner("dftbplus")],
     )
-    assert not missing.valid
-    assert "qm.dftb_template_file" in {
-        diagnostic.code for diagnostic in missing.diagnostics
-    }
+    assert seeded.valid
+    assert "dftb_file = dftb_in.template;" in seeded.files[0].input_text
 
 
 def test_qm_npt_requires_and_writes_a_molecule_descriptor() -> None:
@@ -99,15 +97,13 @@ def test_qm_npt_requires_and_writes_a_molecule_descriptor() -> None:
     assert result.valid
     assert "moldescriptor_file = moldescriptor.dat;" in result.files[0].input_text
 
-    missing = render_run_plan(
+    seeded = render_run_plan(
         RunPlanRequest(setup=setup.model_copy(update={"moldescriptor_file": None})),
         pq=_pq(),
         runners=[_runner("ase_xtb")],
     )
-    assert not missing.valid
-    assert "qm.moldescriptor_file" in {
-        diagnostic.code for diagnostic in missing.diagnostics
-    }
+    assert seeded.valid
+    assert "moldescriptor_file = moldescriptor.dat;" in seeded.files[0].input_text
 
 
 def test_direct_dftb_export_packages_the_typed_template(monkeypatch) -> None:
