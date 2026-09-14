@@ -35,6 +35,15 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "# ── Pressure coupling" in result.input_text
 
 
+def test_ase_dftbplus_defaults_slakos_3ob() -> None:
+    result = render_input(setup_from_preset("ambient-nvt", runner="ase_dftbplus"))
+
+    assert result.valid
+    assert "qm_prog = ase-dftbplus;" in result.input_text
+    assert "slakos = 3ob;" in result.input_text
+    assert "dispersion = on;" in result.input_text
+
+
 def test_nvt_and_nve_have_no_pressure_coupling() -> None:
     nvt = render_input(setup_from_preset("ambient-nvt"))
     nve = render_input(setup_from_preset("nve"))

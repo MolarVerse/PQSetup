@@ -224,6 +224,13 @@ def render_input(
             and "xtb-method" not in setup.extra_settings
         ):
             lines.append("xtb_method = gfn2-xtb;")
+        if (
+            setup.runner == "ase_dftbplus"
+            and "slakos" not in setup.extra_settings
+        ):
+            lines.append("slakos = 3ob;")
+            if "dispersion" not in setup.extra_settings:
+                lines.append("dispersion = on;")
     if setup.extra_settings:
         lines.extend(
             [
