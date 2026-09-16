@@ -58,19 +58,16 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        example={false}
         generatedCellTreatment="padding"
         densityGcm3={null}
+        defaultOpen
       />,
     );
 
     expect(markup).not.toContain('class="cell-edge');
-    expect(markup).toContain("No periodic cell in source");
-    expect(markup).toContain(
-      "PQSetup adds a centered run cell with 6 Å padding.",
-    );
-    expect(markup).toContain("Show box");
-    expect(markup).toContain("Generated");
+    expect(markup).toContain("Show");
+    expect(markup).toContain('class="generated-cell-note"');
+    expect(markup).not.toContain("No cell");
   });
 
   it("shows an imported physical cell without an extra control", () => {
@@ -87,28 +84,46 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={physicalAnalysis}
-        example={false}
         generatedCellTreatment="padding"
         densityGcm3={null}
+        defaultOpen
       />,
     );
 
-    expect(markup.match(/class="cell-edge/g)).toHaveLength(12);
-    expect(markup).toContain("Imported");
-    expect(markup).not.toContain("Show box");
+    expect(
+      [...markup.matchAll(new RegExp('class="cell-edge', "g"))],
+    ).toHaveLength(12);
+    expect(markup).not.toContain(">Show<");
+    expect(markup).not.toContain('class="generated-cell-note"');
   });
 
-  it("explains density-derived molecular-mechanics cells", () => {
+  it("offers a Show control for density-derived molecular-mechanics cells", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        example={false}
         generatedCellTreatment="density"
         densityGcm3={1}
+        defaultOpen
       />,
     );
 
-    expect(markup).toContain("PQ derives the run cell from 1 g cm⁻³.");
-    expect(markup).toContain("Density-derived");
+    expect(markup).toContain("Show");
+    expect(markup).toContain('class="generated-cell-note"');
+  });
+
+  it("stays collapsed by default and keeps the summary header", () => {
+    const markup = renderToStaticMarkup(
+      <StructureViewer
+        analysis={ANALYSIS}
+        generatedCellTreatment="padding"
+        densityGcm3={null}
+        defaultOpen={false}
+      />,
+    );
+
+    expect(markup).toContain("Show structure");
+    expect(markup).toContain("viewer-collapsed");
+    expect(markup).not.toContain('class="viewer-stage');
+    expect(markup).toContain("H2O");
   });
 });
