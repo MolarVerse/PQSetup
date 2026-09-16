@@ -592,7 +592,7 @@ function PressureCoupling({
 }) {
   return (
     <section className="coupling-section" aria-label="Pressure coupling">
-      <div className="form-grid coupling-grid pressure-grid">
+      <div className="form-grid coupling-grid">
         <Field
           label="Manostat"
           controlId={controlId}
@@ -2478,7 +2478,7 @@ export default function App() {
                     </div>
                   </fieldset>
 
-                  <div className="form-grid mm-settings">
+                  <div className="form-grid">
                     {analysis.structure.cell_generated && (
                       <Field
                         label="Density"
@@ -2958,7 +2958,6 @@ export default function App() {
               generatedCellTreatment={
                 molecularMechanics ? "density" : "padding"
               }
-              densityGcm3={setup.density_g_cm3}
               importNonce={structureImportNonce}
             />
 

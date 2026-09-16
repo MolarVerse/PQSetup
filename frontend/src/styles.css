@@ -27,8 +27,6 @@
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius: 8px;
   --radius-sm: 6px;
-  --radius-lg: 12px;
-  --col: 640px;
   --space: 10px;
   --control: 34px;
   --pad: 12px;
@@ -1427,12 +1425,6 @@ body.is-resizing-pane *{
   background: var(--surface);
 }
 
-.inputs-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .input-navigator {
   min-width: 0;
   height: 40px;
@@ -1500,39 +1492,6 @@ body.is-resizing-pane *{
   color: var(--muted);
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.single-input-file {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--accent-dark);
-  background: var(--surface);
-}
-
-.single-input-file > span {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.single-input-file strong {
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 0.78rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.single-input-file small {
-  color: var(--muted);
-  font-size: 0.7rem;
   white-space: nowrap;
 }
 
@@ -1946,7 +1905,7 @@ body.is-resizing-pane *{
 }
 
 .viewer-toggle:hover {
-  color: var(--text);
+  color: var(--ink);
   border-color: #b8c4c0;
   background: rgb(255 255 255 / 60%);
 }

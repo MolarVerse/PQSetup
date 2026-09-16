@@ -59,7 +59,6 @@ describe("StructureViewer cell presentation", () => {
       <StructureViewer
         analysis={ANALYSIS}
         generatedCellTreatment="padding"
-        densityGcm3={null}
         defaultOpen
       />,
     );
@@ -85,7 +84,6 @@ describe("StructureViewer cell presentation", () => {
       <StructureViewer
         analysis={physicalAnalysis}
         generatedCellTreatment="padding"
-        densityGcm3={null}
         defaultOpen
       />,
     );
@@ -102,7 +100,6 @@ describe("StructureViewer cell presentation", () => {
       <StructureViewer
         analysis={ANALYSIS}
         generatedCellTreatment="density"
-        densityGcm3={1}
         defaultOpen
       />,
     );
@@ -116,7 +113,6 @@ describe("StructureViewer cell presentation", () => {
       <StructureViewer
         analysis={ANALYSIS}
         generatedCellTreatment="padding"
-        densityGcm3={null}
         defaultOpen={false}
       />,
     );

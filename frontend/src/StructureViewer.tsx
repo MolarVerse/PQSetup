@@ -61,7 +61,6 @@ function writeStoredViewerHeight(height: number) {
 interface StructureViewerProps {
   analysis: StructureAnalysis;
   generatedCellTreatment: "padding" | "density";
-  densityGcm3: number | null;
   /** Bump after a successful import to auto-expand once per session. */
   importNonce?: number;
   /** Initial open state override (tests). */
