@@ -11,9 +11,7 @@ Prepare and validate PQ simulation inputs in a local browser interface.
 
 PQSetup builds the input package. [PQ](https://github.com/MolarVerse/PQ) runs it.
 
-[Documentation](https://molarverse.github.io/PQSetup/) ·
-[Getting started](https://molarverse.github.io/PQSetup/getting-started.html) ·
-[Command line](https://molarverse.github.io/PQSetup/reference/cli.html)
+[Documentation](https://molarverse.github.io/PQSetup/)
 
 ## Install
 
@@ -59,59 +57,23 @@ Validate an existing input:
 pqsetup validate run.in
 ```
 
-See the [documentation](https://molarverse.github.io/PQSetup/) for server
-options, validation scopes, and complete setup examples.
+PQSetup does not submit jobs or run the simulation. It writes inputs for the
+stable PQ v0.7.0 release.
 
-## Input
+## Documentation
 
-| Structure | Extension | Handling |
-| --- | --- | --- |
-| PQ restart | `.rst` | Preserves atom names, molecule types, and available velocities or forces |
-| CIF | `.cif` | Read through ASE |
-| XYZ | `.xyz`, `.extxyz` | Reads standard and extended XYZ data |
-| Protein Data Bank | `.pdb` | Read through ASE |
-| MOL / SDF | `.mol`, `.sdf` | Read through ASE |
-| ASE trajectory | `.traj` | Read through ASE |
-
-Multi-frame ASE sources import the final frame. Structures without a cell
-receive a centered vacuum cell. Periodic coordinates follow PQ's
-origin-centered cell convention.
-
-## Workflow
-
-| Step | Result |
-| --- | --- |
-| System | Inspect coordinates, elements, periodic cells, and close contacts |
-| Method | Configure molecular mechanics or one supported QM calculator |
-| Conditions | Build NVE, NVT, or NPT sampling with optional NVT equilibration |
-| Prepare | Wrap periodic atoms and optionally perturb perfect crystal symmetry |
-| Review | Inspect every generated input before creating the package |
-
-PQSetup does not submit jobs or run the simulation.
-
-## Validation
-
-PQSetup checks the structure, plan, required files, and generated inputs
-locally. When the selected PQ executable advertises machine-readable
-validation, PQSetup also checks the inputs with PQ.
-
-Environment detection reports what is available. It does not establish that a
-method, force field, or protocol is scientifically suitable.
-
-PQSetup writes inputs for the stable PQ v0.7.0 release.
-
-## Run Packages
-
-| File | Purpose |
-| --- | --- |
-| `run-eq.in` | Optional NVT equilibration |
-| `run-01.in` … `run-999.in` | Sampling inputs and restart chain |
-| Structure restart | Prepared coordinates under the selected start filename |
-| `run.sh` | Fail-fast execution in the recorded order |
-| `pqproject.json` | Plan, environment, provenance, warnings, and file hashes |
-
-Uploaded force-field files and calculator templates are included in the
-package.
+- [Getting started](https://molarverse.github.io/PQSetup/getting-started.html) —
+  install, environment checks, and the first run package
+- [Build a run](https://molarverse.github.io/PQSetup/workflow.html) — the five
+  setup steps and keyboard shortcuts
+- [Validation](https://molarverse.github.io/PQSetup/validation.html) — local
+  preflight, environment discovery, and PQ parser checks
+- [Run packages](https://molarverse.github.io/PQSetup/run-packages.html) —
+  package layout, restart order, and the project manifest
+- [Command line](https://molarverse.github.io/PQSetup/reference/cli.html) —
+  `serve`, `doctor`, and `validate`
+- [Compatibility](https://molarverse.github.io/PQSetup/reference/compatibility.html)
+  — supported structure formats, cells, and calculators
 
 ## Development
 

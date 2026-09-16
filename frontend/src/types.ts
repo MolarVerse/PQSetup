@@ -203,12 +203,6 @@ export interface SetupFileReference {
   content?: string | null;
 }
 
-export interface RenderResult {
-  input_text: string;
-  diagnostics: Diagnostic[];
-  valid: boolean;
-}
-
 export interface EquilibrationStage {
   enabled: boolean;
   steps: number;

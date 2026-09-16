@@ -16,27 +16,13 @@ except Exception:  # pragma: no cover - package may be absent in a bare checkout
 version = release
 
 extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
-    "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_design",
 ]
 
-autodoc_typehints = "description"
-napoleon_numpy_docstring = True
-napoleon_google_docstring = False
-
-intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
-    "numpy": ("https://numpy.org/doc/stable/", None),
-}
-
 copybutton_prompt_text = r">>> |\.\.\. |\$ "
 copybutton_prompt_is_regexp = True
 
-templates_path = ["_templates"]
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"

@@ -409,10 +409,6 @@ def analyze_structure(structure: Structure) -> StructureAnalysis:
     )
 
 
-def find_collisions(structure: Structure) -> list[Collision]:
-    return scan_collisions(structure).collisions
-
-
 def perturb_structure(
     structure: Structure,
     sigma_angstrom: float,

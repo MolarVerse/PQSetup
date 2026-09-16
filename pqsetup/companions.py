@@ -61,10 +61,6 @@ def discover_slakos_3ob(pq_executable: str | None) -> Path | None:
     return None
 
 
-def default_companion_name(role: SetupFileRole) -> str | None:
-    return DEFAULT_COMPANION_NAMES.get(role)
-
-
 def default_companion_content(
     role: SetupFileRole,
     *,
