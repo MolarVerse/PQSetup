@@ -82,7 +82,7 @@ def render_input(
     lines = [
         *_header(setup),
         "",
-        "# ── Dynamics ──────────────────────────────────────────────────",
+        _section("dynamics"),
         f"jobtype = {setup.job_type};",
     ]
     if setup.ensemble != "OPT":
@@ -95,7 +95,7 @@ def render_input(
     lines.extend(
         [
             "",
-            "# ── Files and continuation ────────────────────────────────────",
+            _section("files & continuation"),
             f"start_file = {setup.start_file};",
             f"restart_file = {restart_filename(setup)};",
             f"file_prefix = {setup.file_prefix};",
@@ -108,7 +108,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Initial state ─────────────────────────────────────────────",
+                _section("initial state"),
             ]
         )
         if setup.initialize_velocities or setup.ensemble in {"NVT", "NPT"}:
@@ -120,7 +120,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Temperature coupling ──────────────────────────────────────",
+                _section("temperature coupling"),
                 f"thermostat = {setup.thermostat};",
             ]
         )
@@ -148,7 +148,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Pressure coupling ─────────────────────────────────────────",
+                _section("pressure coupling"),
                 f"manostat = {setup.manostat};",
                 f"pressure = {_number(setup.pressure_bar)};",
             ]
@@ -166,7 +166,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Molecular mechanics ───────────────────────────────────────",
+                _section("molecular mechanics"),
             ]
         )
         if setup.density_g_cm3 is not None:
@@ -177,7 +177,7 @@ def render_input(
                 "virial = molecular;",
                 f"force-field = {setup.mm_force_field};",
                 "",
-                "# ── Force-field files ─────────────────────────────────────────",
+                _section("force-field files"),
                 f"moldescriptor_file = {setup.moldescriptor_file};",
             ]
         )
@@ -198,7 +198,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Electronic structure ──────────────────────────────────────",
+                _section("electronic structure"),
                 f"qm_prog = {runner_name};",
             ]
         )
@@ -235,7 +235,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Additional settings ───────────────────────────────────────",
+                _section("additional settings"),
             ]
         )
         for key in sorted(setup.extra_settings):
@@ -792,14 +792,25 @@ def restart_filename(setup: SimulationSetup) -> str:
     return setup.restart_file or f"{setup.file_prefix}.rst"
 
 
-def _header(setup: SimulationSetup) -> list[str]:
-    width = 62
-    title = "─ PQSetup · simulation input "
-    top = title + "─" * (width - len(title))
+def _section(title: str) -> str:
+    """Sciency section divider that stays short enough for narrow panes."""
+    label = f"⟨ {title} ⟩"
+    fill = max(4, 54 - len(label))
+    return f"# ──{label}" + "─" * fill
 
-    def row(value: str) -> str:
-        content = value if len(value) <= width - 2 else f"{value[: width - 3]}…"
-        return f"# │ {content:<{width - 2}} │"
+
+def _header(setup: SimulationSetup) -> list[str]:
+    """Run card banner: orbital glyph + ensemble / method / trajectory."""
+    width = 58
+
+    def row(left: str, right: str = "") -> str:
+        # Two-column interior: glyph | facts
+        glyph = f"{left:<14}"
+        fact = right
+        content = f"{glyph}{fact}"
+        if len(content) > width - 2:
+            content = f"{content[: width - 3]}…"
+        return f"# ║ {content:<{width - 2}} ║"
 
     method = (
         mm_method_label(setup.mm_force_field)
@@ -810,14 +821,20 @@ def _header(setup: SimulationSetup) -> list[str]:
         )
     )
     transition = f"{setup.start_file} → {restart_filename(setup)}"
+    title = " PQSetup · molecular dynamics "
+    top = title + "═" * max(0, width - len(title))
 
     return [
-        f"# ╭{top}╮",
-        row(f"       ●          {setup.ensemble} · {method}"),
-        row(f"      ╱ ╲         {transition}"),
-        row(f"     ●───●        Written by PQSetup · target {TARGET_PQ_RELEASE}"),
-        f"# ╰{'─' * width}╯",
-        "# Generated deterministically. Review paths and resources before running.",
+        f"# ╔{top}╗",
+        row("", ""),
+        row("      ·", f"{setup.ensemble}"),
+        row("    ·   ·", f"{method}"),
+        row("  ·  ●─●  ·", transition),
+        row("    ·   ·", f"Written by PQSetup · target {TARGET_PQ_RELEASE}"),
+        row("      ·", ""),
+        row("", ""),
+        f"# ╚{'═' * width}╝",
+        "# Deterministic · review paths & resources before launch.",
     ]
 
 

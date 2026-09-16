@@ -30,9 +30,10 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "nstep = 1000;" in result.input_text
     assert "qm_prog = ase-xtb;" in result.input_text
     assert "xtb_method = gfn2-xtb;" in result.input_text
-    assert result.input_text.startswith("# ╭─ PQSetup · simulation input")
+    assert result.input_text.startswith("# ╔")
+    assert "PQSetup · molecular dynamics" in result.input_text
     assert f"Written by PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
-    assert "# ── Pressure coupling" in result.input_text
+    assert "# ──⟨ pressure coupling ⟩" in result.input_text
 
 
 def test_ase_dftbplus_defaults_slakos_3ob() -> None:
