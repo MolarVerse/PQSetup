@@ -400,7 +400,50 @@ kbd {
 .settings-form {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
+}
+
+.settings-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-group h3 small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.settings-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-group-body .form-grid {
+  gap: 14px 16px;
+}
+
+.settings-group-body .switch-row.settings-toggle {
+  border-top: 0;
+  padding: 0;
+  min-height: 32px;
+}
+
+.settings-group-body .switch-row.settings-toggle + .switch-row.settings-toggle {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
 .settings-form .field-hint {
@@ -413,7 +456,6 @@ kbd {
   grid-template-columns: minmax(0, 1fr) 28px;
   min-height: 40px;
   padding: 8px 0;
-  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 

@@ -67,6 +67,25 @@ export const SHAKE_MODES: ChoiceOption[] = [
   { value: "mshake", label: "M-SHAKE" },
 ];
 
+export const WATER_MODELS: ChoiceOption[] = [
+  { value: "", label: "From GUFF table" },
+  { value: "SPC", label: "SPC" },
+  { value: "SPC_E", label: "SPC/E" },
+  { value: "SPC_Fw", label: "SPC/Fw" },
+  { value: "qSPC_Fw", label: "qSPC/Fw" },
+  { value: "SPC_DC", label: "SPC/DC" },
+  { value: "H2O-DC", label: "H2O-DC" },
+  { value: "TIP3P", label: "TIP3P" },
+  { value: "OPC3", label: "OPC3" },
+  { value: "SPC-mTR", label: "SPC-mTR" },
+  { value: "TIP3P-mTR", label: "TIP3P-mTR" },
+];
+
+/** Runners that PQ drives through an external script (qm_script_full_path). */
+export function usesExternalScript(runner: string | null): boolean {
+  return runner === "dftbplus" || runner === "pyscf" || runner === "turbomole";
+}
+
 /** Defaults PQ (or the writer) applies when a key is absent. */
 export const QM_DEFAULTS = {
   xtb_method: "gfn2-xtb",
@@ -83,6 +102,11 @@ export const MM_DEFAULTS = {
   shake: "off",
   "shake-tolerance": 1e-8,
   "shake-iter": 20,
+  "rattle-tolerance": 1e4,
+  "rattle-iter": 20,
+  "mshake-tolerance": 1e-8,
+  "mshake-iter": 20,
+  "cell-number": 7,
 } as const;
 
 export function extraString(
@@ -137,11 +161,14 @@ export const QM_KEYS = [
   "slakos",
   "slakos_path",
   "third_order",
+  "hubbard_derivs",
   "dispersion",
+  "remove_net_force",
   "mace_model",
   "mace_model_path",
   "mace_mode",
   "qm_loop_time_limit",
+  "qm_script_full_path",
 ] as const;
 
 export const MM_KEYS = [
@@ -150,9 +177,29 @@ export const MM_KEYS = [
   "long_range",
   "wolf_param",
   "rf_epsilon",
+  "water_intra",
+  "water_inter",
+  "cell-list",
+  "cell-number",
   "shake",
   "shake-tolerance",
   "shake-iter",
+  "rattle-tolerance",
+  "rattle-iter",
+  "mshake-tolerance",
+  "mshake-iter",
+  "distance-constraints",
+] as const;
+
+/** Momentum / temperature resets: valid for every MD job, never pruned. */
+export const RESET_KEYS = [
+  "nscale",
+  "fscale",
+  "nreset",
+  "freset",
+  "nreset_angular",
+  "freset_angular",
+  "freset_forces",
 ] as const;
 
 /**
@@ -163,25 +210,47 @@ export const MM_KEYS = [
 export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.job_type === "mm-md") {
-    keys.add("rnoncoulomb");
-    keys.add("long_range");
-    keys.add("wolf_param");
-    keys.add("rf_epsilon");
-    if (usesGuff(setup.mm_force_field)) keys.add("noncoulomb");
+    for (const key of [
+      "rnoncoulomb",
+      "long_range",
+      "wolf_param",
+      "rf_epsilon",
+      "cell-list",
+      "cell-number",
+    ]) {
+      keys.add(key);
+    }
+    if (usesGuff(setup.mm_force_field)) {
+      keys.add("noncoulomb");
+      keys.add("water_intra");
+      keys.add("water_inter");
+    }
     if (usesTopology(setup.mm_force_field)) {
-      keys.add("shake");
-      keys.add("shake-tolerance");
-      keys.add("shake-iter");
+      for (const key of [
+        "shake",
+        "shake-tolerance",
+        "shake-iter",
+        "rattle-tolerance",
+        "rattle-iter",
+        "mshake-tolerance",
+        "mshake-iter",
+        "distance-constraints",
+      ]) {
+        keys.add(key);
+      }
     }
     return keys;
   }
   keys.add("qm_loop_time_limit");
+  keys.add("remove_net_force");
   const runner = setup.runner;
+  if (usesExternalScript(runner)) keys.add("qm_script_full_path");
   if (runner === "ase_xtb") keys.add("xtb_method");
   if (runner === "ase_dftbplus") {
     keys.add("slakos");
     keys.add("slakos_path");
     keys.add("third_order");
+    keys.add("hubbard_derivs");
   }
   if (runner === "mace_mp" || runner === "mace_off") {
     keys.add("mace_model");
@@ -232,8 +301,22 @@ export function qmSettingsSummary(setup: SimulationSetup): string[] {
         : "dispersion off",
     );
   }
+  if (extraBool(extra, "remove_net_force", false)) parts.push("net force removed");
   const limit = extraNumber(extra, "qm_loop_time_limit");
   if (limit != null) parts.push(limit <= 0 ? "no time limit" : `${limit} s limit`);
+  return [...parts, ...resetSummary(extra)];
+}
+
+function resetSummary(extra: ExtraSettings): string[] {
+  const parts: string[] = [];
+  if (extraNumber(extra, "nscale") != null || extraNumber(extra, "fscale") != null) {
+    parts.push("T rescaling");
+  }
+  if (
+    RESET_KEYS.slice(2).some((key) => extraNumber(extra, key) != null)
+  ) {
+    parts.push("momentum resets");
+  }
   return parts;
 }
 
@@ -248,8 +331,13 @@ export function mmSettingsSummary(setup: SimulationSetup): string[] {
   if (extra.long_range && extra.long_range !== MM_DEFAULTS.long_range) {
     parts.push(label(LONG_RANGE_KINDS, String(extra.long_range)));
   }
+  if (extra.water_intra || extra.water_inter) parts.push("water model");
+  if (extraBool(extra, "cell-list", false)) parts.push("cell list");
   if (extra.shake && extra.shake !== MM_DEFAULTS.shake) {
     parts.push(label(SHAKE_MODES, String(extra.shake)));
   }
-  return parts;
+  if (extraBool(extra, "distance-constraints", false)) {
+    parts.push("distance constraints");
+  }
+  return [...parts, ...resetSummary(extra)];
 }

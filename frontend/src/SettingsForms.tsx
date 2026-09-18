@@ -1,4 +1,4 @@
-import { useId, type ReactElement, cloneElement } from "react";
+import { useId, type ReactElement, type ReactNode, cloneElement } from "react";
 import {
   LONG_RANGE_KINDS,
   MACE_MODELS,
@@ -9,12 +9,14 @@ import {
   QM_DEFAULTS,
   SHAKE_MODES,
   SLAKOS_SETS,
+  WATER_MODELS,
   XTB_METHODS,
   dispersionDefault,
   extraBool,
   extraNumber,
   extraString,
   supportsDispersion,
+  usesExternalScript,
   usesGuff,
   usesTopology,
   type ChoiceOption,
@@ -24,6 +26,27 @@ import {
 import type { MMForceFieldMode } from "./types";
 
 type SetExtra = (key: string, value: ExtraValue | null) => void;
+
+/** Hairline-titled group inside the Advanced dialog. */
+function Group({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="settings-group">
+      <h3>
+        {title}
+        {hint && <small>{hint}</small>}
+      </h3>
+      <div className="settings-group-body">{children}</div>
+    </section>
+  );
+}
 
 function Row({
   label,
@@ -106,6 +129,135 @@ function numberOrNull(raw: string): number | null {
   return raw.trim() === "" ? null : Number(raw);
 }
 
+/** Numeric row bound directly to an extra_settings key. */
+function NumberRow({
+  label,
+  keyName,
+  extra,
+  setExtra,
+  unit,
+  hint,
+  placeholder,
+  min = "0",
+  step = "1",
+}: {
+  label: string;
+  keyName: string;
+  extra: ExtraSettings;
+  setExtra: SetExtra;
+  unit?: string;
+  hint?: string;
+  placeholder?: string;
+  min?: string;
+  step?: string;
+}) {
+  return (
+    <Row label={label} unit={unit} hint={hint}>
+      <input
+        type="number"
+        min={min}
+        step={step}
+        value={extraNumber(extra, keyName) ?? ""}
+        placeholder={placeholder}
+        onChange={(event) =>
+          setExtra(keyName, numberOrNull(event.target.value))
+        }
+      />
+    </Row>
+  );
+}
+
+/** Text row bound directly to an extra_settings key (empty removes it). */
+function TextRow({
+  label,
+  keyName,
+  extra,
+  setExtra,
+  hint,
+  placeholder,
+}: {
+  label: string;
+  keyName: string;
+  extra: ExtraSettings;
+  setExtra: SetExtra;
+  hint?: string;
+  placeholder?: string;
+}) {
+  return (
+    <Row label={label} hint={hint}>
+      <input
+        value={extraString(extra, keyName, "")}
+        placeholder={placeholder}
+        spellCheck={false}
+        onChange={(event) => setExtra(keyName, event.target.value || null)}
+      />
+    </Row>
+  );
+}
+
+/** Hard temperature rescaling and momentum / force resets (any MD job). */
+function ResetsGroup({
+  extra,
+  setExtra,
+}: {
+  extra: ExtraSettings;
+  setExtra: SetExtra;
+}) {
+  const common = { extra, setExtra, placeholder: "never" };
+  return (
+    <Group
+      title="Resets"
+      hint="Hard rescaling and drift removal · blank = never"
+    >
+      <div className="form-grid">
+        <NumberRow
+          label="T rescale · first n steps"
+          keyName="nscale"
+          {...common}
+        />
+        <NumberRow
+          label="T rescale · every"
+          keyName="fscale"
+          unit="steps"
+          min="1"
+          {...common}
+        />
+        <NumberRow
+          label="Momentum · first n steps"
+          keyName="nreset"
+          {...common}
+        />
+        <NumberRow
+          label="Momentum · every"
+          keyName="freset"
+          unit="steps"
+          min="1"
+          {...common}
+        />
+        <NumberRow
+          label="Angular mom. · first n steps"
+          keyName="nreset_angular"
+          {...common}
+        />
+        <NumberRow
+          label="Angular mom. · every"
+          keyName="freset_angular"
+          unit="steps"
+          min="1"
+          {...common}
+        />
+        <NumberRow
+          label="Net force · every"
+          keyName="freset_forces"
+          unit="steps"
+          min="1"
+          {...common}
+        />
+      </div>
+    </Group>
+  );
+}
+
 /** Advanced keywords for the selected QM calculator. */
 export function QMSettingsForm({
   runner,
@@ -119,108 +271,146 @@ export function QMSettingsForm({
   const isMace = runner === "mace_mp" || runner === "mace_off";
   const maceModel = extraString(extra, "mace_model", QM_DEFAULTS.mace_model);
   const slakos = extraString(extra, "slakos", QM_DEFAULTS.slakos);
+  const hasCalculatorGroup =
+    runner === "ase_xtb" ||
+    runner === "ase_dftbplus" ||
+    isMace ||
+    usesExternalScript(runner);
+
   return (
     <div className="settings-form">
-      {runner === "ase_xtb" && (
-        <Choice
-          label="xTB method"
-          value={extraString(extra, "xtb_method", QM_DEFAULTS.xtb_method)}
-          options={XTB_METHODS}
-          onChange={(value) =>
-            setExtra("xtb_method", value === QM_DEFAULTS.xtb_method ? null : value)
-          }
-        />
-      )}
+      {hasCalculatorGroup && (
+        <Group title="Calculator">
+          {runner === "ase_xtb" && (
+            <Choice
+              label="xTB method"
+              value={extraString(extra, "xtb_method", QM_DEFAULTS.xtb_method)}
+              options={XTB_METHODS}
+              onChange={(value) =>
+                setExtra(
+                  "xtb_method",
+                  value === QM_DEFAULTS.xtb_method ? null : value,
+                )
+              }
+            />
+          )}
 
-      {runner === "ase_dftbplus" && (
-        <>
-          <Choice
-            label="Slater–Koster set"
-            value={slakos}
-            options={SLAKOS_SETS}
-            onChange={(value) => {
-              setExtra("slakos", value === QM_DEFAULTS.slakos ? null : value);
-              if (value !== "custom") setExtra("slakos_path", null);
-            }}
-          />
-          {slakos === "custom" && (
-            <Row label="Slater–Koster path" hint="Directory with the .skf files">
-              <input
-                value={extraString(extra, "slakos_path", "")}
-                placeholder="/path/to/skf"
-                onChange={(event) =>
-                  setExtra("slakos_path", event.target.value || null)
+          {runner === "ase_dftbplus" && (
+            <>
+              <Choice
+                label="Slater–Koster set"
+                value={slakos}
+                options={SLAKOS_SETS}
+                onChange={(value) => {
+                  setExtra("slakos", value === QM_DEFAULTS.slakos ? null : value);
+                  if (value !== "custom") setExtra("slakos_path", null);
+                }}
+              />
+              {slakos === "custom" && (
+                <TextRow
+                  label="Slater–Koster path"
+                  keyName="slakos_path"
+                  hint="Directory with the .skf files"
+                  placeholder="/path/to/skf"
+                  extra={extra}
+                  setExtra={setExtra}
+                />
+              )}
+              <Toggle
+                label="Third-order expansion"
+                hint="Implied by 3ob"
+                checked={extraBool(extra, "third_order", slakos === "3ob")}
+                onChange={(value) => setExtra("third_order", value)}
+              />
+              <TextRow
+                label="Hubbard derivatives"
+                keyName="hubbard_derivs"
+                hint="Per element, e.g. C: -0.1492, H: -0.1857"
+                placeholder="C: -0.1492, H: -0.1857, O: -0.1575"
+                extra={extra}
+                setExtra={setExtra}
+              />
+            </>
+          )}
+
+          {isMace && (
+            <>
+              <Choice
+                label="MACE model"
+                value={maceModel}
+                options={runner === "mace_off" ? MACE_OFF_MODELS : MACE_MODELS}
+                onChange={(value) => {
+                  setExtra(
+                    "mace_model",
+                    value === QM_DEFAULTS.mace_model ? null : value,
+                  );
+                  if (value !== "custom") setExtra("mace_model_path", null);
+                }}
+              />
+              {maceModel === "custom" && (
+                <TextRow
+                  label="Model path or URL"
+                  keyName="mace_model_path"
+                  placeholder="https://… or /path/to/model"
+                  extra={extra}
+                  setExtra={setExtra}
+                />
+              )}
+              <Choice
+                label="Evaluation"
+                value={extraString(extra, "mace_mode", QM_DEFAULTS.mace_mode)}
+                options={MACE_MODES}
+                hint="fast needs cuequivariance + CUDA ops"
+                onChange={(value) =>
+                  setExtra(
+                    "mace_mode",
+                    value === QM_DEFAULTS.mace_mode ? null : value,
+                  )
                 }
               />
-            </Row>
+            </>
           )}
+
+          {usesExternalScript(runner) && (
+            <TextRow
+              label="Script full path"
+              keyName="qm_script_full_path"
+              hint="Overrides the bundled qm_script lookup"
+              placeholder="/opt/pq/scripts/…"
+              extra={extra}
+              setExtra={setExtra}
+            />
+          )}
+        </Group>
+      )}
+
+      <Group title="QM run">
+        {supportsDispersion(runner) && (
           <Toggle
-            label="Third-order expansion"
-            hint="Implied by 3ob"
-            checked={extraBool(extra, "third_order", slakos === "3ob")}
-            onChange={(value) => setExtra("third_order", value)}
+            label="Dispersion correction"
+            checked={extraBool(extra, "dispersion", dispersionDefault(runner))}
+            onChange={(value) => setExtra("dispersion", value)}
           />
-        </>
-      )}
-
-      {isMace && (
-        <>
-          <Choice
-            label="MACE model"
-            value={maceModel}
-            options={runner === "mace_off" ? MACE_OFF_MODELS : MACE_MODELS}
-            onChange={(value) => {
-              setExtra("mace_model", value === QM_DEFAULTS.mace_model ? null : value);
-              if (value !== "custom") setExtra("mace_model_path", null);
-            }}
-          />
-          {maceModel === "custom" && (
-            <Row label="Model path or URL">
-              <input
-                value={extraString(extra, "mace_model_path", "")}
-                placeholder="https://… or /path/to/model"
-                onChange={(event) =>
-                  setExtra("mace_model_path", event.target.value || null)
-                }
-              />
-            </Row>
-          )}
-          <Choice
-            label="Evaluation"
-            value={extraString(extra, "mace_mode", QM_DEFAULTS.mace_mode)}
-            options={MACE_MODES}
-            hint="fast needs cuequivariance + CUDA ops"
-            onChange={(value) =>
-              setExtra("mace_mode", value === QM_DEFAULTS.mace_mode ? null : value)
-            }
-          />
-        </>
-      )}
-
-      {supportsDispersion(runner) && (
+        )}
         <Toggle
-          label="Dispersion correction"
-          checked={extraBool(extra, "dispersion", dispersionDefault(runner))}
-          onChange={(value) => setExtra("dispersion", value)}
+          label="Remove net force"
+          hint="Subtract the mean QM force after each call"
+          checked={extraBool(extra, "remove_net_force", false)}
+          onChange={(value) => setExtra("remove_net_force", value)}
         />
-      )}
-
-      <Row
-        label="QM time limit"
-        unit="s"
-        hint="Per-step wall-clock cap · 0 disables"
-      >
-        <input
-          type="number"
-          min="0"
+        <NumberRow
+          label="QM time limit"
+          keyName="qm_loop_time_limit"
+          unit="s"
           step="60"
-          value={extraNumber(extra, "qm_loop_time_limit") ?? ""}
+          hint="Per-step wall-clock cap · 0 disables"
           placeholder={String(QM_DEFAULTS.qm_loop_time_limit)}
-          onChange={(event) =>
-            setExtra("qm_loop_time_limit", numberOrNull(event.target.value))
-          }
+          extra={extra}
+          setExtra={setExtra}
         />
-      </Row>
+      </Group>
+
+      <ResetsGroup extra={extra} setExtra={setExtra} />
     </div>
   );
 }
@@ -239,112 +429,199 @@ export function MMSettingsForm({
   const shake = extraString(extra, "shake", MM_DEFAULTS.shake);
   return (
     <div className="settings-form">
-      {usesGuff(mode) && (
-        <Choice
-          label="Non-Coulomb potential"
-          value={extraString(extra, "noncoulomb", MM_DEFAULTS.noncoulomb)}
-          options={NONCOULOMB_KINDS}
-          hint="Quick routines replace the full GUFF formalism"
-          onChange={(value) =>
-            setExtra("noncoulomb", value === MM_DEFAULTS.noncoulomb ? null : value)
-          }
-        />
-      )}
-      <Row label="Non-Coulomb cutoff" unit="Å" hint="Defaults to the Coulomb cutoff">
-        <input
-          type="number"
-          min="0"
-          step="0.1"
-          value={extraNumber(extra, "rnoncoulomb") ?? ""}
-          placeholder="= Coulomb cutoff"
-          onChange={(event) =>
-            setExtra("rnoncoulomb", numberOrNull(event.target.value))
-          }
-        />
-      </Row>
-      <Choice
-        label="Long-range correction"
-        value={longRange}
-        options={LONG_RANGE_KINDS}
-        onChange={(value) => {
-          setExtra("long_range", value === MM_DEFAULTS.long_range ? null : value);
-          if (value !== "wolf") setExtra("wolf_param", null);
-          if (value !== "reaction-field") setExtra("rf_epsilon", null);
-        }}
-      />
-      {longRange === "wolf" && (
-        <Row label="Wolf parameter" unit="Å⁻¹">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={extraNumber(extra, "wolf_param") ?? ""}
-            placeholder={String(MM_DEFAULTS.wolf_param)}
-            onChange={(event) =>
-              setExtra("wolf_param", numberOrNull(event.target.value))
+      <Group title="Potentials">
+        {usesGuff(mode) && (
+          <Choice
+            label="Non-Coulomb potential"
+            value={extraString(extra, "noncoulomb", MM_DEFAULTS.noncoulomb)}
+            options={NONCOULOMB_KINDS}
+            hint="Quick routines replace the full GUFF formalism"
+            onChange={(value) =>
+              setExtra(
+                "noncoulomb",
+                value === MM_DEFAULTS.noncoulomb ? null : value,
+              )
             }
           />
-        </Row>
-      )}
-      {longRange === "reaction-field" && (
-        <Row label="Dielectric constant" hint="Required for reaction field">
-          <input
-            type="number"
+        )}
+        <NumberRow
+          label="Non-Coulomb cutoff"
+          keyName="rnoncoulomb"
+          unit="Å"
+          step="0.1"
+          hint="Defaults to the Coulomb cutoff"
+          placeholder="= Coulomb cutoff"
+          extra={extra}
+          setExtra={setExtra}
+        />
+        <Choice
+          label="Long-range correction"
+          value={longRange}
+          options={LONG_RANGE_KINDS}
+          onChange={(value) => {
+            setExtra(
+              "long_range",
+              value === MM_DEFAULTS.long_range ? null : value,
+            );
+            if (value !== "wolf") setExtra("wolf_param", null);
+            if (value !== "reaction-field") setExtra("rf_epsilon", null);
+          }}
+        />
+        {longRange === "wolf" && (
+          <NumberRow
+            label="Wolf parameter"
+            keyName="wolf_param"
+            unit="Å⁻¹"
+            step="0.01"
+            placeholder={String(MM_DEFAULTS.wolf_param)}
+            extra={extra}
+            setExtra={setExtra}
+          />
+        )}
+        {longRange === "reaction-field" && (
+          <NumberRow
+            label="Dielectric constant"
+            keyName="rf_epsilon"
             min="1"
             step="0.1"
-            value={extraNumber(extra, "rf_epsilon") ?? ""}
-            onChange={(event) =>
-              setExtra("rf_epsilon", numberOrNull(event.target.value))
-            }
+            hint="Required for reaction field"
+            extra={extra}
+            setExtra={setExtra}
           />
-        </Row>
-      )}
+        )}
+        {usesGuff(mode) && (
+          <div className="form-grid">
+            <Choice
+              label="Water · intramolecular"
+              value={extraString(extra, "water_intra", "")}
+              options={WATER_MODELS}
+              onChange={(value) => setExtra("water_intra", value || null)}
+            />
+            <Choice
+              label="Water · intermolecular"
+              value={extraString(extra, "water_inter", "")}
+              options={WATER_MODELS}
+              onChange={(value) => setExtra("water_inter", value || null)}
+            />
+          </div>
+        )}
+      </Group>
+
+      <Group title="Neighbour search">
+        <Toggle
+          label="Cell list"
+          hint="Replaces the brute-force pair loop"
+          checked={extraBool(extra, "cell-list", false)}
+          onChange={(value) => {
+            setExtra("cell-list", value ? "on" : null);
+            if (!value) setExtra("cell-number", null);
+          }}
+        />
+        {extraBool(extra, "cell-list", false) && (
+          <NumberRow
+            label="Cells per direction"
+            keyName="cell-number"
+            min="1"
+            placeholder={String(MM_DEFAULTS["cell-number"])}
+            extra={extra}
+            setExtra={setExtra}
+          />
+        )}
+      </Group>
 
       {usesTopology(mode) && (
-        <>
+        <Group title="Constraints" hint="Definitions come from the topology file">
           <Choice
             label="Bond constraints"
             value={shake}
             options={SHAKE_MODES}
-            hint="Constraints come from the topology file"
             onChange={(value) => {
               setExtra("shake", value === MM_DEFAULTS.shake ? null : value);
               if (value === "off") {
-                setExtra("shake-tolerance", null);
-                setExtra("shake-iter", null);
+                for (const key of [
+                  "shake-tolerance",
+                  "shake-iter",
+                  "rattle-tolerance",
+                  "rattle-iter",
+                  "mshake-tolerance",
+                  "mshake-iter",
+                ]) {
+                  setExtra(key, null);
+                }
+              } else if (value !== "mshake") {
+                setExtra("mshake-tolerance", null);
+                setExtra("mshake-iter", null);
               }
             }}
           />
           {shake !== "off" && (
             <div className="form-grid">
-              <Row label="Tolerance">
-                <input
-                  type="number"
-                  min="0"
-                  step="1e-9"
-                  value={extraNumber(extra, "shake-tolerance") ?? ""}
-                  placeholder={String(MM_DEFAULTS["shake-tolerance"])}
-                  onChange={(event) =>
-                    setExtra("shake-tolerance", numberOrNull(event.target.value))
-                  }
-                />
-              </Row>
-              <Row label="Max iterations">
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={extraNumber(extra, "shake-iter") ?? ""}
-                  placeholder={String(MM_DEFAULTS["shake-iter"])}
-                  onChange={(event) =>
-                    setExtra("shake-iter", numberOrNull(event.target.value))
-                  }
-                />
-              </Row>
+              <NumberRow
+                label="SHAKE tolerance"
+                keyName="shake-tolerance"
+                step="1e-9"
+                placeholder={String(MM_DEFAULTS["shake-tolerance"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+              <NumberRow
+                label="SHAKE iterations"
+                keyName="shake-iter"
+                min="1"
+                placeholder={String(MM_DEFAULTS["shake-iter"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+              <NumberRow
+                label="RATTLE tolerance"
+                keyName="rattle-tolerance"
+                unit="s⁻¹kg⁻¹"
+                step="1"
+                placeholder={String(MM_DEFAULTS["rattle-tolerance"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+              <NumberRow
+                label="RATTLE iterations"
+                keyName="rattle-iter"
+                min="1"
+                placeholder={String(MM_DEFAULTS["rattle-iter"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+              {shake === "mshake" && (
+                <>
+                  <NumberRow
+                    label="M-SHAKE tolerance"
+                    keyName="mshake-tolerance"
+                    step="1e-9"
+                    placeholder={String(MM_DEFAULTS["mshake-tolerance"])}
+                    extra={extra}
+                    setExtra={setExtra}
+                  />
+                  <NumberRow
+                    label="M-SHAKE iterations"
+                    keyName="mshake-iter"
+                    min="1"
+                    placeholder={String(MM_DEFAULTS["mshake-iter"])}
+                    extra={extra}
+                    setExtra={setExtra}
+                  />
+                </>
+              )}
             </div>
           )}
-        </>
+          <Toggle
+            label="Distance constraints"
+            checked={extraBool(extra, "distance-constraints", false)}
+            onChange={(value) =>
+              setExtra("distance-constraints", value ? "on" : null)
+            }
+          />
+        </Group>
       )}
+
+      <ResetsGroup extra={extra} setExtra={setExtra} />
     </div>
   );
 }

@@ -783,7 +783,7 @@ function SettingsChip({
       onClick={onOpen}
     >
       <SlidersHorizontal size={14} aria-hidden="true" />
-      <span>Settings</span>
+      <span>Advanced</span>
       <strong>{summary.length > 0 ? summary.join(" · ") : "defaults"}</strong>
     </button>
   );
@@ -1707,12 +1707,10 @@ export default function App() {
       {
         id: "calculator-settings",
         group: "Actions",
-        label: molecularMechanics
-          ? "Force-field settings"
-          : "Calculator settings",
+        label: "Advanced settings",
         detail: molecularMechanics
-          ? "Non-Coulomb potential, long-range, constraints"
-          : "Method variant, model, dispersion, time limit",
+          ? "Potentials, neighbour search, constraints, resets"
+          : "Calculator, QM run, resets",
         keywords: ["settings", "advanced", "options", "extra", "keywords"],
         run: () => setModal("calculator"),
       },
@@ -3390,7 +3388,7 @@ export default function App() {
 
       <Modal
         open={modal === "calculator"}
-        title={molecularMechanics ? "Force-field settings" : "Calculator settings"}
+        title="Advanced settings"
         subtitle={
           molecularMechanics
             ? MM_MODES.find((option) => option.value === setup.mm_force_field)
