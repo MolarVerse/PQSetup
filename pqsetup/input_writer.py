@@ -240,6 +240,7 @@ def render_input(
         )
         for key in sorted(setup.extra_settings):
             lines.append(f"{key} = {_value(setup.extra_settings[key])};")
+    lines.extend(sign_off(setup))
     return RenderResult(
         input_text="\n".join(lines).rstrip() + "\n",
         diagnostics=diagnostics,
@@ -792,17 +793,70 @@ def restart_filename(setup: SimulationSetup) -> str:
     return setup.restart_file or f"{setup.file_prefix}.rst"
 
 
-SECTION_WIDTH = 56
+SECTION_WIDTH = 64
+
+# One-line quips per section. Purely cosmetic (comments), always deterministic.
+_SECTION_QUIPS = {
+    "dynamics": "how long, how fine",
+    "files & continuation": "where we start, where we end up",
+    "initial state": "roll the dice (seeded)",
+    "temperature coupling": "gentle nudges toward T",
+    "pressure coupling": "squeeze, but politely",
+    "molecular mechanics": "springs, spheres and charges",
+    "force-field files": "the recipe book",
+    "electronic structure": "where the electrons live",
+    "additional settings": "the fine print",
+}
+
+_ENSEMBLE_QUIPS = {
+    "NVE": "energy conserved · nothing else promised",
+    "NVT": "keep it cool",
+    "NPT": "temperature and pressure on a leash",
+    "OPT": "downhill only",
+}
+
+# Sign-off picked by random_seed so every run card gets one, reproducibly.
+_SIGN_OFFS = (
+    "May your trajectory be ergodic.",
+    "Conserve energy. Or at least temperature.",
+    "Every timestep is a tiny leap of faith.",
+    "Statistically, this will be fine.",
+    "Entropy always wins — make it work for you.",
+    "Integrate responsibly.",
+    "Go compute something beautiful.",
+    "The atoms are ready. Are you?",
+)
 
 
 def _section(title: str) -> str:
-    """Flat section divider: `# ── title ────…` padded to a fixed width."""
-    lead = f"# ── {title} "
+    """Section divider: `# ── title · quip ────…` padded to a fixed width."""
+    quip = _SECTION_QUIPS.get(title)
+    lead = f"# ── {title} · {quip} " if quip else f"# ── {title} "
     return lead + "─" * max(4, SECTION_WIDTH - len(lead))
 
 
+def _span(steps: int | None, timestep_fs: float | None) -> str | None:
+    """Human span of the run: `1000 × 0.5 fs = 0.5 ps of physics`."""
+    if steps is None or timestep_fs is None:
+        return None
+    total_fs = steps * timestep_fs
+    if total_fs >= 1e6:
+        total = f"{total_fs / 1e6:.4g} ns"
+    elif total_fs >= 1e3:
+        total = f"{total_fs / 1e3:.4g} ps"
+    else:
+        total = f"{total_fs:.4g} fs"
+    return f"{steps} × {_number(timestep_fs)} fs = {total} of physics"
+
+
+def sign_off(setup: SimulationSetup) -> list[str]:
+    """Closing lines: a divider and a seed-picked one-liner."""
+    line = _SIGN_OFFS[setup.random_seed % len(_SIGN_OFFS)]
+    return ["", _section("fin"), f"# {line}"]
+
+
 def _header(setup: SimulationSetup) -> list[str]:
-    """Flat run card: one fact per comment line, aligned in two columns."""
+    """Run card: one fact per comment line, aligned in two columns."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -811,16 +865,27 @@ def _header(setup: SimulationSetup) -> list[str]:
             setup.runner or setup.job_type,
         )
     )
-    facts = [
-        ("ensemble", setup.ensemble),
+    ensemble_quip = _ENSEMBLE_QUIPS.get(setup.ensemble)
+    ensemble = (
+        f"{setup.ensemble} · {ensemble_quip}" if ensemble_quip else setup.ensemble
+    )
+    facts: list[tuple[str, str]] = [
+        ("ensemble", ensemble),
         ("method", method),
-        ("files", f"{setup.start_file} → {restart_filename(setup)}"),
-        ("written by", f"PQSetup · target {TARGET_PQ_RELEASE}"),
     ]
+    span = _span(setup.steps, setup.timestep_fs)
+    if span:
+        facts.append(("span", span))
+    facts.extend(
+        [
+            ("files", f"{setup.start_file} → {restart_filename(setup)}"),
+            ("written by", f"PQSetup · target {TARGET_PQ_RELEASE}"),
+        ]
+    )
     return [
         "# PQSetup · molecular dynamics",
         *(f"# {label:<11} {value}" for label, value in facts),
-        "# Deterministic · review paths & resources before launch.",
+        "# Same setup in, same file out. Enjoy the ride.",
     ]
 
 

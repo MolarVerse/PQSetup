@@ -2230,8 +2230,24 @@ kbd {
 }
 
 .src-section {
-  color: var(--ink-soft);
+  color: var(--border-strong);
   font-weight: 500;
+}
+
+.src-section-title {
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+
+.src-section-quip {
+  color: var(--accent-dark);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.src-signoff {
+  color: var(--accent-dark);
+  font-style: italic;
 }
 
 .src-key {

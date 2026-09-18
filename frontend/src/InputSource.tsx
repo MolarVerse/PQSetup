@@ -5,6 +5,7 @@
  * `# label   value` rows; sections are `# ── title ───`.
  */
 const HEADER_ROW = /^# (\S(?:.*?\S)?) {2,}(\S.*)$/;
+const SECTION = /^(# ── )([^·─]+?)(?: · ([^─]+?))? (─+)$/;
 const ASSIGNMENT = /^(\s*)([A-Za-z][A-Za-z0-9_-]*)(\s*=\s*)(.*)$/;
 
 export default function InputSource({ text }: { text: string }) {
@@ -21,9 +22,35 @@ export default function InputSource({ text }: { text: string }) {
               </span>
             );
           }
+          const section = SECTION.exec(line);
+          if (section) {
+            const [, lead, title, quip, rule] = section;
+            return (
+              <span className="src-line src-section" key={key}>
+                {lead}
+                <span className="src-section-title">{title}</span>
+                {quip && (
+                  <>
+                    {" · "}
+                    <span className="src-section-quip">{quip}</span>
+                  </>
+                )}
+                {" "}
+                {rule}
+              </span>
+            );
+          }
           if (line.startsWith("# ──")) {
             return (
               <span className="src-line src-section" key={key}>
+                {line}
+              </span>
+            );
+          }
+          // Closing one-liner after the `fin` divider.
+          if (index > 0 && lines[index - 1].startsWith("# ── fin")) {
+            return (
+              <span className="src-line src-signoff" key={key}>
                 {line}
               </span>
             );

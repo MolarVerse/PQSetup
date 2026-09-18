@@ -33,7 +33,10 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert result.input_text.startswith("# PQSetup · molecular dynamics\n")
     assert "# ensemble    NPT" in result.input_text
     assert f"# written by  PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
-    assert "# ── pressure coupling ──" in result.input_text
+    assert "# ── pressure coupling · squeeze, but politely ──" in result.input_text
+    assert "# span        " in result.input_text
+    assert "# ── fin ·" not in result.input_text
+    assert result.input_text.rstrip().rsplit("\n", 2)[-2].startswith("# ── fin ")
 
 
 def test_ase_dftbplus_defaults_slakos_3ob() -> None:
