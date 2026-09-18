@@ -195,6 +195,20 @@ def render_run_plan(
                 if item.code != "qm.dftb_template_file"
             ]
         diagnostics.extend(file_diagnostics)
+        if (
+            request.structure is not None
+            and any(atom.molecule_type != 0 for atom in request.structure.atoms)
+            and not any(item.role == "moldescriptor" for item in setup_files)
+        ):
+            diagnostics.append(
+                _error(
+                    "qm.moldescriptor_file",
+                    (
+                        "The structure carries molecule types; PQ needs a "
+                        "molecule descriptor to read them."
+                    ),
+                )
+            )
         if method_id not in PQ_QM_PROGRAMS:
             diagnostics.append(
                 _error(

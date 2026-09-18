@@ -172,15 +172,16 @@ export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
 }
 
 /**
- * Files a QM run may need. Independent of the ensemble: the page reads top to
- * bottom, so a Run choice must never change the Method section above it. The
- * molecule descriptor is therefore always listed (optional); PQ reads it for
- * the molecular virial under pressure coupling and ignores it otherwise.
+ * Files a QM run may need. Only what is above decides: the calculator and,
+ * from the Structure section, whether atoms carry molecule types. PQ reads the
+ * molecule descriptor exactly then, so the slot appears (and is required) only
+ * for typed structures. Nothing in Run may change this list.
  */
 export function qmSetupFileSpecs(
   runner: string | null,
   runnerScript: string | null = null,
   externalQM: ExternalQMCapabilities | null = null,
+  typedMolecules = false,
 ): SetupFileSpec[] {
   const roles = new Set<SetupFileRole>();
   const script = selectedExternalQMScript(externalQM, runner, runnerScript);
@@ -192,10 +193,10 @@ export function qmSetupFileSpecs(
     const role = WORKING_FILE_ROLES[dependency];
     if (role) roles.add(role);
   });
-  roles.add("moldescriptor");
+  if (typedMolecules) roles.add("moldescriptor");
   return [...roles].map((role) => ({
     ...FILE_SPECS[role],
-    optional: role === "moldescriptor" || role === "dftb_template",
+    optional: role === "dftb_template",
   }));
 }
 

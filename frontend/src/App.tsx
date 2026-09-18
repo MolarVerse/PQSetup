@@ -965,13 +965,22 @@ export default function App() {
       ),
     [externalQM, setup.runner, setup.runner_script],
   );
+  const hasTypedMolecules = analysis.structure.atoms.some(
+    (atom) => atom.molecule_type > 0,
+  );
   const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
         ? setupFileSpecs(setup.mm_force_field)
-        : qmSetupFileSpecs(setup.runner, setup.runner_script, externalQM),
+        : qmSetupFileSpecs(
+            setup.runner,
+            setup.runner_script,
+            externalQM,
+            hasTypedMolecules,
+          ),
     [
       externalQM,
+      hasTypedMolecules,
       molecularMechanics,
       setup.mm_force_field,
       setup.runner,
@@ -1147,9 +1156,6 @@ export default function App() {
   const missingMethodFiles = useMemo(
     () => missingFilesForSpecs(methodFileSpecs, methodSetupFiles),
     [methodFileSpecs, methodSetupFiles],
-  );
-  const hasTypedMolecules = analysis.structure.atoms.some(
-    (atom) => atom.molecule_type > 0,
   );
   const mmDensityReady =
     !analysis.structure.cell_generated ||
@@ -2694,7 +2700,7 @@ export default function App() {
                     info={
                       molecularMechanics
                         ? "Force-field files PQ reads next to the input. Drop a run folder on the structure to add them all at once."
-                        : "Optional files are packed only when added. PQ reads the molecule descriptor when atoms carry molecule types; single-atom molecules need none."
+                        : "Optional files are packed only when added."
                     }
                   >
                     <div className="condition-full">

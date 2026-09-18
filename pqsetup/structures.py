@@ -254,8 +254,8 @@ def analyze_structure(structure: Structure) -> StructureAnalysis:
                 code="structure.molecule_types",
                 severity="info",
                 message=(
-                    "The restart contains molecular typing. Include matching "
-                    "setup files when the selected method needs them."
+                    "Atoms carry molecule types: add a molecule descriptor "
+                    "under Method › Files."
                 ),
                 atom_indices=molecule_type_indices,
             )

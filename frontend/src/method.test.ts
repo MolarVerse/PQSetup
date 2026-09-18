@@ -116,13 +116,15 @@ describe("molecular mechanics method", () => {
 
 describe("QM companion files", () => {
   it("lists the optional molecule descriptor plus what the calculator needs", () => {
-    expect(qmSetupFileSpecs("ase_xtb").map((file) => file.role)).toEqual([
-      "moldescriptor",
-    ]);
-    expect(qmSetupFileSpecs("ase_xtb")[0]?.optional).toBe(true);
+    expect(qmSetupFileSpecs("ase_xtb")).toEqual([]);
+    expect(
+      qmSetupFileSpecs("ase_xtb", null, null, true).map((file) => [
+        file.role,
+        file.optional,
+      ]),
+    ).toEqual([["moldescriptor", false]]);
     expect(qmSetupFileSpecs("dftbplus").map((file) => file.role)).toEqual([
       "dftb_template",
-      "moldescriptor",
     ]);
     expect(qmSetupFileSpecs("dftbplus").every((file) => file.optional)).toBe(
       true,
@@ -204,7 +206,7 @@ describe("QM companion files", () => {
       qmSetupFileSpecs("turbomole", "turbomole_rimp2", capabilities).map(
         (file) => file.role,
       ),
-    ).toEqual(["turbomole_define_template", "moldescriptor"]);
+    ).toEqual(["turbomole_define_template"]);
     expect(defaultSetupFileName("turbomole_define_template")).toBe(
       "tm_define.template",
     );
