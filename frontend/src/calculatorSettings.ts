@@ -3,15 +3,12 @@
  * `SimulationSetup.extra_settings`. Keys follow the PQ input reference; the
  * writer already skips its own defaults when one of these is present.
  */
+
+import type { ChoiceOption } from "@molarverse/pq-design";
 import type { MMForceFieldMode, SimulationSetup } from "./types";
 
 export type ExtraValue = string | number | boolean;
 export type ExtraSettings = Record<string, ExtraValue>;
-
-export interface ChoiceOption {
-  value: string;
-  label: string;
-}
 
 export const XTB_METHODS: ChoiceOption[] = [
   { value: "gfn2-xtb", label: "GFN2-xTB" },

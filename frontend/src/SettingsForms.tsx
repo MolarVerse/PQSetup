@@ -1,5 +1,4 @@
-import { useId, type ReactElement, type ReactNode, cloneElement } from "react";
-import Info from "./Info";
+import { Choice, Field, Group, Toggle } from "@molarverse/pq-design";
 import {
   LONG_RANGE_KINDS,
   MACE_MODELS,
@@ -19,113 +18,12 @@ import {
   usesExternalScript,
   usesGuff,
   usesTopology,
-  type ChoiceOption,
   type ExtraSettings,
   type ExtraValue,
 } from "./calculatorSettings";
 import type { MMForceFieldMode } from "./types";
 
 type SetExtra = (key: string, value: ExtraValue | null) => void;
-
-/** Hairline-titled group inside the Advanced dialog. */
-function Group({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="settings-group">
-      <h3>
-        {title}
-        {hint && <Info text={hint} />}
-      </h3>
-      <div className="settings-group-body">{children}</div>
-    </section>
-  );
-}
-
-function Row({
-  label,
-  unit,
-  hint,
-  children,
-}: {
-  label: string;
-  unit?: string;
-  hint?: string;
-  children: ReactElement<{ id?: string }>;
-}) {
-  const id = useId();
-  return (
-    <div className="field">
-      <span className="field-label">
-        <label htmlFor={id}>{label}</label>
-        <span className="field-label-tools">
-          {unit && <span className="unit">{unit}</span>}
-          {hint && <Info text={hint} />}
-        </span>
-      </span>
-      {cloneElement(children, { id })}
-    </div>
-  );
-}
-
-function Choice({
-  label,
-  value,
-  options,
-  hint,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: ChoiceOption[];
-  hint?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Row label={label} hint={hint}>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => (
-          <option value={option.value} key={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </Row>
-  );
-}
-
-function Toggle({
-  label,
-  hint,
-  checked,
-  onChange,
-}: {
-  label: string;
-  hint?: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className="switch-row settings-toggle">
-      <span>
-        <strong>{label}</strong>
-        {hint && <Info text={hint} />}
-      </span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span className="switch" aria-hidden="true" />
-    </label>
-  );
-}
 
 function numberOrNull(raw: string): number | null {
   return raw.trim() === "" ? null : Number(raw);
@@ -138,7 +36,7 @@ function NumberRow({
   extra,
   setExtra,
   unit,
-  hint,
+  info,
   placeholder,
   min = "0",
   step = "1",
@@ -148,13 +46,13 @@ function NumberRow({
   extra: ExtraSettings;
   setExtra: SetExtra;
   unit?: string;
-  hint?: string;
+  info?: string;
   placeholder?: string;
   min?: string;
   step?: string;
 }) {
   return (
-    <Row label={label} unit={unit} hint={hint}>
+    <Field label={label} unit={unit} info={info}>
       <input
         type="number"
         min={min}
@@ -165,7 +63,7 @@ function NumberRow({
           setExtra(keyName, numberOrNull(event.target.value))
         }
       />
-    </Row>
+    </Field>
   );
 }
 
@@ -175,25 +73,25 @@ function TextRow({
   keyName,
   extra,
   setExtra,
-  hint,
+  info,
   placeholder,
 }: {
   label: string;
   keyName: string;
   extra: ExtraSettings;
   setExtra: SetExtra;
-  hint?: string;
+  info?: string;
   placeholder?: string;
 }) {
   return (
-    <Row label={label} hint={hint}>
+    <Field label={label} info={info}>
       <input
         value={extraString(extra, keyName, "")}
         placeholder={placeholder}
         spellCheck={false}
         onChange={(event) => setExtra(keyName, event.target.value || null)}
       />
-    </Row>
+    </Field>
   );
 }
 
@@ -209,7 +107,7 @@ function ResetsGroup({
   return (
     <Group
       title="Resets"
-      hint="Hard rescaling and drift removal · blank = never"
+      info="Hard rescaling and drift removal · blank = never"
     >
       <div className="form-grid">
         <NumberRow
@@ -312,7 +210,7 @@ export function QMSettingsForm({
                 <TextRow
                   label="Slater–Koster path"
                   keyName="slakos_path"
-                  hint="Directory with the .skf files"
+                  info="Directory with the .skf files"
                   placeholder="/path/to/skf"
                   extra={extra}
                   setExtra={setExtra}
@@ -320,14 +218,14 @@ export function QMSettingsForm({
               )}
               <Toggle
                 label="Third-order expansion"
-                hint="Implied by 3ob"
+                info="Implied by 3ob"
                 checked={extraBool(extra, "third_order", slakos === "3ob")}
                 onChange={(value) => setExtra("third_order", value)}
               />
               <TextRow
                 label="Hubbard derivatives"
                 keyName="hubbard_derivs"
-                hint="Per element, e.g. C: -0.1492, H: -0.1857"
+                info="Per element, e.g. C: -0.1492, H: -0.1857"
                 placeholder="C: -0.1492, H: -0.1857, O: -0.1575"
                 extra={extra}
                 setExtra={setExtra}
@@ -362,7 +260,7 @@ export function QMSettingsForm({
                 label="Evaluation"
                 value={extraString(extra, "mace_mode", QM_DEFAULTS.mace_mode)}
                 options={MACE_MODES}
-                hint="fast needs cuequivariance + CUDA ops"
+                info="fast needs cuequivariance + CUDA ops"
                 onChange={(value) =>
                   setExtra(
                     "mace_mode",
@@ -377,7 +275,7 @@ export function QMSettingsForm({
             <TextRow
               label="Script full path"
               keyName="qm_script_full_path"
-              hint="Overrides the bundled qm_script lookup"
+              info="Overrides the bundled qm_script lookup"
               placeholder="/opt/pq/scripts/…"
               extra={extra}
               setExtra={setExtra}
@@ -396,7 +294,7 @@ export function QMSettingsForm({
         )}
         <Toggle
           label="Remove net force"
-          hint="Subtract the mean QM force after each call"
+          info="Subtract the mean QM force after each call"
           checked={extraBool(extra, "remove_net_force", false)}
           onChange={(value) => setExtra("remove_net_force", value)}
         />
@@ -405,7 +303,7 @@ export function QMSettingsForm({
           keyName="qm_loop_time_limit"
           unit="s"
           step="60"
-          hint="Per-step wall-clock cap · 0 disables"
+          info="Per-step wall-clock cap · 0 disables"
           placeholder={String(QM_DEFAULTS.qm_loop_time_limit)}
           extra={extra}
           setExtra={setExtra}
@@ -437,7 +335,7 @@ export function MMSettingsForm({
             label="Non-Coulomb potential"
             value={extraString(extra, "noncoulomb", MM_DEFAULTS.noncoulomb)}
             options={NONCOULOMB_KINDS}
-            hint="Quick routines replace the full GUFF formalism"
+            info="Quick routines replace the full GUFF formalism"
             onChange={(value) =>
               setExtra(
                 "noncoulomb",
@@ -476,7 +374,7 @@ export function MMSettingsForm({
             keyName="rf_epsilon"
             min="1"
             step="0.1"
-            hint="Required for reaction field"
+            info="Required for reaction field"
             extra={extra}
             setExtra={setExtra}
           />
@@ -486,7 +384,7 @@ export function MMSettingsForm({
       <Group title="Neighbour search">
         <Toggle
           label="Cell list"
-          hint="Replaces the brute-force pair loop"
+          info="Replaces the brute-force pair loop"
           checked={extraBool(extra, "cell-list", false)}
           onChange={(value) => {
             setExtra("cell-list", value ? "on" : null);
@@ -506,7 +404,7 @@ export function MMSettingsForm({
       </Group>
 
       {usesTopology(mode) && (
-        <Group title="Constraints" hint="Definitions come from the topology file">
+        <Group title="Constraints" info="Definitions come from the topology file">
           <Choice
             label="Bond constraints"
             value={shake}

@@ -2,13 +2,9 @@ import {
   Atom,
   BookOpen,
   Boxes,
-  Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
   ChevronRight,
   CircleAlert,
-  CircleDashed,
   Copy,
   FileCode2,
   FolderOpen,
@@ -19,7 +15,6 @@ import {
   Package as PackageIcon,
   Rotate3d,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Terminal,
   Thermometer,
@@ -27,10 +22,8 @@ import {
   Upload,
   X,
   Zap,
-  type LucideIcon,
 } from "lucide-react";
 import {
-  cloneElement,
   startTransition,
   useCallback,
   useDeferredValue,
@@ -41,8 +34,6 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
-  type ReactElement,
-  type ReactNode,
 } from "react";
 import {
   analyzeFile,
@@ -51,9 +42,21 @@ import {
   perturbFile,
   renderPlan,
 } from "./api";
-import CommandPalette, { type Command } from "./CommandPalette";
-import Info from "./Info";
-import Modal from "./Modal";
+import {
+  CommandPalette,
+  ConditionRow,
+  Field,
+  Modal,
+  type Command,
+} from "@molarverse/pq-design";
+import { COMMAND_GROUP_ORDER, type CommandGroup } from "./commandGroups";
+import { PressureCoupling, TemperatureCoupling } from "./components/Coupling";
+import InputNavigator from "./components/InputNavigator";
+import { SettingsLine } from "./components/SettingsLine";
+import SetupFileList from "./components/SetupFileList";
+
+/** A palette command whose group is one of the setup page's groups. */
+type SetupCommand = Command & { group: CommandGroup };
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
   settingsLines,
@@ -63,7 +66,6 @@ import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
 import {
   MANOSTATS,
-  PRESSURE_ISOTROPIES,
   THERMOSTATS,
 } from "./conditionOptions";
 import { diagnosticStep, diagnosticControl } from "./diagnosticNavigation";
@@ -83,7 +85,6 @@ import {
   recommendedRunnerScript,
   selectedExternalQMScript,
   setupFileSpecs,
-  type SetupFileSpec,
 } from "./method";
 import {
   clampSamplingRunCount,
@@ -94,7 +95,6 @@ import {
   nextPlannedInputSelection,
   parseSamplingRunCountDraft,
   samplingLabel,
-  plannedInputOptionLabel,
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
@@ -388,470 +388,6 @@ function thermostatDescription(value: string | null): string {
   return (
     THERMOSTATS.find((option) => option.value === value)?.description ??
     "Choose how temperature is coupled."
-  );
-}
-
-function Field({
-  label,
-  unit,
-  info,
-  controlId,
-  wide,
-  children,
-}: {
-  label: ReactNode;
-  unit?: string;
-  info?: string;
-  controlId?: string;
-  /** Span two grid columns, for selects with long option labels. */
-  wide?: boolean;
-  children: ReactElement<{ id?: string }>;
-}) {
-  const generatedFieldId = useId();
-  const fieldId = controlId ?? generatedFieldId;
-
-  return (
-    <div className={wide ? "field field-wide" : "field"}>
-      <span className="field-label">
-        <label htmlFor={fieldId}>{label}</label>
-        <span className="field-label-tools">
-          {unit && <span className="unit">{unit}</span>}
-          {info && <Info text={info} />}
-        </span>
-      </span>
-      {cloneElement(children, { id: fieldId })}
-    </div>
-  );
-}
-
-type ThermostatSettings = Pick<
-  SimulationSetup,
-  | "thermostat"
-  | "thermostat_relaxation_ps"
-  | "thermostat_friction_ps_inverse"
-  | "nh_chain_length"
-  | "coupling_frequency_cm_inverse"
->;
-
-function TemperatureCoupling({
-  value,
-  onChange,
-  controlId,
-}: {
-  value: ThermostatSettings;
-  onChange: (patch: Partial<ThermostatSettings>) => void;
-  controlId?: string;
-}) {
-  return (
-    <section className="coupling-section" aria-label="Temperature coupling">
-      <div className="form-grid coupling-grid">
-        <Field label="Thermostat" controlId={controlId} wide>
-          <select
-            value={value.thermostat ?? "velocity_rescaling"}
-            onChange={(event) => onChange({ thermostat: event.target.value })}
-          >
-            {THERMOSTATS.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {(value.thermostat === "berendsen" ||
-          value.thermostat === "velocity_rescaling") && (
-          <Field label="Relaxation time" unit="ps">
-            <input
-              type="number"
-              min="0.000001"
-              step="0.01"
-              value={value.thermostat_relaxation_ps ?? ""}
-              onChange={(event) =>
-                onChange({
-                  thermostat_relaxation_ps: event.target.value
-                    ? Number(event.target.value)
-                    : null,
-                })
-              }
-            />
-          </Field>
-        )}
-        {value.thermostat === "langevin" && (
-          <Field label="Friction" unit="ps⁻¹">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={value.thermostat_friction_ps_inverse}
-              onChange={(event) =>
-                onChange({
-                  thermostat_friction_ps_inverse: Number(event.target.value),
-                })
-              }
-            />
-          </Field>
-        )}
-        {value.thermostat === "nh-chain" && (
-          <>
-            <Field label="Chain length">
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={value.nh_chain_length}
-                onChange={(event) =>
-                  onChange({ nh_chain_length: Number(event.target.value) })
-                }
-              />
-            </Field>
-            <Field label="Coupling freq." unit="cm⁻¹">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={value.coupling_frequency_cm_inverse}
-                onChange={(event) =>
-                  onChange({
-                    coupling_frequency_cm_inverse: Number(event.target.value),
-                  })
-                }
-              />
-            </Field>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-type ManostatSettings = Pick<
-  SimulationSetup,
-  | "manostat"
-  | "manostat_relaxation_ps"
-  | "compressibility_bar_inverse"
-  | "pressure_isotropy"
->;
-
-function PressureCoupling({
-  value,
-  onChange,
-  controlId,
-}: {
-  value: ManostatSettings;
-  onChange: (patch: Partial<ManostatSettings>) => void;
-  controlId?: string;
-}) {
-  return (
-    <section className="coupling-section" aria-label="Pressure coupling">
-      <div className="form-grid coupling-grid">
-        <Field label="Manostat" controlId={controlId} wide>
-          <select
-            value={value.manostat ?? "stochastic_rescaling"}
-            onChange={(event) => onChange({ manostat: event.target.value })}
-          >
-            {MANOSTATS.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Relaxation time" unit="ps">
-          <input
-            type="number"
-            min="0.000001"
-            step="0.01"
-            value={value.manostat_relaxation_ps ?? ""}
-            onChange={(event) =>
-              onChange({
-                manostat_relaxation_ps: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field label="Compressibility" unit="bar⁻¹">
-          <input
-            type="number"
-            min="0"
-            step="0.000001"
-            value={value.compressibility_bar_inverse}
-            onChange={(event) =>
-              onChange({
-                compressibility_bar_inverse: Number(event.target.value),
-              })
-            }
-          />
-        </Field>
-        <Field label="Cell response" wide>
-          <select
-            value={value.pressure_isotropy}
-            onChange={(event) =>
-              onChange({
-                pressure_isotropy:
-                  event.target.value as SimulationSetup["pressure_isotropy"],
-              })
-            }
-          >
-            {PRESSURE_ISOTROPIES.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-    </section>
-  );
-}
-
-function InputNavigator({
-  rendered,
-  selectedFile,
-  selectedFileIndex,
-  selectId,
-  equilibrationFiles,
-  samplingFiles,
-  onSelect,
-}: {
-  rendered: PlanRenderResult;
-  selectedFile: PlanRenderResult["files"][number] | null;
-  selectedFileIndex: number;
-  selectId: string;
-  equilibrationFiles: PlanRenderResult["files"];
-  samplingFiles: PlanRenderResult["files"];
-  onSelect: (name: string) => void;
-}) {
-  if (rendered.files.length <= 1) {
-    return (
-      <span>
-        <FileCode2 size={16} aria-hidden="true" />
-        {selectedFile?.name ?? "…"}
-      </span>
-    );
-  }
-
-  return (
-    <div className="input-navigator preview-navigator">
-      <button
-        type="button"
-        aria-label="Previous input"
-        aria-controls="generated-input-preview"
-        disabled={selectedFileIndex <= 0}
-        onClick={() => {
-          if (selectedFileIndex <= 0) return;
-          onSelect(rendered.files[selectedFileIndex - 1].name);
-        }}
-      >
-        <ChevronLeft size={16} aria-hidden="true" />
-      </button>
-      <label htmlFor={selectId}>
-        <span className="visually-hidden">Generated input</span>
-        <select
-          id={selectId}
-          aria-label="Generated input"
-          aria-controls="generated-input-preview"
-          value={selectedFile?.name ?? ""}
-          onChange={(event) => onSelect(event.target.value)}
-        >
-          {equilibrationFiles.length > 0 && (
-            <optgroup label="Equilibration">
-              {equilibrationFiles.map((file) => (
-                <option key={file.name} value={file.name}>
-                  {plannedInputOptionLabel(file, rendered.files.length)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {samplingFiles.length > 0 && (
-            <optgroup label="Sampling">
-              {samplingFiles.map((file) => (
-                <option key={file.name} value={file.name}>
-                  {plannedInputOptionLabel(file, rendered.files.length)}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-      </label>
-      <output aria-live="polite">
-        {selectedFileIndex + 1} of {rendered.files.length}
-      </output>
-      <button
-        type="button"
-        aria-label="Next input"
-        aria-controls="generated-input-preview"
-        disabled={
-          selectedFileIndex < 0 ||
-          selectedFileIndex >= rendered.files.length - 1
-        }
-        onClick={() => {
-          if (
-            selectedFileIndex < 0 ||
-            selectedFileIndex >= rendered.files.length - 1
-          ) {
-            return;
-          }
-          onSelect(rendered.files[selectedFileIndex + 1].name);
-        }}
-      >
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
-/**
- * One physical condition in the Run section: a header with an optional
- * on/off toggle, then the value and its coupling controls in one grid.
- */
-function ConditionRow({
-  icon: Icon,
-  title,
-  hint,
-  info,
-  toggle,
-  action,
-  className,
-  children,
-}: {
-  icon: LucideIcon;
-  title: string;
-  hint?: ReactNode;
-  info?: string;
-  toggle?: { label?: string; checked: boolean; onChange: (on: boolean) => void };
-  action?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="condition-row">
-      <div className="condition-head">
-        <Icon size={14} aria-hidden="true" />
-        <span className="condition-title">{title}</span>
-        {info && <Info text={info} />}
-        {hint && <span className="condition-hint">{hint}</span>}
-        {toggle && (
-          <label className="condition-toggle">
-            {toggle.label && <span>{toggle.label}</span>}
-            <input
-              type="checkbox"
-              aria-label={toggle.label ?? title}
-              checked={toggle.checked}
-              onChange={(event) => toggle.onChange(event.target.checked)}
-            />
-            <span className="switch" aria-hidden="true" />
-          </label>
-        )}
-        {action && <div className="condition-action">{action}</div>}
-      </div>
-      {children && (
-        <div className={`condition-fields${className ? ` ${className}` : ""}`}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Chip that opens the calculator / force-field settings dialog. */
-function SettingsChip({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      className="option-chip settings-chip"
-      aria-haspopup="dialog"
-      title="Advanced settings"
-      onClick={onOpen}
-    >
-      <SlidersHorizontal size={14} aria-hidden="true" />
-      <span>Advanced</span>
-      <ChevronDown size={13} aria-hidden="true" />
-    </button>
-  );
-}
-
-/** Advanced button under the model selection; the keywords in force follow
- *  in input-file form, so what you read here is what the file will say. */
-function SettingsLine({ parts, onOpen }: { parts: string[]; onOpen: () => void }) {
-  return (
-    <div className="settings-line condition-full">
-      <SettingsChip onOpen={onOpen} />
-      {parts.length > 0 && (
-        <code className="settings-summary" aria-label="Advanced settings in use">
-          {parts.map((part) => (
-            <span key={part}>{part}</span>
-          ))}
-        </code>
-      )}
-    </div>
-  );
-}
-
-function SetupFileStatus({
-  selected,
-  optional,
-}: {
-  selected: boolean;
-  optional?: boolean;
-}) {
-  if (selected) {
-    return (
-      <span className="file-added" title="Added">
-        <Check size={14} aria-hidden="true" />
-        Added
-      </span>
-    );
-  }
-  if (optional) {
-    return (
-      <span className="file-optional" title="Optional file">
-        <CircleDashed size={14} aria-hidden="true" />
-        Optional
-      </span>
-    );
-  }
-  return (
-    <span className="file-required" title="Required file">
-      <CircleAlert size={14} aria-hidden="true" />
-      Add file
-    </span>
-  );
-}
-
-function SetupFileList({
-  specs,
-  files,
-  onChoose,
-}: {
-  specs: SetupFileSpec[];
-  files: SetupFile[];
-  onChoose: (role: SetupFileRole, event: ChangeEvent<HTMLInputElement>) => void;
-}) {
-  return (
-    <div className="setup-file-list" aria-label="Files">
-      {specs.map((spec) => {
-        const selected = files.find((file) => file.role === spec.role);
-        return (
-          <label className={selected ? "selected" : ""} key={spec.role}>
-            <input
-              className="setup-file-input"
-              type="file"
-              onChange={(event) => onChoose(spec.role, event)}
-            />
-            <Upload size={16} aria-hidden="true" />
-            <span>
-              <strong>{spec.label}</strong>
-              <small>{selected?.name ?? spec.defaultName}</small>
-            </span>
-            <SetupFileStatus
-              selected={Boolean(selected)}
-              optional={spec.optional}
-            />
-          </label>
-        );
-      })}
-    </div>
   );
 }
 
@@ -1357,7 +893,7 @@ export default function App() {
     setup.file_prefix,
   ]);
 
-  const commands = useMemo<Command[]>(() => {
+  const commands = useMemo<SetupCommand[]>(() => {
     const seenDiagnostics = new Set<string>();
     const problemCommands = displayedDiagnostics
       .filter((item) => item.severity !== "info")
@@ -1368,7 +904,7 @@ export default function App() {
         return true;
       })
       .map(
-        (item, index): Command => ({
+        (item, index): SetupCommand => ({
           id: `problem-${item.code}-${index}`,
           group: "Problems",
           label: item.severity === "error" ? "Fix input error" : "Review warning",
@@ -1382,7 +918,7 @@ export default function App() {
     return [
       ...problemCommands,
       ...SECTIONS.map(
-        (section, index): Command => ({
+        (section, index): SetupCommand => ({
           id: `section-${section.id}`,
           group: "Workflow",
           label: `Go to ${section.label}`,
@@ -1419,7 +955,7 @@ export default function App() {
       ...(bootstrap?.runners ?? [])
         .filter((runner) => runner.supported)
         .map(
-          (runner): Command => ({
+          (runner): SetupCommand => ({
             id: `calculator-${runner.id}`,
             group: "Scientific setup",
             label: runner.label,
@@ -1444,7 +980,7 @@ export default function App() {
           }),
         ),
       ...electronicMethods.map(
-        (method): Command => ({
+        (method): SetupCommand => ({
           id: `electronic-method-${method.name}`,
           group: "Scientific setup",
           label: method.label,
@@ -1464,7 +1000,7 @@ export default function App() {
         }),
       ),
       ...MM_MODES.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `mm-mode-${option.value}`,
           group: "Scientific setup",
           label: option.label,
@@ -1479,7 +1015,7 @@ export default function App() {
         }),
       ),
       ...(["NVE", "NVT", "NPT"] as const).map(
-        (ensemble): Command => ({
+        (ensemble): SetupCommand => ({
           id: `ensemble-${ensemble.toLowerCase()}`,
           group: "Scientific setup",
           label: `Use ${ensemble} sampling`,
@@ -1570,7 +1106,7 @@ export default function App() {
         },
       },
       ...THERMOSTATS.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `thermostat-${option.value}`,
           group: "Scientific setup",
           label: option.label,
@@ -1593,7 +1129,7 @@ export default function App() {
         }),
       ),
       ...MANOSTATS.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `manostat-${option.value}`,
           group: "Scientific setup",
           label: `${option.label} manostat`,
@@ -1744,7 +1280,7 @@ export default function App() {
         },
       },
       ...(rendered?.files ?? []).map(
-        (file): Command => ({
+        (file): SetupCommand => ({
           id: `input-${file.name}`,
           group: "Inputs",
           label: file.name,
@@ -3411,6 +2947,8 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         commands={commands}
+        groupOrder={COMMAND_GROUP_ORDER}
+        placeholder="Search setup…"
         onClose={() => setPaletteOpen(false)}
       />
     </div>

@@ -1,26 +1,26 @@
 import { Check, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  COMMAND_GROUP_ORDER,
-  rankCommands,
-  type CommandGroup,
-  type SearchableCommand,
-} from "./commandSearch";
+import { rankCommands, type SearchableCommand } from "./commandSearch";
 
 export interface Command extends SearchableCommand {
   run: () => void;
 }
 
-interface CommandPaletteProps {
+export interface CommandPaletteProps {
   open: boolean;
   commands: Command[];
+  /** Display order of command groups; unknown groups sort last. */
+  groupOrder: readonly string[];
   onClose: () => void;
+  placeholder?: string;
 }
 
 export default function CommandPalette({
   open,
   commands,
+  groupOrder,
   onClose,
+  placeholder = "Search…",
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
@@ -28,24 +28,26 @@ export default function CommandPalette({
   const dialog = useRef<HTMLDialogElement>(null);
   const selectedRow = useRef<HTMLButtonElement>(null);
   const filtered = useMemo(
-    () => rankCommands(commands, query),
-    [commands, query],
+    () => rankCommands(commands, query, groupOrder),
+    [commands, groupOrder, query],
   );
   const grouped = useMemo(() => {
-    const groups = new Map<
-      CommandGroup,
-      { command: Command; index: number }[]
-    >();
+    const groups = new Map<string, { command: Command; index: number }[]>();
     filtered.forEach((command, index) => {
       const items = groups.get(command.group) ?? [];
       items.push({ command, index });
       groups.set(command.group, items);
     });
-    return COMMAND_GROUP_ORDER.flatMap((group) => {
+    const known = new Set(groupOrder);
+    const order = [
+      ...groupOrder,
+      ...[...groups.keys()].filter((group) => !known.has(group)),
+    ];
+    return order.flatMap((group) => {
       const items = groups.get(group);
       return items?.length ? [{ group, items }] : [];
     });
-  }, [filtered]);
+  }, [filtered, groupOrder]);
   const ordered = useMemo(
     () => grouped.flatMap(({ items }) => items.map(({ command }) => command)),
     [grouped],
@@ -146,7 +148,7 @@ export default function CommandPalette({
                 run(ordered[selected]);
               }
             }}
-            placeholder="Search…"
+            placeholder={placeholder}
             aria-label="Search setup"
             role="combobox"
             aria-expanded="true"
