@@ -172,14 +172,18 @@ export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
   ];
 }
 
+/**
+ * Files the QM calculator itself needs. Deliberately independent of the
+ * ensemble: the page reads top to bottom, so a Run choice must never change
+ * the Method section above it. NPT's molecule descriptor lives with Pressure
+ * (see `pressureFileSpecs`).
+ */
 export function qmSetupFileSpecs(
   runner: string | null,
-  ensemble: Ensemble,
   runnerScript: string | null = null,
   externalQM: ExternalQMCapabilities | null = null,
 ): SetupFileSpec[] {
   const roles = new Set<SetupFileRole>();
-  if (ensemble === "NPT") roles.add("moldescriptor");
   const script = selectedExternalQMScript(externalQM, runner, runnerScript);
   script?.required_file_keywords.forEach((dependency) => {
     const role = FILE_KEYWORD_ROLES[dependency];
@@ -191,8 +195,20 @@ export function qmSetupFileSpecs(
   });
   return [...roles].map((role) => ({
     ...FILE_SPECS[role],
-    optional: role === "moldescriptor" || role === "dftb_template",
+    optional: role === "dftb_template",
   }));
+}
+
+/**
+ * Pressure coupling in a QM run computes the molecular virial, so PQ wants a
+ * molecule descriptor. MM runs already require it as a force-field file.
+ */
+export function pressureFileSpecs(
+  jobType: string,
+  ensemble: Ensemble,
+): SetupFileSpec[] {
+  if (!jobType.startsWith("qm-") || ensemble !== "NPT") return [];
+  return [{ ...FILE_SPECS.moldescriptor, optional: true }];
 }
 
 export function externalQMProgram(

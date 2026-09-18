@@ -77,10 +77,12 @@ import {
   MM_MODES,
   packagedSetupFileName,
   preferredRunner,
+  pressureFileSpecs,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
   setupFileSpecs,
+  type SetupFileSpec,
 } from "./method";
 import {
   clampSamplingRunCount,
@@ -842,6 +844,42 @@ function SetupFileStatus({
   );
 }
 
+function SetupFileList({
+  specs,
+  files,
+  onChoose,
+}: {
+  specs: SetupFileSpec[];
+  files: SetupFile[];
+  onChoose: (role: SetupFileRole, event: ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="setup-file-list" aria-label="Files">
+      {specs.map((spec) => {
+        const selected = files.find((file) => file.role === spec.role);
+        return (
+          <label className={selected ? "selected" : ""} key={spec.role}>
+            <input
+              className="setup-file-input"
+              type="file"
+              onChange={(event) => onChoose(spec.role, event)}
+            />
+            <Upload size={16} aria-hidden="true" />
+            <span>
+              <strong>{spec.label}</strong>
+              <small>{selected?.name ?? spec.defaultName}</small>
+            </span>
+            <SetupFileStatus
+              selected={Boolean(selected)}
+              optional={spec.optional}
+            />
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
@@ -906,6 +944,12 @@ export default function App() {
     const runs = samplingRunCount > 1 ? `${samplingRunCount} × ` : "";
     return `${runs}${steps} × ${formatCompact(dt)} fs = ${total}`;
   }, [samplingRunCount, setup.steps, setup.timestep_fs]);
+  // Editing σ / seed never touches the structure above; Apply is the only
+  // action that does, so until then the applied line just reports drift.
+  const preparationStale =
+    preparation != null &&
+    (preparation.sigma_angstrom !== sigma ||
+      preparation.seed !== setup.random_seed);
   // A ramp is "on" when a start temperature is set; off clears the schedule.
   const rampEnabled = setup.start_temperature_k != null;
   const setRampEnabled = useCallback((on: boolean) => {
@@ -953,20 +997,20 @@ export default function App() {
     () =>
       molecularMechanics
         ? setupFileSpecs(setup.mm_force_field)
-        : qmSetupFileSpecs(
-            setup.runner,
-            setup.ensemble,
-            setup.runner_script,
-            externalQM,
-          ),
+        : qmSetupFileSpecs(setup.runner, setup.runner_script, externalQM),
     [
       externalQM,
       molecularMechanics,
-      setup.ensemble,
       setup.mm_force_field,
       setup.runner,
       setup.runner_script,
     ],
+  );
+  // The NPT molecule descriptor belongs to the Pressure row in Run, so
+  // choosing an ensemble never changes the Method section above it.
+  const pressureFiles = useMemo(
+    () => pressureFileSpecs(setup.job_type, setup.ensemble),
+    [setup.ensemble, setup.job_type],
   );
   const methodFilesHint = useMemo(() => {
     const required = methodFileSpecs.filter((spec) => !spec.optional);
@@ -983,14 +1027,18 @@ export default function App() {
     () => activeFilesForSpecs(methodFileSpecs, setupFiles),
     [methodFileSpecs, setupFiles],
   );
+  const activeSetupFiles = useMemo(
+    () => activeFilesForSpecs([...methodFileSpecs, ...pressureFiles], setupFiles),
+    [methodFileSpecs, pressureFiles, setupFiles],
+  );
   const setupFileReferences = useMemo(
     () =>
-      methodSetupFiles.map(({ role, name, content }) => ({
+      activeSetupFiles.map(({ role, name, content }) => ({
         role,
         name,
         content: role === "moldescriptor" ? content : null,
       })),
-    [methodSetupFiles],
+    [activeSetupFiles],
   );
 
   useEffect(() => {
@@ -1990,12 +2038,7 @@ export default function App() {
       const runnerScript = keepsSelection
         ? existing.runner_script
         : recommendedRunnerScript(externalQM, runnerId);
-      const required = qmSetupFileSpecs(
-        runnerId,
-        existing.ensemble,
-        runnerScript,
-        externalQM,
-      );
+      const required = qmSetupFileSpecs(runnerId, runnerScript, externalQM);
       const roles = new Set(required.map((file) => file.role));
       return {
         ...existing,
@@ -2003,9 +2046,6 @@ export default function App() {
         job_type: "qm-md",
         runner: runnerId,
         runner_script: runnerScript,
-        moldescriptor_file: roles.has("moldescriptor")
-          ? existing.moldescriptor_file ?? defaultSetupFileName("moldescriptor")
-          : existing.moldescriptor_file,
         dftb_template_file: roles.has("dftb_template")
           ? existing.dftb_template_file ??
             defaultSetupFileName("dftb_template")
@@ -2026,12 +2066,7 @@ export default function App() {
       if (!allowed.some((script) => script.name === scriptName)) {
         return existing;
       }
-      const required = qmSetupFileSpecs(
-        existing.runner,
-        existing.ensemble,
-        scriptName,
-        externalQM,
-      );
+      const required = qmSetupFileSpecs(existing.runner, scriptName, externalQM);
       const roles = new Set(required.map((file) => file.role));
       return {
         ...existing,
@@ -2372,10 +2407,7 @@ export default function App() {
                         max="0.2"
                         step="0.001"
                         value={sigma}
-                        onChange={(event) => {
-                          clearAppliedPreparation();
-                          setSigma(Number(event.target.value));
-                        }}
+                        onChange={(event) => setSigma(Number(event.target.value))}
                       />
                     </Field>
                     <Field label="Seed" controlId="position-seed">
@@ -2385,13 +2417,12 @@ export default function App() {
                         max="4294967295"
                         step="1"
                         value={setup.random_seed}
-                        onChange={(event) => {
-                          clearAppliedPreparation();
+                        onChange={(event) =>
                           setSetup((existing) => ({
                             ...existing,
                             random_seed: Number(event.target.value),
-                          }));
-                        }}
+                          }))
+                        }
                       />
                     </Field>
                     <button
@@ -2413,6 +2444,11 @@ export default function App() {
                   <div className="preparation-applied">
                     <CheckCircle2 size={15} />
                     σ {preparation.sigma_angstrom} Å · seed {preparation.seed}
+                    {preparationStale && (
+                      <span className="preparation-stale">
+                        {" "}· settings changed, apply again
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -2633,38 +2669,11 @@ export default function App() {
                           Needs molecule type IDs — import a PQ restart (.rst)
                         </div>
                       )}
-                      <div className="setup-file-list" aria-label="Files">
-                        {methodFileSpecs.map((spec) => {
-                          const selected = setupFiles.find(
-                            (file) => file.role === spec.role,
-                          );
-                          return (
-                            <label
-                              className={selected ? "selected" : ""}
-                              key={spec.role}
-                            >
-                              <input
-                                className="setup-file-input"
-                                type="file"
-                                onChange={(event) =>
-                                  void chooseSetupFile(spec.role, event)
-                                }
-                              />
-                              <Upload size={16} aria-hidden="true" />
-                              <span>
-                                <strong>{spec.label}</strong>
-                                <small>
-                                  {selected?.name ?? spec.defaultName}
-                                </small>
-                              </span>
-                              <SetupFileStatus
-                                selected={Boolean(selected)}
-                                optional={spec.optional}
-                              />
-                            </label>
-                          );
-                        })}
-                      </div>
+                      <SetupFileList
+                        specs={methodFileSpecs}
+                        files={setupFiles}
+                        onChoose={chooseSetupFile}
+                      />
                     </div>
                   </ConditionRow>
                 )}
@@ -2824,6 +2833,20 @@ export default function App() {
                       }))
                     }
                   />
+                  {pressureFiles.length > 0 && (
+                    <div className="condition-subrow condition-subrow-files">
+                      <span className="condition-sublabel">
+                        <Upload size={13} aria-hidden="true" />
+                        Molecules
+                        <Info text="Pressure coupling needs the molecular virial, so PQ reads a molecule descriptor. Without one, PQSetup packs a water descriptor." />
+                      </span>
+                      <SetupFileList
+                        specs={pressureFiles}
+                        files={setupFiles}
+                        onChoose={chooseSetupFile}
+                      />
+                    </div>
+                  )}
                 </ConditionRow>
               )}
 

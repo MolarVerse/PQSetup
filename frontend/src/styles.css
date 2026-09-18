@@ -1263,6 +1263,11 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
+.preparation-stale {
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
 /* --------------------------------------------------------------- method */
 
 /* --------------------------------------------------------------- method */
@@ -1634,6 +1639,16 @@ kbd {
 
 .condition-sublabel > svg {
   color: var(--accent-dark);
+}
+
+/* A file picker in a sub-row: single column, label centred on the row. */
+.condition-subrow-files .condition-sublabel {
+  margin-top: 0;
+  min-height: 52px;
+}
+
+.condition-subrow-files .setup-file-list {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .condition-subrow .schedule-grid,
@@ -3047,7 +3062,8 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .condition-sublabel {
+  .condition-sublabel,
+  .condition-subrow-files .condition-sublabel {
     min-height: 0;
     margin-top: 0;
   }

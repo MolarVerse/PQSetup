@@ -7,6 +7,7 @@ import {
   mmModeLabel,
   packagedSetupFileName,
   preferredRunner,
+  pressureFileSpecs,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
@@ -113,19 +114,24 @@ describe("molecular mechanics method", () => {
 });
 
 describe("QM companion files", () => {
-  it("requests only files required by the selected setup", () => {
-    expect(qmSetupFileSpecs("ase_xtb", "NVT")).toEqual([]);
-    expect(qmSetupFileSpecs("ase_xtb", "NPT").map((file) => file.role)).toEqual(
+  it("requests only files required by the selected calculator", () => {
+    expect(qmSetupFileSpecs("ase_xtb")).toEqual([]);
+    expect(qmSetupFileSpecs("dftbplus").map((file) => file.role)).toEqual([
+      "dftb_template",
+    ]);
+    expect(qmSetupFileSpecs("dftbplus").every((file) => file.optional)).toBe(
+      true,
+    );
+    expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
+  });
+
+  it("keeps the NPT molecule descriptor with pressure, not the calculator", () => {
+    expect(pressureFileSpecs("qm-md", "NVT")).toEqual([]);
+    expect(pressureFileSpecs("mm-md", "NPT")).toEqual([]);
+    expect(pressureFileSpecs("qm-md", "NPT").map((file) => file.role)).toEqual(
       ["moldescriptor"],
     );
-    expect(qmSetupFileSpecs("ase_xtb", "NPT")[0]?.optional).toBe(true);
-    expect(
-      qmSetupFileSpecs("dftbplus", "NPT").map((file) => file.role),
-    ).toEqual(["moldescriptor", "dftb_template"]);
-    expect(
-      qmSetupFileSpecs("dftbplus", "NVT").every((file) => file.optional),
-    ).toBe(true);
-    expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
+    expect(pressureFileSpecs("qm-md", "NPT")[0]?.optional).toBe(true);
   });
 
   it("requires an explicit PySCF method without installed capabilities", () => {
@@ -179,12 +185,9 @@ describe("QM companion files", () => {
     expect(recommendedRunnerScript(capabilities, "pyscf")).toBeNull();
     expect(selectedExternalQMScript(capabilities, "pyscf", null)).toBeNull();
     expect(
-      qmSetupFileSpecs(
-        "turbomole",
-        "NVT",
-        "turbomole_rimp2",
-        capabilities,
-      ).map((file) => file.role),
+      qmSetupFileSpecs("turbomole", "turbomole_rimp2", capabilities).map(
+        (file) => file.role,
+      ),
     ).toEqual(["turbomole_define_template"]);
     expect(defaultSetupFileName("turbomole_define_template")).toBe(
       "tm_define.template",
