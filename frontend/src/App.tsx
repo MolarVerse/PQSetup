@@ -735,13 +735,15 @@ function ConditionRow({
   title,
   hint,
   toggle,
+  action,
   className,
   children,
 }: {
   icon: LucideIcon;
   title: string;
-  hint?: string;
+  hint?: ReactNode;
   toggle?: { label: string; checked: boolean; onChange: (on: boolean) => void };
+  action?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
@@ -762,6 +764,7 @@ function ConditionRow({
             <span className="switch" aria-hidden="true" />
           </label>
         )}
+        {action && <div className="condition-action">{action}</div>}
       </div>
       <div className={`condition-fields${className ? ` ${className}` : ""}`}>
         {children}
@@ -950,6 +953,17 @@ export default function App() {
       setup.runner_script,
     ],
   );
+  const methodFilesHint = useMemo(() => {
+    const required = methodFileSpecs.filter((spec) => !spec.optional);
+    const added = required.filter((spec) =>
+      setupFiles.some((file) => file.role === spec.role),
+    ).length;
+    const optional = methodFileSpecs.length - required.length;
+    const parts: string[] = [];
+    if (required.length > 0) parts.push(`${added} of ${required.length} added`);
+    if (optional > 0) parts.push(`${optional} optional`);
+    return parts.join(" · ");
+  }, [methodFileSpecs, setupFiles]);
   const methodSetupFiles = useMemo(
     () => activeFilesForSpecs(methodFileSpecs, setupFiles),
     [methodFileSpecs, setupFiles],
@@ -2397,240 +2411,165 @@ export default function App() {
               <h2 className="section-title" id="section-method-title">
                 Method
               </h2>
-              {!molecularMechanics ? (
-                <div className="method-content">
-                  <div className="method-band band-row">
-                    <fieldset className="interaction-model-fieldset">
-                      <legend className="visually-hidden">Interaction model</legend>
-                      <div className="interaction-model-options">
-                        <label className={!molecularMechanics ? "selected" : ""}>
-                          <input
-                            type="radio"
-                            name="interaction-model"
-                            checked={!molecularMechanics}
-                            onChange={() => chooseInteractionModel("qm")}
-                          />
-                          <Atom size={16} aria-hidden="true" />
-                          <span className="interaction-model-label">
-                            <strong>QM</strong>
-                          </span>
-                        </label>
-                        <label className={molecularMechanics ? "selected" : ""}>
-                          <input
-                            type="radio"
-                            name="interaction-model"
-                            checked={molecularMechanics}
-                            onChange={() => chooseInteractionModel("mm")}
-                          />
-                          <Boxes size={16} aria-hidden="true" />
-                          <span className="interaction-model-label">
-                            <strong>MM</strong>
-                          </span>
-                        </label>
-                      </div>
-                    </fieldset>
-                    <div className="calculator-select">
-                    <label className="visually-hidden" htmlFor="calculator">
-                      Calculator
-                    </label>
-                    <select
-                      id="calculator"
-                      aria-label="Calculator"
-                      value={setup.runner ?? ""}
-                      disabled={!bootstrap}
-                      onChange={(event) => {
-                        if (event.target.value) {
-                          chooseCalculator(event.target.value);
-                        }
-                      }}
-                    >
-                      <option value="" disabled>
-                        {bootstrap ? "Select calculator" : "Loading…"}
-                      </option>
-                      {RUNNER_GROUPS.map((group) => {
-                        const runners = (bootstrap?.runners ?? []).filter(
-                          (runner) =>
-                            runner.supported && group.ids.includes(runner.id),
-                        );
-                        if (runners.length === 0) return null;
-                        return (
-                          <optgroup label={group.label} key={group.label}>
-                            {runners.map((runner) => {
-                              const state = runnerAvailability(runner);
-                              const suffix = runnerAvailabilityLabel(state);
-                              return (
-                                <option value={runner.id} key={runner.id}>
-                                  {runner.label}
-                                  {suffix ? ` · ${suffix}` : ""}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        );
-                      })}
-                    </select>
-                    {(() => {
-                      const selected = selectedRunnerStatus;
-                      if (!selected) {
-                        return !setup.runner ? (
-                          <div className="inline-warning" role="alert">
-                            <CircleAlert size={15} aria-hidden="true" />
-                            Select calculator
-                          </div>
-                        ) : null;
-                      }
-                      const state = runnerAvailability(selected);
-                      if (state === "ready") return null;
-                      return (
-                        <div
-                          className="calculator-status warn"
-                          role="status"
-                          title="Calculator not detected on this machine"
-                        >
-                          <CircleAlert size={14} aria-hidden="true" />
-                          {runnerAvailabilityLabel(state)}
-                        </div>
-                      );
-                    })()}
-                    {setup.runner && (
+              <fieldset className="interaction-model-fieldset">
+                <legend className="visually-hidden">Interaction model</legend>
+                <div className="interaction-model-options">
+                  <label className={!molecularMechanics ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="interaction-model"
+                      checked={!molecularMechanics}
+                      onChange={() => chooseInteractionModel("qm")}
+                    />
+                    <Atom size={16} aria-hidden="true" />
+                    <span className="interaction-model-label">
+                      <strong>QM</strong>
+                    </span>
+                  </label>
+                  <label className={molecularMechanics ? "selected" : ""}>
+                    <input
+                      type="radio"
+                      name="interaction-model"
+                      checked={molecularMechanics}
+                      onChange={() => chooseInteractionModel("mm")}
+                    />
+                    <Boxes size={16} aria-hidden="true" />
+                    <span className="interaction-model-label">
+                      <strong>MM</strong>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <div className="run-band">
+                {!molecularMechanics ? (
+                  <ConditionRow
+                    icon={Atom}
+                    title="Calculator"
+                    hint={
+                      selectedRunnerStatus &&
+                      runnerAvailability(selectedRunnerStatus) !== "ready" ? (
+                        <span className="hint-warn">
+                          {runnerAvailabilityLabel(
+                            runnerAvailability(selectedRunnerStatus),
+                          )}
+                        </span>
+                      ) : undefined
+                    }
+                    action={
+                      setup.runner ? (
+                        <SettingsChip
+                          summary={qmSettingsSummary(setup)}
+                          onOpen={() => setModal("calculator")}
+                        />
+                      ) : undefined
+                    }
+                    className="method-fields"
+                  >
+                    <Field label="Program" controlId="calculator">
+                      <select
+                        value={setup.runner ?? ""}
+                        disabled={!bootstrap}
+                        aria-invalid={!setup.runner || undefined}
+                        onChange={(event) => {
+                          if (event.target.value) {
+                            chooseCalculator(event.target.value);
+                          }
+                        }}
+                      >
+                        <option value="" disabled>
+                          {bootstrap ? "Select calculator" : "Loading…"}
+                        </option>
+                        {RUNNER_GROUPS.map((group) => {
+                          const runners = (bootstrap?.runners ?? []).filter(
+                            (runner) =>
+                              runner.supported && group.ids.includes(runner.id),
+                          );
+                          if (runners.length === 0) return null;
+                          return (
+                            <optgroup label={group.label} key={group.label}>
+                              {runners.map((runner) => {
+                                const state = runnerAvailability(runner);
+                                const suffix = runnerAvailabilityLabel(state);
+                                return (
+                                  <option value={runner.id} key={runner.id}>
+                                    {runner.label}
+                                    {suffix ? ` · ${suffix}` : ""}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
+                          );
+                        })}
+                      </select>
+                    </Field>
+                    {electronicMethods.length > 0 &&
+                      (electronicMethods.length > 1 ||
+                        !electronicProgram?.recommended_script) && (
+                        <Field label="Method" controlId="electronic-method">
+                          <select
+                            value={selectedElectronicMethod ? setup.runner_script ?? "" : ""}
+                            aria-invalid={!selectedElectronicMethod || undefined}
+                            onChange={(event) => {
+                              if (event.target.value) {
+                                chooseElectronicMethod(event.target.value);
+                              }
+                            }}
+                          >
+                            <option value="" disabled>
+                              Choose method
+                            </option>
+                            {electronicMethods.map((method) => (
+                              <option value={method.name} key={method.name}>
+                                {method.label}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      )}
+                  </ConditionRow>
+                ) : (
+                  <ConditionRow
+                    icon={Boxes}
+                    title="Force field"
+                    hint={
+                      MM_MODES.find(
+                        (option) => option.value === setup.mm_force_field,
+                      )?.description
+                    }
+                    action={
                       <SettingsChip
-                        summary={qmSettingsSummary(setup)}
+                        summary={mmSettingsSummary(setup)}
                         onOpen={() => setModal("calculator")}
                       />
-                    )}
-                  </div>
-                  </div>
-                  {electronicMethods.length > 0 &&
-                    (electronicMethods.length > 1 ||
-                      !electronicProgram?.recommended_script) && (
-                      <fieldset className="electronic-method-fieldset">
-                        <legend className="visually-hidden">
-                          Electronic method
-                        </legend>
-                        <div
-                          className="electronic-method-options"
-                          role="radiogroup"
-                          aria-label="Electronic method"
-                        >
-                          {electronicMethods.map((method) => (
-                            <label
-                              className={
-                                setup.runner_script === method.name
-                                  ? "selected"
-                                  : ""
-                              }
-                              key={method.name}
-                            >
-                              <input
-                                type="radio"
-                                name="electronic-method"
-                                checked={setup.runner_script === method.name}
-                                onChange={() =>
-                                  chooseElectronicMethod(method.name)
-                                }
-                              />
-                              <span>{method.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {!selectedElectronicMethod && (
-                          <div className="inline-warning" role="alert">
-                            <CircleAlert size={15} aria-hidden="true" />
-                            Choose method
-                          </div>
-                        )}
-                      </fieldset>
-                    )}
-                  {methodFileSpecs.length > 0 && (
-                    <div className="setup-file-list" aria-label="Files">
-                      {methodFileSpecs.map((spec) => {
-                        const selected = setupFiles.find(
-                          (file) => file.role === spec.role,
-                        );
-                        return (
+                    }
+                    className="method-fields"
+                  >
+                    <fieldset className="mm-mode-fieldset condition-full">
+                      <legend className="visually-hidden">
+                        Interaction terms
+                      </legend>
+                      <div className="interaction-model-options mm-mode-options">
+                        {MM_MODES.map((option) => (
                           <label
-                            className={selected ? "selected" : ""}
-                            key={spec.role}
+                            className={
+                              setup.mm_force_field === option.value
+                                ? "selected"
+                                : ""
+                            }
+                            key={option.value}
                           >
                             <input
-                              className="setup-file-input"
-                              type="file"
-                              onChange={(event) =>
-                                void chooseSetupFile(spec.role, event)
-                              }
+                              type="radio"
+                              name="mm-force-field"
+                              checked={setup.mm_force_field === option.value}
+                              onChange={() => chooseMMMode(option.value)}
                             />
-                            <Upload size={16} aria-hidden="true" />
-                            <span>
-                              <strong>{spec.label}</strong>
-                              <small>
-                                {selected?.name ?? spec.defaultName}
-                              </small>
-                            </span>
-                            <SetupFileStatus selected={Boolean(selected)} />
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="method-content">
-                  <fieldset className="interaction-model-fieldset">
-                    <legend className="visually-hidden">Interaction model</legend>
-                    <div className="interaction-model-options">
-                      <label className={!molecularMechanics ? "selected" : ""}>
-                        <input
-                          type="radio"
-                          name="interaction-model"
-                          checked={!molecularMechanics}
-                          onChange={() => chooseInteractionModel("qm")}
-                        />
-                        <Atom size={16} aria-hidden="true" />
-                        <span className="interaction-model-label">
-                          <strong>QM</strong>
-                        </span>
-                      </label>
-                      <label className={molecularMechanics ? "selected" : ""}>
-                        <input
-                          type="radio"
-                          name="interaction-model"
-                          checked={molecularMechanics}
-                          onChange={() => chooseInteractionModel("mm")}
-                        />
-                        <Boxes size={16} aria-hidden="true" />
-                        <span className="interaction-model-label">
-                          <strong>MM</strong>
-                        </span>
-                      </label>
-                    </div>
-                  </fieldset>
-                  <fieldset className="mm-mode-fieldset">
-                    <legend className="visually-hidden">Interaction terms</legend>
-                    <div className="mm-mode-list">
-                      {MM_MODES.map((option) => (
-                        <label
-                          className={
-                            setup.mm_force_field === option.value
-                              ? "selected"
-                              : ""
-                          }
-                          key={option.value}
-                        >
-                          <input
-                            type="radio"
-                            name="mm-force-field"
-                            checked={setup.mm_force_field === option.value}
-                            onChange={() => chooseMMMode(option.value)}
-                          />
-                          <span>
                             <strong>{option.label}</strong>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-
-                  <div className="form-grid mm-primary-grid">
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
                     {analysis.structure.cell_generated && (
                       <Field
                         label="Density"
@@ -2653,11 +2592,7 @@ export default function App() {
                         />
                       </Field>
                     )}
-                    <Field
-                      label="Cutoff"
-                      unit="Å"
-                      controlId="mm-cutoff"
-                    >
+                    <Field label="Coulomb cutoff" unit="Å" controlId="mm-cutoff">
                       <input
                         type="number"
                         min="0"
@@ -2671,56 +2606,58 @@ export default function App() {
                         }
                       />
                     </Field>
-                    <div className="field field-inline-action">
-                      <SettingsChip
-                        summary={mmSettingsSummary(setup)}
-                        onOpen={() => setModal("calculator")}
-                      />
-                    </div>
-                  </div>
+                  </ConditionRow>
+                )}
 
-                  {!hasTypedMolecules && (
-                    <div className="inline-warning" role="alert">
-                      <CircleAlert size={15} aria-hidden="true" />
-                      Atoms carry no molecule types — import a PQ restart
-                      (.rst) with molecule type IDs
+                {methodFileSpecs.length > 0 && (
+                  <ConditionRow
+                    icon={Upload}
+                    title="Files"
+                    hint={methodFilesHint}
+                  >
+                    <div className="condition-full">
+                      {molecularMechanics && !hasTypedMolecules && (
+                        <div className="inline-warning" role="alert">
+                          <CircleAlert size={15} aria-hidden="true" />
+                          Needs molecule type IDs — import a PQ restart (.rst)
+                        </div>
+                      )}
+                      <div className="setup-file-list" aria-label="Files">
+                        {methodFileSpecs.map((spec) => {
+                          const selected = setupFiles.find(
+                            (file) => file.role === spec.role,
+                          );
+                          return (
+                            <label
+                              className={selected ? "selected" : ""}
+                              key={spec.role}
+                            >
+                              <input
+                                className="setup-file-input"
+                                type="file"
+                                onChange={(event) =>
+                                  void chooseSetupFile(spec.role, event)
+                                }
+                              />
+                              <Upload size={16} aria-hidden="true" />
+                              <span>
+                                <strong>{spec.label}</strong>
+                                <small>
+                                  {selected?.name ?? spec.defaultName}
+                                </small>
+                              </span>
+                              <SetupFileStatus
+                                selected={Boolean(selected)}
+                                optional={spec.optional}
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
-
-                  <div className="setup-file-list" aria-label="Files">
-                    {methodFileSpecs.map((spec) => {
-                      const selected = setupFiles.find(
-                        (file) => file.role === spec.role,
-                      );
-                      return (
-                        <label
-                          className={selected ? "selected" : ""}
-                          key={spec.role}
-                        >
-                          <input
-                            className="setup-file-input"
-                            type="file"
-                            onChange={(event) =>
-                              void chooseSetupFile(spec.role, event)
-                            }
-                          />
-                          <Upload size={16} aria-hidden="true" />
-                          <span>
-                            <strong>{spec.label}</strong>
-                            <small>
-                              {selected?.name ?? spec.defaultName}
-                            </small>
-                          </span>
-                          <SetupFileStatus
-                            selected={Boolean(selected)}
-                            optional={spec.optional}
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                  </ConditionRow>
+                )}
+              </div>
             </section>
 
             <section

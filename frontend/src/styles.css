@@ -456,15 +456,6 @@ kbd {
   padding-right: 8px;
 }
 
-/* Settings chip sits on the field baseline next to inputs. */
-.field-inline-action {
-  justify-content: flex-end;
-}
-
-.field-inline-action .settings-chip {
-  height: var(--control);
-}
-
 .settings-chip strong {
   max-width: 320px;
 }
@@ -929,7 +920,6 @@ kbd {
 
 .prepare-option,
 .setup-file-list,
-.mm-mode-list,
 .input-preview,
 .viewer {
   border: 1px solid var(--border);
@@ -1013,8 +1003,7 @@ kbd {
 
 .interaction-model-fieldset,
 .mm-mode-fieldset,
-.ensemble-fieldset,
-.electronic-method-fieldset {
+.ensemble-fieldset {
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1207,61 +1196,81 @@ kbd {
 
 /* --------------------------------------------------------------- method */
 
-.method-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+/* --------------------------------------------------------------- method */
+
+.interaction-model-fieldset {
+  max-width: 240px;
 }
 
-.setup-file-list,
-.mm-mode-list {
-  overflow: hidden;
+/* Force-field segmented switch spans the row; controls sit half-width. */
+.mm-mode-options {
+  max-width: none;
 }
 
-.setup-file-list > label + label,
-.mm-mode-list > label + label {
-  border-top: 1px solid var(--border);
+.method-fields > .field {
+  grid-column: span 2;
 }
 
-.setup-file-list > label,
-.mm-mode-list > label {
-  position: relative;
-  min-height: 48px;
+.condition-action {
+  margin-left: auto;
+}
+
+.condition-action .settings-chip {
+  height: 26px;
+}
+
+.hint-warn {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.field select[aria-invalid="true"],
+.field input[aria-invalid="true"] {
+  outline: 2px solid var(--danger);
+  outline-offset: -2px;
+}
+
+/* File slots: two-up hairline grid; a lone last slot spans the row. */
+.setup-file-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--border);
+}
+
+.setup-file-list > label {
+  position: relative;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 0 var(--pad);
+  background: var(--surface);
   cursor: pointer;
   transition: background 120ms ease;
 }
 
-.setup-file-list > label,
-.mm-mode-list > label {
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+.setup-file-list > label:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
-.mm-mode-list > label {
-  grid-template-columns: 16px minmax(0, 1fr);
-}
-
-.setup-file-list > label:hover,
-.mm-mode-list > label:hover {
+.setup-file-list > label:hover {
   background: var(--surface-subtle);
 }
 
-.setup-file-list > label.selected,
-.mm-mode-list > label.selected {
+.setup-file-list > label.selected {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.setup-file-list > label:has(input:focus-visible),
-.mm-mode-list > label:has(input:focus-visible) {
+.setup-file-list > label:has(input:focus-visible) {
   outline: 2px solid var(--focus-color);
   outline-offset: -2px;
+  z-index: 1;
 }
 
-.setup-file-list strong,
-.mm-mode-list strong {
+.setup-file-list strong {
   font-size: 0.93rem;
 }
 
@@ -1274,13 +1283,6 @@ kbd {
   pointer-events: none;
 }
 
-.mm-mode-list input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
-}
-
 .interaction-model-label {
   display: flex;
   flex-direction: column;
@@ -1288,77 +1290,8 @@ kbd {
   line-height: 1.15;
 }
 
-.interaction-model-label small {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-
-.interaction-model-options > label.selected .interaction-model-label small {
-  color: #c6c6c6;
-}
-
-.electronic-method-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.electronic-method-options label {
-  position: relative;
-  height: var(--control);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.86rem;
-  font-weight: 500;
-  text-align: center;
-  transition:
-    border-color 120ms ease,
-    background 120ms ease;
-}
-
-.electronic-method-options label > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.electronic-method-options label:hover {
-  background: var(--surface-subtle);
-}
-
-.electronic-method-options label.selected {
-  border-color: var(--accent);
-  color: var(--ink);
-}
-
-.electronic-method-options input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.electronic-method-options label:has(input:focus-visible) {
-  outline: 2px solid var(--focus-color);
-  outline-offset: -2px;
-}
-
-.electronic-method-fieldset .inline-warning {
-  margin-top: 10px;
-}
-
-.setup-file-list > label {
-  min-height: 52px;
+.condition-full > .inline-warning {
+  margin-bottom: 10px;
 }
 
 .setup-file-list > label > svg {
@@ -1515,6 +1448,7 @@ kbd {
 }
 
 .condition-title {
+  white-space: nowrap;
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1733,45 +1667,6 @@ kbd {
   flex-direction: column;
   gap: 10px;
   border-top: 1px solid var(--border);
-}
-
-.method-band .interaction-model-fieldset,
-.interaction-model-fieldset {
-  max-width: 240px;
-}
-
-.calculator-select {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 12px;
-}
-
-.calculator-select select {
-  flex: 1;
-  min-width: 0;
-  height: var(--control);
-  padding: 0 12px;
-  border: 0;
-  border-bottom: 1px solid var(--border-strong);
-  color: var(--ink);
-  background: var(--surface-subtle);
-}
-
-.calculator-status {
-  flex-shrink: 0;
-  min-height: 20px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.86rem;
-  white-space: nowrap;
-}
-
-.calculator-status.warn {
-  color: var(--warning);
 }
 
 .structure-card {
@@ -2915,13 +2810,23 @@ kbd {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
-  .method-band .calculator-select {
-    flex-direction: column;
-    align-items: stretch;
+  .setup-file-list {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .calculator-status {
-    white-space: normal;
+  /* Force-field switch stacks into a list on narrow screens. */
+  .mm-mode-options {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
+
+  .mm-mode-options > label + label {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .setup-file-list > label:last-child:nth-child(odd) {
+    grid-column: auto;
   }
 }
 
@@ -3037,11 +2942,10 @@ kbd {
   }
 
   .form-grid,
-.prepare-fields,
-.stage-primary-grid,
-.schedule-grid,
-.coupling-grid,
-.electronic-method-options {
+  .prepare-fields,
+  .stage-primary-grid,
+  .schedule-grid,
+  .coupling-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
