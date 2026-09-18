@@ -5,7 +5,6 @@ import {
   Boxes,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -15,29 +14,32 @@ import {
   File as FileIcon,
   FileCode2,
   Files,
+  Flame,
   Gauge,
   LoaderCircle,
+  Maximize2,
   Package as PackageIcon,
   Search,
   Sparkles,
   Terminal,
   Thermometer,
+  TrendingUp,
   Upload,
   X,
   Zap,
 } from "lucide-react";
 import {
   cloneElement,
+  startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
-  type CSSProperties,
   type DragEvent,
-  type PointerEvent as ReactPointerEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -84,15 +86,6 @@ import {
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
-import {
-  clampLayoutNumber,
-  OUTPUT_WIDTH_DEFAULT,
-  OUTPUT_WIDTH_KEY,
-  OUTPUT_WIDTH_MAX,
-  OUTPUT_WIDTH_MIN,
-  readLayoutNumber,
-  writeLayoutNumber,
-} from "./layoutPrefs";
 import type {
   Bootstrap,
   Diagnostic,
@@ -499,7 +492,18 @@ function TemperatureCoupling({
   );
 }
 
-function TemperatureSchedule({
+function temperatureRampSummary(value: TemperatureScheduleSettings): string {
+  if (
+    value.start_temperature_k != null &&
+    value.temperature_ramp_steps != null &&
+    value.temperature_ramp_steps > 0
+  ) {
+    return `${value.start_temperature_k} → … · ${value.temperature_ramp_steps} steps`;
+  }
+  return "off";
+}
+
+function TemperatureRampContent({
   value,
   onChange,
 }: {
@@ -507,70 +511,77 @@ function TemperatureSchedule({
   onChange: (patch: Partial<TemperatureScheduleSettings>) => void;
 }) {
   return (
-    <details className="schedule-settings option-panel">
-      <summary>
-        <span>
-          <strong>Temperature ramp</strong>
-          {" · "}
-          <em>
-            {value.start_temperature_k != null &&
-            value.temperature_ramp_steps != null &&
-            value.temperature_ramp_steps > 0
-              ? `${value.start_temperature_k} → … · ${value.temperature_ramp_steps} steps`
-              : "off"}
-          </em>
-        </span>
-        <ChevronDown size={16} aria-hidden="true" />
-      </summary>
-      <div className="option-panel-body">
-        <div className="form-grid schedule-grid">
-        <Field label="Start temperature" unit="K">
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={value.start_temperature_k ?? ""}
-            onChange={(event) =>
-              onChange({
-                start_temperature_k: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field label="Ramp steps">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={value.temperature_ramp_steps ?? ""}
-            onChange={(event) =>
-              onChange({
-                temperature_ramp_steps: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field label="Ramp frequency" unit="steps">
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={value.temperature_ramp_frequency}
-            onChange={(event) =>
-              onChange({
-                temperature_ramp_frequency: Number(event.target.value),
-              })
-            }
-          />
-        </Field>
-        </div>
-      </div>
-    </details>
+    <div className="form-grid schedule-grid">
+      <Field label="Start temperature" unit="K">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={value.start_temperature_k ?? ""}
+          onChange={(event) =>
+            onChange({
+              start_temperature_k: event.target.value
+                ? Number(event.target.value)
+                : null,
+            })
+          }
+        />
+      </Field>
+      <Field label="Ramp steps">
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={value.temperature_ramp_steps ?? ""}
+          onChange={(event) =>
+            onChange({
+              temperature_ramp_steps: event.target.value
+                ? Number(event.target.value)
+                : null,
+            })
+          }
+        />
+      </Field>
+      <Field label="Ramp frequency" unit="steps">
+        <input
+          type="number"
+          min="1"
+          step="1"
+          value={value.temperature_ramp_frequency}
+          onChange={(event) =>
+            onChange({
+              temperature_ramp_frequency: Number(event.target.value),
+            })
+          }
+        />
+      </Field>
+    </div>
   );
+}
+
+type RunOpenOption =
+  | "equilibration"
+  | "output"
+  | "thermostat"
+  | "ramp"
+  | "manostat";
+
+function runOptionForControl(controlId: string): RunOpenOption | null {
+  switch (controlId) {
+    case "sampling-thermostat":
+      return "thermostat";
+    case "sampling-manostat":
+      return "manostat";
+    case "sampling-run-count":
+      return "output";
+    case "sampling-temperature":
+    case "sampling-pressure":
+    case "sampling-timestep":
+    case "sampling-steps":
+      return null;
+    default:
+      return null;
+  }
 }
 
 type ManostatSettings = Pick<
@@ -659,6 +670,102 @@ function PressureCoupling({
   );
 }
 
+function InputNavigator({
+  rendered,
+  selectedFile,
+  selectedFileIndex,
+  selectId,
+  equilibrationFiles,
+  samplingFiles,
+  onSelect,
+}: {
+  rendered: PlanRenderResult;
+  selectedFile: PlanRenderResult["files"][number] | null;
+  selectedFileIndex: number;
+  selectId: string;
+  equilibrationFiles: PlanRenderResult["files"];
+  samplingFiles: PlanRenderResult["files"];
+  onSelect: (name: string) => void;
+}) {
+  if (rendered.files.length <= 1) {
+    return (
+      <span>
+        <FileCode2 size={16} aria-hidden="true" />
+        {selectedFile?.name ?? "…"}
+      </span>
+    );
+  }
+
+  return (
+    <div className="input-navigator preview-navigator">
+      <button
+        type="button"
+        aria-label="Previous input"
+        aria-controls="generated-input-preview"
+        disabled={selectedFileIndex <= 0}
+        onClick={() => {
+          if (selectedFileIndex <= 0) return;
+          onSelect(rendered.files[selectedFileIndex - 1].name);
+        }}
+      >
+        <ChevronLeft size={16} aria-hidden="true" />
+      </button>
+      <label htmlFor={selectId}>
+        <span className="visually-hidden">Generated input</span>
+        <select
+          id={selectId}
+          aria-label="Generated input"
+          aria-controls="generated-input-preview"
+          value={selectedFile?.name ?? ""}
+          onChange={(event) => onSelect(event.target.value)}
+        >
+          {equilibrationFiles.length > 0 && (
+            <optgroup label="Equilibration">
+              {equilibrationFiles.map((file) => (
+                <option key={file.name} value={file.name}>
+                  {plannedInputOptionLabel(file, rendered.files.length)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {samplingFiles.length > 0 && (
+            <optgroup label="Sampling">
+              {samplingFiles.map((file) => (
+                <option key={file.name} value={file.name}>
+                  {plannedInputOptionLabel(file, rendered.files.length)}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+      </label>
+      <output aria-live="polite">
+        {selectedFileIndex + 1} of {rendered.files.length}
+      </output>
+      <button
+        type="button"
+        aria-label="Next input"
+        aria-controls="generated-input-preview"
+        disabled={
+          selectedFileIndex < 0 ||
+          selectedFileIndex >= rendered.files.length - 1
+        }
+        onClick={() => {
+          if (
+            selectedFileIndex < 0 ||
+            selectedFileIndex >= rendered.files.length - 1
+          ) {
+            return;
+          }
+          onSelect(rendered.files[selectedFileIndex + 1].name);
+        }}
+      >
+        <ChevronRight size={16} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function SetupFileStatus({
   selected,
   optional,
@@ -691,7 +798,6 @@ export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<StructureAnalysis>(EXAMPLE);
-  const [structureImportNonce, setStructureImportNonce] = useState(0);
   const [originalAnalysis, setOriginalAnalysis] =
     useState<StructureAnalysis>(EXAMPLE);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
@@ -713,17 +819,11 @@ export default function App() {
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [outputWidth, setOutputWidth] = useState(() =>
-    readLayoutNumber(
-      OUTPUT_WIDTH_KEY,
-      OUTPUT_WIDTH_DEFAULT,
-      OUTPUT_WIDTH_MIN,
-      OUTPUT_WIDTH_MAX,
-    ),
-  );
-  const outputWidthRef = useRef(outputWidth);
-  outputWidthRef.current = outputWidth;
-  const paneDrag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [stageTab, setStageTab] = useState<"model" | "input">("model");
+  const [openOption, setOpenOption] = useState<RunOpenOption | null>(null);
+  const stageDialogRef = useRef<HTMLDialogElement>(null);
+  const stageInputSelectId = useId();
+  const generatedInputSelectId = useId();
   const searchShortcut =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform)
@@ -734,9 +834,7 @@ export default function App() {
     kind: "error" | "success" | "info";
     message: string;
   } | null>(null);
-  const generatedInputSelectId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
-  const outputFooter = useRef<HTMLElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
@@ -796,19 +894,6 @@ export default function App() {
     [methodSetupFiles],
   );
 
-  // The stacked layout pins the footer to the viewport; publish its height
-  // so the output column can reserve exactly that much room beneath it.
-  useEffect(() => {
-    const footer = outputFooter.current;
-    if (!footer || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => {
-      const height = Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
-      footer.parentElement?.style.setProperty("--output-footer-height", `${height}px`);
-    });
-    observer.observe(footer);
-    return () => observer.disconnect();
-  }, []);
-
   useEffect(() => {
     let current = true;
     getBootstrap()
@@ -863,28 +948,32 @@ export default function App() {
           if (sequence !== renderSequence.current) return;
           const previousFirstName = firstGeneratedFileName.current;
           firstGeneratedFileName.current = result.files[0]?.name ?? null;
-          setRendered(result);
-          setSelectedFileKey((current) =>
-            nextPlannedInputSelection(
-              current,
-              previousFirstName,
-              result.files,
-            ),
-          );
+          startTransition(() => {
+            setRendered(result);
+            setSelectedFileKey((current) =>
+              nextPlannedInputSelection(
+                current,
+                previousFirstName,
+                result.files,
+              ),
+            );
+          });
         })
         .catch((error) => {
           if (sequence === renderSequence.current) {
-            setRendered({
-              files: [],
-              valid: false,
-              diagnostics: [
-                {
-                  code: "api.render",
-                  severity: "error",
-                  message: formatError(error),
-                  atom_indices: [],
-                },
-              ],
+            startTransition(() => {
+              setRendered({
+                files: [],
+                valid: false,
+                diagnostics: [
+                  {
+                    code: "api.render",
+                    severity: "error",
+                    message: formatError(error),
+                    atom_indices: [],
+                  },
+                ],
+              });
             });
           }
         })
@@ -915,6 +1004,11 @@ export default function App() {
   );
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
+  const stageInputText =
+    selectedFile?.input_text ||
+    rendered?.diagnostics[0]?.message ||
+    "…";
+  const deferredStageInputText = useDeferredValue(stageInputText);
   const equilibrationFiles = useMemo(
     () =>
       rendered?.files.filter((file) => file.stage_id === "equilibration") ?? [],
@@ -1069,17 +1163,31 @@ export default function App() {
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
 
+  const openStage = useCallback((tab: "model" | "input") => {
+    setStageTab(tab);
+    stageDialogRef.current?.showModal();
+  }, []);
+
+  const closeStage = useCallback(() => {
+    stageDialogRef.current?.close();
+  }, []);
+
   // Scroll the page to a section and, when given, focus a specific control.
   const goToControl = useCallback(
     (section: SectionId, controlId?: string) => {
+      if (section === "review") {
+        openStage("input");
+      }
+      if (controlId) {
+        const runOption = runOptionForControl(controlId);
+        if (runOption) setOpenOption(runOption);
+      }
       const anchor =
         SECTIONS.find((item) => item.id === section)?.anchor ?? section;
       window.requestAnimationFrame(() => {
         const control = controlId
           ? document.getElementById(controlId)
           : null;
-        const details = control?.closest("details");
-        if (details instanceof HTMLDetailsElement) details.open = true;
         const target = control ?? document.getElementById(anchor);
         target?.scrollIntoView({
           block: control ? "center" : "start",
@@ -1095,7 +1203,7 @@ export default function App() {
         }
       });
     },
-    [],
+    [openStage],
   );
 
   const createRun = useCallback(async () => {
@@ -1547,10 +1655,26 @@ export default function App() {
           ],
           run: () => {
             setSelectedFileKey(file.name);
-            goToControl("review", "generated-input-preview");
+            openStage("input");
           },
         }),
       ),
+      {
+        id: "stage-model",
+        group: "Actions",
+        label: "Show large structure view",
+        detail: "Full-screen 3D model overlay",
+        keywords: ["stage", "model", "structure", "3d", "large", "expand"],
+        run: () => openStage("model"),
+      },
+      {
+        id: "stage-input",
+        group: "Actions",
+        label: "Show large input preview",
+        detail: "Full-screen generated input overlay",
+        keywords: ["stage", "input", "preview", "large", "expand"],
+        run: () => openStage("input"),
+      },
       {
         id: "import",
         group: "Actions",
@@ -1611,6 +1735,7 @@ export default function App() {
     goToControl,
     molecularMechanics,
     openFilePicker,
+    openStage,
     ready,
     rendered?.files,
     rendering,
@@ -1647,6 +1772,18 @@ export default function App() {
         goToControl(SECTIONS[Number(event.key) - 1].id);
         return;
       }
+      if (!editing && event.altKey) {
+        if (event.key.toLowerCase() === "m") {
+          event.preventDefault();
+          openStage("model");
+          return;
+        }
+        if (event.key.toLowerCase() === "i") {
+          event.preventDefault();
+          openStage("input");
+          return;
+        }
+      }
       if (!editing && event.key === "/") {
         event.preventDefault();
         setPaletteOpen(true);
@@ -1654,7 +1791,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createRun, goToControl, paletteOpen]);
+  }, [createRun, goToControl, openStage, paletteOpen]);
 
   async function useFile(file: File) {
     const sequence = ++uploadSequence.current;
@@ -1667,7 +1804,6 @@ export default function App() {
       setAnalysis(result);
       setOriginalAnalysis(result);
       setSourceFile(file);
-      setStructureImportNonce((value) => value + 1);
       setJitter(false);
       setPreparation(null);
       const stem = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
@@ -1967,37 +2103,6 @@ export default function App() {
 
   const runLauncher = packageRunLauncher(bootstrap?.pq ?? null);
 
-  function onPanePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    paneDrag.current = {
-      startX: event.clientX,
-      startWidth: outputWidthRef.current,
-    };
-    document.body.classList.add("is-resizing-pane");
-  }
-
-  function onPanePointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (!paneDrag.current) return;
-    const next = clampLayoutNumber(
-      paneDrag.current.startWidth - (event.clientX - paneDrag.current.startX),
-      OUTPUT_WIDTH_MIN,
-      OUTPUT_WIDTH_MAX,
-    );
-    setOutputWidth(next);
-  }
-
-  function onPanePointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    if (paneDrag.current) {
-      writeLayoutNumber(OUTPUT_WIDTH_KEY, outputWidthRef.current);
-      paneDrag.current = null;
-    }
-    document.body.classList.remove("is-resizing-pane");
-  }
-
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -2040,8 +2145,8 @@ export default function App() {
               <span className="pq-tag-label">PQ</span>
               <span className="pq-tag-value">
                 {bootstrap.pq.found
-                  ? bootstrap.pq.version ?? "detected"
-                  : "not found"}
+                  ? (bootstrap.pq.version ?? "PQ").split("-")[0]
+                  : "no PQ"}
               </span>
             </span>
           ) : bootstrapError ? (
@@ -2058,22 +2163,10 @@ export default function App() {
         </div>
       </header>
 
-      <div
-        className="workspace"
-        style={
-          {
-            "--output-pane-width": `${outputWidth}px`,
-          } as CSSProperties
-        }
-      >
-        <main className="setup-main">
-          {notice && (
-            <div className={`notice ${notice.kind}`} role="status">
-              {notice.kind === "error" ? (
-                <CircleAlert size={17} />
-              ) : (
-                <CheckCircle2 size={17} />
-              )}
+      <main className="page">
+          {notice && notice.kind === "error" && (
+            <div className="notice error" role="status">
+              <CircleAlert size={15} />
               <span>{notice.message}</span>
               <button
                 type="button"
@@ -2103,11 +2196,18 @@ export default function App() {
                 onChange={onFileChange}
               />
               <div className="structure-card">
+                <StructureViewer
+                  chromeless
+                  analysis={analysis}
+                  generatedCellTreatment={
+                    molecularMechanics ? "density" : "padding"
+                  }
+                />
                 <div
                   className="structure-summary"
                   role="button"
                   tabIndex={0}
-                  title="Drop a structure or click Replace · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
+                  title="Drop a structure or click to replace · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
                   aria-label="Current structure. Drop a file to replace, or use Replace."
                   onClick={openFilePicker}
                   onKeyDown={(event) => {
@@ -2145,36 +2245,40 @@ export default function App() {
                     aria-label={analysis.valid ? "Valid" : "Needs review"}
                   >
                     {analysis.valid ? (
-                      <CheckCircle2 size={18} aria-hidden="true" />
+                      <CheckCircle2 size={16} aria-hidden="true" />
                     ) : (
-                      <CircleAlert size={18} aria-hidden="true" />
+                      <CircleAlert size={16} aria-hidden="true" />
                     )}
                   </span>
-                  <button
-                    type="button"
-                    className="structure-replace"
-                    title="RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openFilePicker();
-                    }}
-                  >
-                    Replace
-                  </button>
+                  <span className="structure-actions">
+                    <button
+                      type="button"
+                      className="structure-replace"
+                      aria-label={`Open structure: ${analysis.structure.source_name}`}
+                      title="Large view"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openStage("model");
+                      }}
+                    >
+                      <Maximize2 size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="structure-replace"
+                      aria-label="Replace structure"
+                      title="Replace · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openFilePicker();
+                      }}
+                    >
+                      <Upload size={15} aria-hidden="true" />
+                    </button>
+                  </span>
                 </div>
 
-                <div className="structure-meta">
-                  <Field label="Run name" controlId="run-name">
-                    <input
-                      value={setup.file_prefix}
-                      onChange={(event) =>
-                        setSetup((existing) => ({
-                          ...existing,
-                          file_prefix: event.target.value,
-                        }))
-                      }
-                    />
-                  </Field>
+                <div className="structure-meta band-row">
                   <div
                     className={`prepare-option ${jitter ? "enabled" : ""}`}
                     title={
@@ -2205,7 +2309,7 @@ export default function App() {
                 </div>
 
                 {jitter && (
-                  <div className="prepare-fields">
+                  <div className="prepare-fields band-row">
                     <Field label="σ" unit="Å" controlId="position-sigma">
                       <input
                         type="number"
@@ -2267,41 +2371,39 @@ export default function App() {
               <h2 className="section-title" id="section-method-title">
                 Method
               </h2>
-              <fieldset className="interaction-model-fieldset">
-                <legend className="visually-hidden">Interaction model</legend>
-                <div className="interaction-model-options">
-                  <label className={!molecularMechanics ? "selected" : ""}>
-                    <input
-                      type="radio"
-                      name="interaction-model"
-                      checked={!molecularMechanics}
-                      onChange={() => chooseInteractionModel("qm")}
-                    />
-                    <Atom size={16} aria-hidden="true" />
-                    <span className="interaction-model-label">
-                      <strong>Quantum</strong>
-                      <small>QM</small>
-                    </span>
-                  </label>
-                  <label className={molecularMechanics ? "selected" : ""}>
-                    <input
-                      type="radio"
-                      name="interaction-model"
-                      checked={molecularMechanics}
-                      onChange={() => chooseInteractionModel("mm")}
-                    />
-                    <Boxes size={16} aria-hidden="true" />
-                    <span className="interaction-model-label">
-                      <strong>Classical</strong>
-                      <small>MM</small>
-                    </span>
-                  </label>
-                </div>
-              </fieldset>
-
               {!molecularMechanics ? (
                 <div className="method-content">
-                  <div className="calculator-select">
+                  <div className="method-band band-row">
+                    <fieldset className="interaction-model-fieldset">
+                      <legend className="visually-hidden">Interaction model</legend>
+                      <div className="interaction-model-options">
+                        <label className={!molecularMechanics ? "selected" : ""}>
+                          <input
+                            type="radio"
+                            name="interaction-model"
+                            checked={!molecularMechanics}
+                            onChange={() => chooseInteractionModel("qm")}
+                          />
+                          <Atom size={16} aria-hidden="true" />
+                          <span className="interaction-model-label">
+                            <strong>QM</strong>
+                          </span>
+                        </label>
+                        <label className={molecularMechanics ? "selected" : ""}>
+                          <input
+                            type="radio"
+                            name="interaction-model"
+                            checked={molecularMechanics}
+                            onChange={() => chooseInteractionModel("mm")}
+                          />
+                          <Boxes size={16} aria-hidden="true" />
+                          <span className="interaction-model-label">
+                            <strong>MM</strong>
+                          </span>
+                        </label>
+                      </div>
+                    </fieldset>
+                    <div className="calculator-select">
                     <label className="visually-hidden" htmlFor="calculator">
                       Calculator
                     </label>
@@ -2362,20 +2464,28 @@ export default function App() {
                       ).length;
                       if (state === "ready") {
                         return (
-                          <div className="calculator-status" role="status">
-                            {readyCount} of {totalCount} detected
+                          <div
+                            className="calculator-status"
+                            role="status"
+                            title={`${readyCount} of ${totalCount} calculators detected`}
+                          >
+                            <Check size={14} aria-hidden="true" />
+                            {readyCount}/{totalCount}
                           </div>
                         );
                       }
                       return (
-                        <div className="calculator-status warn" role="status">
+                        <div
+                          className="calculator-status warn"
+                          role="status"
+                          title={`${readyCount} of ${totalCount} calculators detected`}
+                        >
                           <CircleAlert size={14} aria-hidden="true" />
                           {runnerAvailabilityLabel(state)}
-                          {" · "}
-                          {readyCount} of {totalCount} detected
                         </div>
                       );
                     })()}
+                  </div>
                   </div>
                   {electronicMethods.length > 0 &&
                     (electronicMethods.length > 1 ||
@@ -2452,6 +2562,35 @@ export default function App() {
                 </div>
               ) : (
                 <div className="method-content">
+                  <fieldset className="interaction-model-fieldset">
+                    <legend className="visually-hidden">Interaction model</legend>
+                    <div className="interaction-model-options">
+                      <label className={!molecularMechanics ? "selected" : ""}>
+                        <input
+                          type="radio"
+                          name="interaction-model"
+                          checked={!molecularMechanics}
+                          onChange={() => chooseInteractionModel("qm")}
+                        />
+                        <Atom size={16} aria-hidden="true" />
+                        <span className="interaction-model-label">
+                          <strong>QM</strong>
+                        </span>
+                      </label>
+                      <label className={molecularMechanics ? "selected" : ""}>
+                        <input
+                          type="radio"
+                          name="interaction-model"
+                          checked={molecularMechanics}
+                          onChange={() => chooseInteractionModel("mm")}
+                        />
+                        <Boxes size={16} aria-hidden="true" />
+                        <span className="interaction-model-label">
+                          <strong>MM</strong>
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
                   <fieldset className="mm-mode-fieldset">
                     <legend className="visually-hidden">Interaction terms</legend>
                     <div className="mm-mode-list">
@@ -2572,6 +2711,8 @@ export default function App() {
               <h2 className="section-title" id="section-run-title">
                 Run
               </h2>
+              <div className="run-band">
+              <div className="run-primary band-row">
               <fieldset className="ensemble-fieldset">
                 <legend className="visually-hidden">Ensemble</legend>
                 <div role="radiogroup" aria-label="Sampling ensemble">
@@ -2600,6 +2741,7 @@ export default function App() {
                       aria-checked={setup.ensemble === id}
                       className={setup.ensemble === id ? "selected" : ""}
                       key={id}
+                      title={caption}
                       onClick={() => chooseSamplingEnsemble(id)}
                     >
                       <EnsembleIcon size={16} aria-hidden="true" />
@@ -2610,7 +2752,11 @@ export default function App() {
                 </div>
               </fieldset>
 
-              <div className="form-grid sampling-condition-grid">
+              <div
+                className={`form-grid sampling-condition-grid${
+                  setup.ensemble === "NPT" ? " has-pressure" : ""
+                }`}
+              >
                 <Field
                   label="Temperature"
                   unit="K"
@@ -2689,209 +2835,292 @@ export default function App() {
                   </Field>
                 )}
               </div>
+              </div>
 
-              <div className="option-details-grid">
-                <details className="option-panel">
-                  <summary>
-                    <span>
-                      <strong>Equilibration</strong>
-                      {" · "}
-                      <em>
-                        {equilibration
-                          ? `${equilibration.steps} steps @ ${equilibration.temperature_k} K`
-                          : "off"}
-                      </em>
-                    </span>
-                    <ChevronDown size={16} aria-hidden="true" />
-                  </summary>
-                  <div className="option-panel-body">
-                    <label className="switch-row">
-                      <span>
-                        <strong>Include stage</strong>
-                        <small>Warm up before sampling</small>
-                      </span>
-                      <input
-                        type="checkbox"
-                        aria-label="Include equilibration stage"
-                        checked={Boolean(equilibration)}
-                        onChange={(event) =>
-                          chooseProtocol(event.target.checked)
-                        }
-                      />
-                      <span className="switch" aria-hidden="true" />
-                    </label>
-                    {equilibration && (
-                      <div className="form-grid stage-primary-grid">
-                        <Field label="Temperature" unit="K">
-                          <input
-                            type="number"
-                            min="0.000001"
-                            step="0.01"
-                            value={equilibration.temperature_k}
-                            onChange={(event) =>
-                              updateEquilibration({
-                                temperature_k: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Steps">
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={equilibration.steps}
-                            onChange={(event) =>
-                              updateEquilibration({
-                                steps: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Timestep" unit="fs">
-                          <input
-                            type="number"
-                            min="0.000001"
-                            step="0.1"
-                            value={equilibration.timestep_fs}
-                            onChange={(event) =>
-                              updateEquilibration({
-                                timestep_fs: Number(event.target.value),
-                              })
-                            }
-                          />
-                        </Field>
-                      </div>
-                    )}
-                  </div>
-                </details>
-
-                <details className="option-panel">
-                  <summary>
-                    <span>
-                      <strong>Output</strong>
-                      {" · "}
-                      <em>
-                        {samplingMode === "continued"
-                          ? `continued, ${samplingRunCount} inputs`
-                          : "single"}
-                      </em>
-                    </span>
-                    <ChevronDown size={16} aria-hidden="true" />
-                  </summary>
-                  <div className="option-panel-body">
-                    <fieldset className="sampling-output-fieldset">
-                      <legend className="visually-hidden">Sampling mode</legend>
-                      <div className="sampling-output-modes">
-                        <label
-                          className={
-                            samplingMode === "single" ? "selected" : ""
-                          }
-                        >
-                          <input
-                            type="radio"
-                            name="sampling-output-mode"
-                            value="single"
-                            checked={samplingMode === "single"}
-                            onChange={() => chooseSamplingOutputMode("single")}
-                          />
-                          <span>
-                            <FileIcon size={15} aria-hidden="true" />
-                            <strong>Single</strong>
-                          </span>
-                        </label>
-                        <label
-                          className={
-                            samplingMode === "continued" ? "selected" : ""
-                          }
-                        >
-                          <input
-                            type="radio"
-                            name="sampling-output-mode"
-                            value="continued"
-                            checked={samplingMode === "continued"}
-                            onChange={() =>
-                              chooseSamplingOutputMode("continued")
-                            }
-                          />
-                          <span>
-                            <Files size={15} aria-hidden="true" />
-                            <strong>Continued</strong>
-                          </span>
-                        </label>
-                      </div>
-                    </fieldset>
-                    {samplingMode === "continued" && (
-                      <div className="form-grid">
-                        <Field label="Inputs" controlId="sampling-run-count">
-                          <input
-                            type="number"
-                            min="2"
-                            max={MAX_SAMPLING_RUNS}
-                            step="1"
-                            inputMode="numeric"
-                            value={samplingRunCountDraft}
-                            onChange={(event) => {
-                              const draft = event.target.value;
-                              setSamplingRunCountDraft(draft);
-                              const count =
-                                parseContinuedSamplingRunCountDraft(draft);
-                              if (count !== null) {
-                                lastContinuedSamplingRunCount.current = count;
-                                setSamplingRunCount(count);
-                              }
-                            }}
-                            onBlur={commitSamplingRunCount}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.currentTarget.blur();
-                              }
-                            }}
-                          />
-                        </Field>
-                      </div>
-                    )}
-                  </div>
-                </details>
-
+              <div className="option-chips" role="toolbar" aria-label="Run options">
+                <button
+                  type="button"
+                  className={`option-chip${
+                    openOption === "equilibration" ? " selected" : ""
+                  }`}
+                  aria-pressed={openOption === "equilibration"}
+                  onClick={() =>
+                    setOpenOption((current) =>
+                      current === "equilibration" ? null : "equilibration",
+                    )
+                  }
+                >
+                  <Flame size={14} aria-hidden="true" />
+                  <strong>eq</strong>
+                  <em>
+                    {equilibration
+                      ? `${equilibration.steps} · ${equilibration.temperature_k} K`
+                      : "off"}
+                  </em>
+                </button>
+                <button
+                  type="button"
+                  className={`option-chip${
+                    openOption === "output" ? " selected" : ""
+                  }`}
+                  aria-pressed={openOption === "output"}
+                  onClick={() =>
+                    setOpenOption((current) =>
+                      current === "output" ? null : "output",
+                    )
+                  }
+                >
+                  <Files size={14} aria-hidden="true" />
+                  <strong>
+                    ×{samplingMode === "continued" ? samplingRunCount : 1}
+                  </strong>
+                </button>
                 {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <details className="option-panel">
-                    <summary>
-                      <span>
-                        <strong>Thermostat</strong>
-                        {" · "}
-                        <em>
-                          {THERMOSTATS.find(
-                            (option) => option.value === setup.thermostat,
-                          )?.label ?? "—"}
-                          {setup.thermostat_relaxation_ps != null &&
-                          (setup.thermostat === "berendsen" ||
-                            setup.thermostat === "velocity_rescaling")
-                            ? `, τ ${setup.thermostat_relaxation_ps} ps`
-                            : ""}
-                        </em>
-                      </span>
-                      <ChevronDown size={16} aria-hidden="true" />
-                    </summary>
-                    <div className="option-panel-body">
-                      <TemperatureCoupling
-                        value={setup}
-                        controlId="sampling-thermostat"
-                        onChange={(patch) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            preset_id: null,
-                            ...patch,
-                          }))
-                        }
-                      />
+                  <button
+                    type="button"
+                    className={`option-chip${
+                      openOption === "thermostat" ? " selected" : ""
+                    }`}
+                    aria-pressed={openOption === "thermostat"}
+                    onClick={() =>
+                      setOpenOption((current) =>
+                        current === "thermostat" ? null : "thermostat",
+                      )
+                    }
+                  >
+                    <Thermometer size={14} aria-hidden="true" />
+                    <strong>
+                      {THERMOSTATS.find(
+                        (option) => option.value === setup.thermostat,
+                      )?.label ?? "—"}
+                    </strong>
+                    {setup.thermostat_relaxation_ps != null &&
+                      (setup.thermostat === "berendsen" ||
+                        setup.thermostat === "velocity_rescaling") && (
+                        <em>τ {setup.thermostat_relaxation_ps} ps</em>
+                      )}
+                  </button>
+                )}
+                {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
+                  <button
+                    type="button"
+                    className={`option-chip${
+                      openOption === "ramp" ? " selected" : ""
+                    }`}
+                    aria-pressed={openOption === "ramp"}
+                    onClick={() =>
+                      setOpenOption((current) =>
+                        current === "ramp" ? null : "ramp",
+                      )
+                    }
+                  >
+                    <TrendingUp size={14} aria-hidden="true" />
+                    <strong>ramp</strong>
+                    <em>{temperatureRampSummary(setup)}</em>
+                  </button>
+                )}
+                {setup.ensemble === "NPT" && (
+                  <button
+                    type="button"
+                    className={`option-chip${
+                      openOption === "manostat" ? " selected" : ""
+                    }`}
+                    aria-pressed={openOption === "manostat"}
+                    onClick={() =>
+                      setOpenOption((current) =>
+                        current === "manostat" ? null : "manostat",
+                      )
+                    }
+                  >
+                    <Gauge size={14} aria-hidden="true" />
+                    <strong>
+                      {MANOSTATS.find(
+                        (option) => option.value === setup.manostat,
+                      )?.label ?? "—"}
+                    </strong>
+                  </button>
+                )}
+              </div>
+
+              {openOption === "equilibration" && (
+                <div className="option-chip-body">
+                  <label className="switch-row">
+                    <span className="prepare-icon">
+                      <Flame size={16} aria-hidden="true" />
+                    </span>
+                    <span>
+                      <strong>Equilibrate</strong>
+                    </span>
+                    <input
+                      type="checkbox"
+                      aria-label="Include equilibration stage"
+                      checked={Boolean(equilibration)}
+                      onChange={(event) =>
+                        chooseProtocol(event.target.checked)
+                      }
+                    />
+                    <span className="switch" aria-hidden="true" />
+                  </label>
+                  {equilibration && (
+                    <div className="form-grid stage-primary-grid">
+                      <Field label="Temperature" unit="K">
+                        <input
+                          type="number"
+                          min="0.000001"
+                          step="0.01"
+                          value={equilibration.temperature_k}
+                          onChange={(event) =>
+                            updateEquilibration({
+                              temperature_k: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Steps">
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={equilibration.steps}
+                          onChange={(event) =>
+                            updateEquilibration({
+                              steps: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="Timestep" unit="fs">
+                        <input
+                          type="number"
+                          min="0.000001"
+                          step="0.1"
+                          value={equilibration.timestep_fs}
+                          onChange={(event) =>
+                            updateEquilibration({
+                              timestep_fs: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
                     </div>
-                  </details>
+                  )}
+                </div>
+              )}
+
+              {openOption === "output" && (
+                <div className="option-chip-body">
+                  <fieldset className="sampling-output-fieldset">
+                    <legend className="visually-hidden">Sampling mode</legend>
+                    <div className="sampling-output-modes">
+                      <label
+                        className={
+                          samplingMode === "single" ? "selected" : ""
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="sampling-output-mode"
+                          value="single"
+                          checked={samplingMode === "single"}
+                          onChange={() => chooseSamplingOutputMode("single")}
+                        />
+                        <span>
+                          <FileIcon size={15} aria-hidden="true" />
+                          <strong>Single</strong>
+                        </span>
+                      </label>
+                      <label
+                        className={
+                          samplingMode === "continued" ? "selected" : ""
+                        }
+                      >
+                        <input
+                          type="radio"
+                          name="sampling-output-mode"
+                          value="continued"
+                          checked={samplingMode === "continued"}
+                          onChange={() =>
+                            chooseSamplingOutputMode("continued")
+                          }
+                        />
+                        <span>
+                          <Files size={15} aria-hidden="true" />
+                          <strong>Continued</strong>
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
+                  {samplingMode === "continued" && (
+                    <div className="form-grid">
+                      <Field label="Inputs" controlId="sampling-run-count">
+                        <input
+                          type="number"
+                          min="2"
+                          max={MAX_SAMPLING_RUNS}
+                          step="1"
+                          inputMode="numeric"
+                          value={samplingRunCountDraft}
+                          onChange={(event) => {
+                            const draft = event.target.value;
+                            setSamplingRunCountDraft(draft);
+                            const count =
+                              parseContinuedSamplingRunCountDraft(draft);
+                            if (count !== null) {
+                              lastContinuedSamplingRunCount.current = count;
+                              setSamplingRunCount(count);
+                            }
+                          }}
+                          onBlur={commitSamplingRunCount}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {openOption === "thermostat" &&
+                (setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
+                  <div className="option-chip-body">
+                    <TemperatureCoupling
+                      value={setup}
+                      controlId="sampling-thermostat"
+                      onChange={(patch) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          ...patch,
+                        }))
+                      }
+                    />
+                  </div>
                 )}
 
-                {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <TemperatureSchedule
+              {openOption === "ramp" &&
+                (setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
+                  <div className="option-chip-body">
+                    <TemperatureRampContent
+                      value={setup}
+                      onChange={(patch) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          ...patch,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+
+              {openOption === "manostat" && setup.ensemble === "NPT" && (
+                <div className="option-chip-body">
+                  <PressureCoupling
                     value={setup}
+                    controlId="sampling-manostat"
                     onChange={(patch) =>
                       setSetup((existing) => ({
                         ...existing,
@@ -2900,201 +3129,115 @@ export default function App() {
                       }))
                     }
                   />
-                )}
-
-                {setup.ensemble === "NPT" && (
-                  <details className="option-panel">
-                    <summary>
-                      <span>
-                        <strong>Manostat</strong>
-                        {" · "}
-                        <em>
-                          {MANOSTATS.find(
-                            (option) => option.value === setup.manostat,
-                          )?.label ?? "—"}
-                        </em>
-                      </span>
-                      <ChevronDown size={16} aria-hidden="true" />
-                    </summary>
-                    <div className="option-panel-body">
-                      <PressureCoupling
-                        value={setup}
-                        controlId="sampling-manostat"
-                        onChange={(patch) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            preset_id: null,
-                            ...patch,
-                          }))
-                        }
-                      />
-                    </div>
-                  </details>
-                )}
+                </div>
+              )}
               </div>
             </section>
-          </div>
-        </main>
 
-        <button
-          type="button"
-          className="pane-splitter"
-          aria-label="Resize output pane"
-          title="Drag to resize · double-click to reset"
-          onPointerDown={onPanePointerDown}
-          onPointerMove={onPanePointerMove}
-          onPointerUp={onPanePointerUp}
-          onPointerCancel={onPanePointerUp}
-          onDoubleClick={() => {
-            setOutputWidth(OUTPUT_WIDTH_DEFAULT);
-            writeLayoutNumber(OUTPUT_WIDTH_KEY, OUTPUT_WIDTH_DEFAULT);
-          }}
-        />
-
-        <aside className="output-pane" aria-label="Output">
-          <div className="output-scroll">
-            <StructureViewer
-              analysis={analysis}
-              generatedCellTreatment={
-                molecularMechanics ? "density" : "padding"
-              }
-              importNonce={structureImportNonce}
-            />
-
-            {rendered ? (
-              <div
-                className="input-preview"
-                id="generated-input-preview"
-                role="region"
-                aria-label={`Input preview: ${
-                  selectedFile?.name ?? "preparing inputs"
-                }`}
-              >
-                <div className="preview-title">
-                  {rendered && rendered.files.length > 1 ? (
-                    <div className="input-navigator preview-navigator">
-                      <button
-                        type="button"
-                        aria-label="Previous input"
-                        aria-controls="generated-input-preview"
-                        disabled={selectedFileIndex <= 0}
-                        onClick={() => {
-                          if (selectedFileIndex <= 0) return;
-                          setSelectedFileKey(
-                            rendered.files[selectedFileIndex - 1].name,
-                          );
-                        }}
-                      >
-                        <ChevronLeft size={16} aria-hidden="true" />
-                      </button>
-                      <label htmlFor={generatedInputSelectId}>
-                        <span className="visually-hidden">Generated input</span>
-                        <select
-                          id={generatedInputSelectId}
-                          aria-label="Generated input"
-                          aria-controls="generated-input-preview"
-                          value={selectedFile?.name ?? ""}
-                          onChange={(event) =>
-                            setSelectedFileKey(event.target.value)
-                          }
-                        >
-                          {equilibrationFiles.length > 0 && (
-                            <optgroup label="Equilibration">
-                              {equilibrationFiles.map((file) => (
-                                <option key={file.name} value={file.name}>
-                                  {plannedInputOptionLabel(
-                                    file,
-                                    rendered.files.length,
-                                  )}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {samplingFiles.length > 0 && (
-                            <optgroup label="Sampling">
-                              {samplingFiles.map((file) => (
-                                <option key={file.name} value={file.name}>
-                                  {plannedInputOptionLabel(
-                                    file,
-                                    rendered.files.length,
-                                  )}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                      </label>
-                      <output aria-live="polite">
-                        {selectedFileIndex + 1} of {rendered.files.length}
-                      </output>
-                      <button
-                        type="button"
-                        aria-label="Next input"
-                        aria-controls="generated-input-preview"
-                        disabled={
-                          selectedFileIndex < 0 ||
-                          selectedFileIndex >= rendered.files.length - 1
-                        }
-                        onClick={() => {
-                          if (
-                            selectedFileIndex < 0 ||
-                            selectedFileIndex >= rendered.files.length - 1
-                          ) {
-                            return;
-                          }
-                          setSelectedFileKey(
-                            rendered.files[selectedFileIndex + 1].name,
-                          );
-                        }}
-                      >
-                        <ChevronRight size={16} aria-hidden="true" />
-                      </button>
-                    </div>
-                  ) : (
-                    <span>
-                      <FileCode2 size={16} aria-hidden="true" />
-                      {selectedFile?.name ?? "…"}
-                    </span>
-                  )}
-                  {rendering && <LoaderCircle className="spin" size={15} />}
-                </div>
-                {selectedFile && (
-                  <div className="preview-continuation">
-                    <code>{selectedFile.start_file}</code>
-                    <ArrowRight size={13} aria-hidden="true" />
-                    <code>{selectedFile.restart_file}</code>
-                  </div>
-                )}
-                <pre className="input-preview-body">
-                  <InputSource
-                    text={
-                      selectedFile?.input_text ||
-                      rendered.diagnostics[0]?.message ||
-                      "…"
+            <section
+              className="setup-section results-section"
+              id="section-output"
+              aria-labelledby="section-output-title"
+            >
+              <h2 className="section-title" id="section-output-title">
+                Output
+              </h2>
+              <div className="output-name">
+                <Field label="Name" controlId="run-name">
+                  <input
+                    value={setup.file_prefix}
+                    onChange={(event) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        file_prefix: event.target.value,
+                      }))
                     }
                   />
-                </pre>
+                </Field>
               </div>
-            ) : (
-              <div
-                className="output-empty"
-                id="generated-input-preview"
-                role="region"
-                aria-label="Input preview"
-              >
-                {(rendering || !rendered) && (
-                  <LoaderCircle className="spin" size={22} aria-hidden="true" />
-                )}
-                <FileCode2 size={22} aria-hidden="true" />
-                <strong>This is what PQ will run</strong>
-                <span>Generated inputs appear here as you set things up.</span>
-              </div>
-            )}
-          </div>
 
-          <footer className="output-footer" ref={outputFooter}>
-            {footerDiagnostics.length > 0 && (
-              <div className="diagnostics">
+              {rendered ? (
+                <div
+                  className="input-preview page-input-preview"
+                  id="generated-input-preview"
+                  role="region"
+                  aria-label={`Input preview: ${
+                    selectedFile?.name ?? "preparing inputs"
+                  }`}
+                >
+                  <div className="preview-title">
+                    <InputNavigator
+                      rendered={rendered}
+                      selectedFile={selectedFile}
+                      selectedFileIndex={selectedFileIndex}
+                      selectId={generatedInputSelectId}
+                      equilibrationFiles={equilibrationFiles}
+                      samplingFiles={samplingFiles}
+                      onSelect={setSelectedFileKey}
+                    />
+                    <div className="preview-title-actions">
+                      {rendering && (
+                        <LoaderCircle className="spin" size={15} />
+                      )}
+                      <button
+                        type="button"
+                        className="preview-expand"
+                        aria-label="Open large input preview"
+                        title="Larger view"
+                        onClick={() => openStage("input")}
+                      >
+                        <Maximize2 size={15} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                  {selectedFile && (
+                    <div className="preview-continuation">
+                      <code>{selectedFile.start_file}</code>
+                      <ArrowRight size={13} aria-hidden="true" />
+                      <code>{selectedFile.restart_file}</code>
+                    </div>
+                  )}
+                  <pre className="input-preview-body">
+                    <InputSource text={deferredStageInputText} />
+                  </pre>
+                </div>
+              ) : (
+                <div
+                  className="output-empty page-input-preview"
+                  id="generated-input-preview"
+                  role="region"
+                  aria-label="Input preview"
+                >
+                  {(rendering || !rendered) && (
+                    <LoaderCircle
+                      className="spin"
+                      size={22}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <FileCode2 size={16} aria-hidden="true" />
+                  <strong>input</strong>
+                </div>
+              )}
+
+              <div className="footer-run" aria-label="Run command">
+                <Terminal size={14} aria-hidden="true" />
+                <code title={runLauncher.command}>{runLauncher.command}</code>
+                <button
+                  type="button"
+                  className="footer-run-copy"
+                  aria-label="Copy run command"
+                  title="Copy run command"
+                  onClick={() =>
+                    void navigator.clipboard.writeText(runLauncher.command)
+                  }
+                >
+                  <Copy size={14} aria-hidden="true" />
+                </button>
+              </div>
+
+              {footerDiagnostics.length > 0 && (
+                <div className="diagnostics">
                 {footerDiagnostics.map((item: Diagnostic, index) =>
                   item.severity === "info" ? (
                     <div
@@ -3117,40 +3260,28 @@ export default function App() {
                     </button>
                   ),
                 )}
-              </div>
-            )}
-            <div className="footer-run" aria-label="Run command">
-              <Terminal size={14} aria-hidden="true" />
-              <code title={runLauncher.command}>{runLauncher.command}</code>
-              <button
-                type="button"
-                className="footer-run-copy"
-                aria-label="Copy run command"
-                title="Copy run command"
-                onClick={() =>
-                  void navigator.clipboard.writeText(runLauncher.command)
-                }
-              >
-                <Copy size={14} aria-hidden="true" />
-              </button>
-            </div>
-            <div className="output-footer-bar">
+                </div>
+              )}
+            </section>
+          </div>
+
+          <footer className="page-footer">
+            <div className="page-footer-bar">
               {!rendered || rendering ? (
                 <div className="footer-status loading" role="status">
                   <LoaderCircle className="spin" size={18} aria-hidden="true" />
                   <span className="footer-status-copy">
-                    <span>Preparing inputs…</span>
+                    <span>rendering…</span>
                   </span>
                 </div>
               ) : ready || !firstBlockingIssue ? (
                 <div className="footer-status ready" role="status">
                   <CheckCircle2 aria-hidden="true" />
                   <span className="footer-status-copy">
-                    <strong>Ready</strong>
+                    <strong>{setup.file_prefix}.zip</strong>
                     <span>
                       {rendered?.files.length ?? 0}{" "}
-                      {rendered?.files.length === 1 ? "input" : "inputs"} ·{" "}
-                      {setup.file_prefix}.zip
+                      {rendered?.files.length === 1 ? "input" : "inputs"}
                     </span>
                   </span>
                 </div>
@@ -3168,7 +3299,6 @@ export default function App() {
                 >
                   <CircleAlert aria-hidden="true" />
                   <span className="footer-status-copy">
-                    <strong>Almost there</strong>
                     <span>{firstBlockingIssue.message}</span>
                   </span>
                   <ChevronRight size={14} aria-hidden="true" />
@@ -3180,17 +3310,116 @@ export default function App() {
                 disabled={!ready || exporting}
                 onClick={() => void createRun()}
               >
-                {exporting ? (
-                  <LoaderCircle className="spin" size={18} />
-                ) : (
-                  <PackageIcon size={18} aria-hidden="true" />
-                )}
                 {exporting ? "…" : "Package"}
+                {exporting ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <PackageIcon size={16} aria-hidden="true" />
+                )}
               </button>
             </div>
           </footer>
-        </aside>
-      </div>
+      </main>
+
+      <dialog
+        ref={stageDialogRef}
+        className="stage-dialog"
+        aria-label="Structure and input stage"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeStage();
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) closeStage();
+        }}
+      >
+        <header className="stage-dialog-header">
+          <div className="stage-dialog-tabs" role="tablist" aria-label="Stage view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={stageTab === "model"}
+              className={stageTab === "model" ? "selected" : ""}
+              onClick={() => setStageTab("model")}
+            >
+              Model
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={stageTab === "input"}
+              className={stageTab === "input" ? "selected" : ""}
+              onClick={() => setStageTab("input")}
+            >
+              Input
+            </button>
+          </div>
+          <div className="stage-dialog-meta">
+            {stageTab === "model" ? (
+              <>
+                <ChemicalFormula
+                  formula={analysis.summary.formula}
+                  fallback="Structure"
+                />
+                {" · "}
+                {analysis.structure.source_name ?? "structure"}
+              </>
+            ) : (
+              selectedFile?.name ?? "Generated input"
+            )}
+          </div>
+          <button
+            type="button"
+            className="stage-dialog-close"
+            aria-label="Close stage"
+            onClick={closeStage}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </header>
+        <div className="stage-dialog-body">
+          {stageTab === "model" ? (
+            <StructureViewer
+              variant="stage"
+              analysis={analysis}
+              generatedCellTreatment={
+                molecularMechanics ? "density" : "padding"
+              }
+              defaultOpen
+            />
+          ) : rendered ? (
+            <div className="stage-dialog-input input-preview">
+              <div className="preview-title">
+                <InputNavigator
+                  rendered={rendered}
+                  selectedFile={selectedFile}
+                  selectedFileIndex={selectedFileIndex}
+                  selectId={stageInputSelectId}
+                  equilibrationFiles={equilibrationFiles}
+                  samplingFiles={samplingFiles}
+                  onSelect={setSelectedFileKey}
+                />
+              </div>
+              {selectedFile && (
+                <div className="preview-continuation">
+                  <code>{selectedFile.start_file}</code>
+                  <ArrowRight size={13} aria-hidden="true" />
+                  <code>{selectedFile.restart_file}</code>
+                </div>
+              )}
+              <pre className="input-preview-body">
+                <InputSource text={deferredStageInputText} />
+              </pre>
+            </div>
+          ) : (
+            <div className="output-empty">
+              <LoaderCircle className="spin" size={22} aria-hidden="true" />
+              <span>Preparing inputs…</span>
+            </div>
+          )}
+        </div>
+        <footer className="stage-dialog-footer">Esc to close</footer>
+      </dialog>
 
       <CommandPalette
         open={paletteOpen}

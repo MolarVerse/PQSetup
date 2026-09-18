@@ -64,8 +64,7 @@ describe("StructureViewer cell presentation", () => {
     );
 
     expect(markup).not.toContain('class="cell-edge');
-    expect(markup).toContain("Show");
-    expect(markup).toContain('class="generated-cell-note"');
+    expect(markup).toContain('title="Preview box"');
     expect(markup).not.toContain("No cell");
   });
 
@@ -91,11 +90,10 @@ describe("StructureViewer cell presentation", () => {
     expect(
       [...markup.matchAll(new RegExp('class="cell-edge', "g"))],
     ).toHaveLength(12);
-    expect(markup).not.toContain(">Show<");
-    expect(markup).not.toContain('class="generated-cell-note"');
+    expect(markup).not.toContain('title="Preview box"');
   });
 
-  it("offers a Show control for density-derived molecular-mechanics cells", () => {
+  it("offers a box toggle for density-derived molecular-mechanics cells", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
@@ -104,8 +102,23 @@ describe("StructureViewer cell presentation", () => {
       />,
     );
 
-    expect(markup).toContain("Show");
-    expect(markup).toContain('class="generated-cell-note"');
+    expect(markup).toContain('title="Preview box"');
+  });
+
+  it("renders stage variant without collapse controls", () => {
+    const markup = renderToStaticMarkup(
+      <StructureViewer
+        analysis={ANALYSIS}
+        generatedCellTreatment="padding"
+        variant="stage"
+        defaultOpen
+      />,
+    );
+
+    expect(markup).toContain('class="viewer-stage');
+    expect(markup).not.toContain("Show structure");
+    expect(markup).not.toContain('class="viewer-resize');
+    expect(markup).not.toContain('class="viewer-toggle');
   });
 
   it("stays collapsed by default and keeps the summary header", () => {

@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronRight,
   Focus,
+  Maximize2,
   Move3d,
   Rotate3d,
 } from "lucide-react";
@@ -65,6 +66,11 @@ interface StructureViewerProps {
   importNonce?: number;
   /** Initial open state override (tests). */
   defaultOpen?: boolean;
+  variant?: "inline" | "stage";
+  /** Open the large stage overlay (inline variant only). */
+  onStageOpen?: () => void;
+  /** Always-open inline canvas without its own heading (page embeds). */
+  chromeless?: boolean;
 }
 
 type Point3 = [number, number, number];
@@ -157,11 +163,17 @@ export default function StructureViewer({
   generatedCellTreatment,
   importNonce = 0,
   defaultOpen,
+  variant = "inline",
+  onStageOpen,
+  chromeless = false,
 }: StructureViewerProps) {
+  const isStage = variant === "stage";
   const [open, setOpen] = useState(
     () => defaultOpen ?? readStoredShowStructure(),
   );
+  const showViewer = isStage || chromeless || open;
   const [stageHeight, setStageHeight] = useState(readStoredViewerHeight);
+  const [optimizing, setOptimizing] = useState(false);
   const stageHeightRef = useRef(stageHeight);
   stageHeightRef.current = stageHeight;
   const [rotation, setRotation] = useState<[number, number]>([-0.42, 0.58]);
@@ -177,13 +189,29 @@ export default function StructureViewer({
   const importNudged = useRef(false);
 
   useEffect(() => {
+    if (!open || isStage || chromeless) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable=true]")) {
+        return;
+      }
+      event.preventDefault();
+      setOpen(false);
+      writeStoredShowStructure(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, isStage, chromeless]);
+
+  useEffect(() => {
     if (!importNonce || importNudged.current) return;
     importNudged.current = true;
     setOpen(true);
   }, [importNonce]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!showViewer) return;
     const element = stage.current;
     if (!element) return;
     function handleWheel(event: WheelEvent) {
@@ -197,7 +225,7 @@ export default function StructureViewer({
     }
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
-  }, [open]);
+  }, [showViewer]);
 
   useEffect(() => {
     setShowGeneratedCell(false);
@@ -209,7 +237,7 @@ export default function StructureViewer({
   );
 
   const scene = useMemo(() => {
-    if (!open) {
+    if (!showViewer) {
       return {
         atoms: [] as {
           atom: Atom;
@@ -336,7 +364,7 @@ export default function StructureViewer({
       cell: projectedCell,
       sampled: stride > 1,
     };
-  }, [open, analysis, displayCell, rotation, zoom]);
+  }, [showViewer, analysis, displayCell, rotation, zoom]);
 
   const collisionAtoms = useMemo(
     () =>
@@ -402,6 +430,7 @@ export default function StructureViewer({
 
   function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);
+    setOptimizing(true);
     drag.current = {
       x: event.clientX,
       y: event.clientY,
@@ -423,13 +452,18 @@ export default function StructureViewer({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     drag.current = null;
+    setOptimizing(false);
   }
 
   return (
     <section
-      className={`viewer${open ? "" : " viewer-collapsed"}`}
-      aria-labelledby="viewer-title"
+      className={`viewer${showViewer ? "" : " viewer-collapsed"}${
+        isStage ? " viewer-stage-mode" : ""
+      }${chromeless ? " viewer-chromeless" : ""}`}
+      aria-labelledby={chromeless ? undefined : "viewer-title"}
+      aria-label={chromeless ? "Structure preview" : undefined}
     >
+      {!chromeless && (
       <div className="viewer-heading">
         <div className="viewer-heading-text">
           <h2 id="viewer-title">
@@ -442,28 +476,44 @@ export default function StructureViewer({
             <small>{analysis.structure.source_name}</small>
           )}
         </div>
-        <button
-          type="button"
-          className="viewer-toggle"
-          aria-expanded={open}
-          aria-controls="viewer-stage"
-          onClick={toggleOpen}
-        >
-          {open ? (
-            <ChevronDown size={16} aria-hidden="true" />
-          ) : (
-            <ChevronRight size={16} aria-hidden="true" />
-          )}
-          {open ? "Hide structure" : "Show structure"}
-        </button>
+        {!isStage && (
+          <div className="viewer-heading-actions">
+            {onStageOpen && (
+              <button
+                type="button"
+                className="stage-expand"
+                aria-label="Open large structure view"
+                title="Open large view"
+                onClick={onStageOpen}
+              >
+                <Maximize2 size={15} aria-hidden="true" />
+              </button>
+            )}
+            <button
+              type="button"
+              className="viewer-toggle"
+              aria-expanded={open}
+              aria-controls="viewer-stage"
+              onClick={toggleOpen}
+            >
+              {open ? (
+                <ChevronDown size={16} aria-hidden="true" />
+              ) : (
+                <ChevronRight size={16} aria-hidden="true" />
+              )}
+              {open ? "Hide structure" : "Show structure"}
+            </button>
+          </div>
+        )}
       </div>
+      )}
 
-      {open && (
+      {showViewer && (
       <>
       <div
-        className="viewer-stage"
-        id="viewer-stage"
-        style={{ height: stageHeight }}
+        className={`viewer-stage${optimizing ? " optimize-speed" : ""}`}
+        id={isStage ? undefined : "viewer-stage"}
+        style={isStage ? undefined : { height: stageHeight }}
       >
         <svg
           ref={stage}
@@ -591,34 +641,34 @@ export default function StructureViewer({
           <Focus size={15} aria-hidden="true" />
           Fit
         </button>
-      </div>
-
-      {generatedCell && (
-        <div className="generated-cell-note">
+        {generatedCell && (
           <button
             type="button"
             aria-pressed={showGeneratedCell}
+            title="Preview box"
             onClick={() => setShowGeneratedCell((value) => !value)}
           >
             <Box size={14} aria-hidden="true" />
-            {showGeneratedCell ? "Hide" : "Show"}
+            box
           </button>
-        </div>
+        )}
+      </div>
+      {!isStage && !chromeless && (
+        <button
+          type="button"
+          className="viewer-resize"
+          aria-label="Resize structure view"
+          title="Drag to resize structure"
+          onPointerDown={onHeightPointerDown}
+          onPointerMove={onHeightPointerMove}
+          onPointerUp={onHeightPointerUp}
+          onPointerCancel={onHeightPointerUp}
+          onDoubleClick={() => {
+            setStageHeight(VIEWER_HEIGHT_DEFAULT);
+            writeStoredViewerHeight(VIEWER_HEIGHT_DEFAULT);
+          }}
+        />
       )}
-      <button
-        type="button"
-        className="viewer-resize"
-        aria-label="Resize structure view"
-        title="Drag to resize structure"
-        onPointerDown={onHeightPointerDown}
-        onPointerMove={onHeightPointerMove}
-        onPointerUp={onHeightPointerUp}
-        onPointerCancel={onHeightPointerUp}
-        onDoubleClick={() => {
-          setStageHeight(VIEWER_HEIGHT_DEFAULT);
-          writeStoredViewerHeight(VIEWER_HEIGHT_DEFAULT);
-        }}
-      />
       </>
       )}
     </section>
