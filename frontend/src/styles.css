@@ -370,7 +370,7 @@ kbd {
 /* Output header row: Name | Runs | (Inputs) | Write every */
 .output-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto 120px 168px;
+  grid-template-columns: minmax(0, 1fr) 132px 168px;
   align-items: start;
   gap: 16px;
 }
@@ -379,9 +379,54 @@ kbd {
   white-space: nowrap;
 }
 
-.output-grid .sampling-output-modes {
-  width: 220px;
-  max-width: 100%;
+/* [−] n [+] stepper, same height as inputs. */
+.stepper {
+  display: grid;
+  grid-template-columns: var(--control) minmax(0, 1fr) var(--control);
+  height: var(--control);
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--surface-subtle);
+}
+
+.stepper > button {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.stepper > button:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--border);
+}
+
+.stepper > button:disabled {
+  color: var(--border-strong);
+  cursor: default;
+}
+
+.stepper > button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+}
+
+.field .stepper > input,
+.field .stepper > input:hover {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.field .stepper > input:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
 }
 
 /* Settings chip sits on the field baseline next to inputs. */
@@ -912,61 +957,27 @@ kbd {
 /* Segmented controls: QM/MM, sampling mode. */
 
 .interaction-model-options,
-.sampling-output-modes {
-  max-width: 320px;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: transparent;
-}
 
 .interaction-model-options > label,
-.sampling-output-modes > label {
-  position: relative;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  border: 0;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.93rem;
-  font-weight: 500;
-  transition:
-    color 120ms ease,
-    background 120ms ease;
-}
 
 .interaction-model-options > label + label,
-.sampling-output-modes > label + label {
-  border-left: 1px solid var(--border);
-}
 
-.interaction-model-options > label:hover,
-.sampling-output-modes > label:hover {
+.interaction-model-options > label:hover {
   background: var(--surface-subtle);
 }
 
 /* Carbon content switcher: selected segment is a dark fill. */
 
-.interaction-model-options > label.selected,
-.sampling-output-modes > label.selected {
+.interaction-model-options > label.selected {
   color: #fff;
   background: var(--selected);
 }
 
-.interaction-model-options > label.selected small,
-.sampling-output-modes > label.selected small {
+.interaction-model-options > label.selected small {
   color: #c6c6c6;
 }
 
-.interaction-model-options input,
-.sampling-output-modes input {
+.interaction-model-options input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -976,11 +987,6 @@ kbd {
 }
 
 .interaction-model-options > label:has(input:focus-visible),
-.sampling-output-modes > label:has(input:focus-visible) {
-  outline: 2px solid var(--focus-color);
-  outline-offset: -2px;
-  z-index: 1;
-}
 
 .interaction-model-options > label {
   height: var(--control);
@@ -988,24 +994,12 @@ kbd {
 }
 
 .interaction-model-options strong,
-.sampling-output-modes strong {
-  font-weight: inherit;
-}
 
-.sampling-output-modes > label {
-  height: 40px;
-}
 
-.sampling-output-modes > label > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 
 .interaction-model-fieldset,
 .mm-mode-fieldset,
 .ensemble-fieldset,
-.sampling-output-fieldset,
 .electronic-method-fieldset {
   min-width: 0;
   margin: 0;
@@ -2938,13 +2932,10 @@ kbd {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .output-grid > .field:nth-child(-n + 2) {
+  .output-grid > .field:first-child {
     grid-column: 1 / -1;
   }
 
-  .output-grid .sampling-output-modes {
-    width: 100%;
-  }
 
   .modal-full {
     width: 100vw;

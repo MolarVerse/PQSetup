@@ -10,13 +10,13 @@ import {
   CircleHelp,
   CircleDashed,
   Copy,
-  File as FileIcon,
   FileCode2,
-  Files,
   Flame,
   Gauge,
   LoaderCircle,
   Maximize2,
+  Minus,
+  Plus,
   Package as PackageIcon,
   Rotate3d,
   Search,
@@ -84,15 +84,14 @@ import {
   setupFileSpecs,
 } from "./method";
 import {
-  commitContinuedSamplingRunCountDraft,
+  clampSamplingRunCount,
+  commitSamplingRunCountDraft,
   DEFAULT_CONTINUED_SAMPLING_RUNS,
   MAX_SAMPLING_RUNS,
+  MIN_SAMPLING_RUNS,
   nextPlannedInputSelection,
-  parseContinuedSamplingRunCountDraft,
+  parseSamplingRunCountDraft,
   plannedInputOptionLabel,
-  samplingOutputMode,
-  samplingRunCountForMode,
-  type SamplingOutputMode,
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
@@ -779,6 +778,64 @@ function ConditionRow({
   );
 }
 
+/** `[−] n [+]` count control; the text field accepts a free draft. */
+function RunCountStepper({
+  id,
+  value,
+  draft,
+  onDraft,
+  onCommit,
+  onStep,
+}: {
+  id?: string;
+  value: number;
+  draft: string;
+  onDraft: (draft: string) => void;
+  onCommit: () => void;
+  onStep: (delta: number) => void;
+}) {
+  return (
+    <div className="stepper">
+      <button
+        type="button"
+        aria-label="Fewer runs"
+        disabled={value <= MIN_SAMPLING_RUNS}
+        onClick={() => onStep(-1)}
+      >
+        <Minus size={14} aria-hidden="true" />
+      </button>
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        value={draft}
+        onChange={(event) => onDraft(event.target.value)}
+        onBlur={onCommit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            onStep(1);
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            onStep(-1);
+          }
+        }}
+      />
+      <button
+        type="button"
+        aria-label="More runs"
+        disabled={value >= MAX_SAMPLING_RUNS}
+        onClick={() => onStep(1)}
+      >
+        <Plus size={14} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 /** Chip that opens the calculator / force-field settings dialog. */
 function SettingsChip({
   summary,
@@ -878,9 +935,6 @@ export default function App() {
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
   const firstGeneratedFileName = useRef<string | null>(null);
-  const lastContinuedSamplingRunCount = useRef(
-    DEFAULT_CONTINUED_SAMPLING_RUNS,
-  );
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
   const thermalEnsemble =
@@ -1100,7 +1154,6 @@ export default function App() {
     : Boolean(setup.runner) &&
       (!electronicProgram || Boolean(selectedElectronicMethod)) &&
       missingMethodFiles.length === 0;
-  const samplingMode = samplingOutputMode(samplingRunCount);
 
   const generatedCellNpt =
     !molecularMechanics &&
@@ -1495,10 +1548,10 @@ export default function App() {
         label: "Use one sampling input",
         detail: "Write a single run-01.in",
         keywords: ["single", "one file", "sampling output"],
-        current: samplingMode === "single",
+        current: samplingRunCount === 1,
         run: () => {
-          chooseSamplingOutputMode("single");
-          goToControl("conditions", "sampling-steps");
+          setRunCount(1);
+          goToControl("review", "sampling-run-count");
         },
       },
       {
@@ -1514,10 +1567,10 @@ export default function App() {
           "segments",
           "number of inputs",
         ],
-        current: samplingMode === "continued",
+        current: samplingRunCount > 1,
         run: () => {
-          chooseSamplingOutputMode("continued");
-          goToControl("conditions", "sampling-run-count");
+          if (samplingRunCount === 1) setRunCount(DEFAULT_CONTINUED_SAMPLING_RUNS);
+          goToControl("review", "sampling-run-count");
         },
       },
       ...THERMOSTATS.map(
@@ -1601,12 +1654,12 @@ export default function App() {
       {
         id: "parameter-steps",
         group: "Parameters",
-        label: samplingMode === "single" ? "Sampling steps" : "Steps per input",
+        label: samplingRunCount === 1 ? "Sampling steps" : "Steps per input",
         detail: `${setup.steps?.toLocaleString() ?? "Not set"} steps`,
         keywords: ["length", "duration", "sampling", "steps per input"],
         run: () => goToControl("conditions", "sampling-steps"),
       },
-      ...(samplingMode === "continued"
+      ...(samplingRunCount > 1
         ? [
             {
               id: "parameter-input-count",
@@ -1806,7 +1859,6 @@ export default function App() {
     rendered?.files,
     rendering,
     runShortcut,
-    samplingMode,
     samplingRunCount,
     selectedFile?.name,
     selectedRunnerStatus,
@@ -2069,27 +2121,16 @@ export default function App() {
     }
   }
 
-  function commitSamplingRunCount() {
-    const count = commitContinuedSamplingRunCountDraft(
-      samplingRunCountDraft,
-      samplingRunCount,
-    );
-    lastContinuedSamplingRunCount.current = count;
-    setSamplingRunCount(count);
-    setSamplingRunCountDraft(String(count));
+  function setRunCount(count: number) {
+    const clamped = clampSamplingRunCount(count);
+    setSamplingRunCount(clamped);
+    setSamplingRunCountDraft(String(clamped));
   }
 
-  function chooseSamplingOutputMode(mode: SamplingOutputMode) {
-    if (mode === samplingMode) return;
-    if (samplingRunCount > 1) {
-      lastContinuedSamplingRunCount.current = samplingRunCount;
-    }
-    const count = samplingRunCountForMode(
-      mode,
-      lastContinuedSamplingRunCount.current,
+  function commitSamplingRunCount() {
+    setRunCount(
+      commitSamplingRunCountDraft(samplingRunCountDraft, samplingRunCount),
     );
-    setSamplingRunCount(count);
-    setSamplingRunCountDraft(String(count));
   }
 
   function chooseProtocol(withEquilibration: boolean) {
@@ -2997,80 +3038,27 @@ export default function App() {
                     }
                   />
                 </Field>
-                <div className="field">
-                  <span className="field-label">
-                    <span id="sampling-mode-label">Runs</span>
-                  </span>
-                  <div
-                    className="sampling-output-modes"
-                    role="radiogroup"
-                    aria-labelledby="sampling-mode-label"
-                  >
-                    <label
-                      className={samplingMode === "single" ? "selected" : ""}
-                    >
-                      <input
-                        type="radio"
-                        name="sampling-output-mode"
-                        value="single"
-                        checked={samplingMode === "single"}
-                        onChange={() => chooseSamplingOutputMode("single")}
-                      />
-                      <span>
-                        <FileIcon size={15} aria-hidden="true" />
-                        <strong>Single</strong>
-                      </span>
-                    </label>
-                    <label
-                      className={
-                        samplingMode === "continued" ? "selected" : ""
-                      }
-                    >
-                      <input
-                        type="radio"
-                        name="sampling-output-mode"
-                        value="continued"
-                        checked={samplingMode === "continued"}
-                        onChange={() => chooseSamplingOutputMode("continued")}
-                      />
-                      <span>
-                        <Files size={15} aria-hidden="true" />
-                        <strong>Continued</strong>
-                      </span>
-                    </label>
-                  </div>
-                </div>
-                {samplingMode === "continued" && (
-                  <Field
-                    label="Inputs"
-                    controlId="sampling-run-count"
-                    info="Chained restarts: each input starts from the previous restart file"
-                  >
-                    <input
-                      type="number"
-                      min="2"
-                      max={MAX_SAMPLING_RUNS}
-                      step="1"
-                      inputMode="numeric"
-                      value={samplingRunCountDraft}
-                      onChange={(event) => {
-                        const draft = event.target.value;
-                        setSamplingRunCountDraft(draft);
-                        const count = parseContinuedSamplingRunCountDraft(draft);
-                        if (count !== null) {
-                          lastContinuedSamplingRunCount.current = count;
-                          setSamplingRunCount(count);
-                        }
-                      }}
-                      onBlur={commitSamplingRunCount}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.currentTarget.blur();
-                        }
-                      }}
-                    />
-                  </Field>
-                )}
+                <Field
+                  label="Runs"
+                  controlId="sampling-run-count"
+                  info={
+                    samplingRunCount > 1
+                      ? "Chained inputs: each one starts from the previous restart file"
+                      : "1 writes a single input; more chains restarts 01 → 02 → …"
+                  }
+                >
+                  <RunCountStepper
+                    value={samplingRunCount}
+                    draft={samplingRunCountDraft}
+                    onDraft={(draft) => {
+                      setSamplingRunCountDraft(draft);
+                      const count = parseSamplingRunCountDraft(draft);
+                      if (count !== null) setSamplingRunCount(count);
+                    }}
+                    onCommit={commitSamplingRunCount}
+                    onStep={(delta) => setRunCount(samplingRunCount + delta)}
+                  />
+                </Field>
                 <Field
                   label="Write every"
                   unit="steps"
