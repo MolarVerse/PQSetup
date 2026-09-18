@@ -106,6 +106,9 @@ import type {
   StructureAnalysis,
 } from "./types";
 
+/** Above this many generated inputs, tabs give way to the compact navigator. */
+const MAX_INPUT_TABS = 8;
+
 const DOCUMENTATION_URL = "https://molarverse.github.io/PQSetup/";
 
 const RUNNER_GROUPS: { label: string; ids: string[] }[] = [
@@ -732,12 +735,14 @@ function ConditionRow({
   title,
   hint,
   toggle,
+  className,
   children,
 }: {
   icon: LucideIcon;
   title: string;
   hint?: string;
   toggle?: { label: string; checked: boolean; onChange: (on: boolean) => void };
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -758,7 +763,9 @@ function ConditionRow({
           </label>
         )}
       </div>
-      <div className="condition-fields">{children}</div>
+      <div className={`condition-fields${className ? ` ${className}` : ""}`}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -1072,6 +1079,12 @@ export default function App() {
     rendered?.diagnostics[0]?.message ||
     "…";
   const deferredStageInputText = useDeferredValue(stageInputText);
+  useEffect(() => {
+    document
+      .querySelector('.input-tab-list [role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedFile?.name]);
+
   const equilibrationFiles = useMemo(
     () =>
       rendered?.files.filter((file) => file.stage_id === "equilibration") ?? [],
@@ -2997,130 +3010,185 @@ export default function App() {
               <h2 className="section-title" id="section-output-title">
                 Output
               </h2>
-              <div className="output-grid">
-                <Field label="Name" controlId="run-name">
-                  <input
-                    value={setup.file_prefix}
-                    onChange={(event) =>
-                      setSetup((existing) => ({
-                        ...existing,
-                        file_prefix: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field
-                  label="Write every"
-                  unit="steps"
-                  controlId="output-freq"
-                  help="trajectory · energy · restart"
+              <div className="run-band">
+                <ConditionRow
+                  icon={PackageIcon}
+                  title="Package"
+                  hint={`${setup.file_prefix || "…"}.zip`}
+                  className="output-fields"
                 >
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="1"
-                    value={
-                      typeof setup.extra_settings.output_freq === "number"
-                        ? setup.extra_settings.output_freq
-                        : ""
-                    }
-                    onChange={(event) =>
-                      setExtra(
-                        "output_freq",
-                        event.target.value ? Number(event.target.value) : null,
-                      )
-                    }
-                  />
-                </Field>
-              </div>
-
-              {rendered ? (
-                <div
-                  className="input-preview page-input-preview"
-                  id="generated-input-preview"
-                  role="region"
-                  aria-label={`Input preview: ${
-                    selectedFile?.name ?? "preparing inputs"
-                  }`}
-                >
-                  <div className="preview-title">
-                    <InputNavigator
-                      rendered={rendered}
-                      selectedFile={selectedFile}
-                      selectedFileIndex={selectedFileIndex}
-                      selectId={generatedInputSelectId}
-                      equilibrationFiles={equilibrationFiles}
-                      samplingFiles={samplingFiles}
-                      onSelect={setSelectedFileKey}
+                  <Field label="Name" controlId="run-name">
+                    <input
+                      value={setup.file_prefix}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          file_prefix: event.target.value,
+                        }))
+                      }
                     />
-                    <div className="preview-title-actions">
-                      {rendering && (
-                        <LoaderCircle className="spin" size={15} />
-                      )}
+                  </Field>
+                  <Field
+                    label="Write every"
+                    unit="steps"
+                    controlId="output-freq"
+                    help="trajectory · energy · restart"
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={
+                        typeof setup.extra_settings.output_freq === "number"
+                          ? setup.extra_settings.output_freq
+                          : ""
+                      }
+                      onChange={(event) =>
+                        setExtra(
+                          "output_freq",
+                          event.target.value ? Number(event.target.value) : null,
+                        )
+                      }
+                    />
+                  </Field>
+                </ConditionRow>
+
+                <ConditionRow
+                  icon={FileCode2}
+                  title="Inputs"
+                  hint={
+                    rendered
+                      ? `${rendered.files.length} ${
+                          rendered.files.length === 1 ? "file" : "files"
+                        }`
+                      : undefined
+                  }
+                >
+                  <div className="condition-full">
+                    {rendered ? (
+                      <div
+                        className="input-preview page-input-preview"
+                        id="generated-input-preview"
+                        role="region"
+                        aria-label={`Input preview: ${
+                          selectedFile?.name ?? "preparing inputs"
+                        }`}
+                      >
+                        <div className="input-tabs">
+                          <div className="input-tab-list" role="tablist">
+                          {rendered.files.length <= MAX_INPUT_TABS ? (
+                            rendered.files.map((file) => {
+                              const active = file.name === selectedFile?.name;
+                              return (
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={active}
+                                  aria-controls="generated-input-body"
+                                  className={active ? "selected" : ""}
+                                  key={file.name}
+                                  onClick={() => setSelectedFileKey(file.name)}
+                                >
+                                  <span>{file.name}</span>
+                                  <small>
+                                    {file.stage_id === "equilibration"
+                                      ? "eq"
+                                      : samplingLabel(
+                                          file.segment_index ?? file.stage_index,
+                                        )}
+                                  </small>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <InputNavigator
+                              rendered={rendered}
+                              selectedFile={selectedFile}
+                              selectedFileIndex={selectedFileIndex}
+                              selectId={generatedInputSelectId}
+                              equilibrationFiles={equilibrationFiles}
+                              samplingFiles={samplingFiles}
+                              onSelect={setSelectedFileKey}
+                            />
+                          )}
+                          </div>
+                          <div className="preview-title-actions">
+                            {rendering && (
+                              <LoaderCircle className="spin" size={15} />
+                            )}
+                            <button
+                              type="button"
+                              className="preview-expand"
+                              aria-label="Copy input"
+                              title="Copy input"
+                              disabled={!selectedFile?.input_text}
+                              onClick={() =>
+                                void navigator.clipboard.writeText(
+                                  selectedFile?.input_text ?? "",
+                                )
+                              }
+                            >
+                              <Copy size={14} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="preview-expand"
+                              aria-haspopup="dialog"
+                              aria-label="Show full input"
+                              title="Show full input"
+                              onClick={() => setModal("input")}
+                            >
+                              <Maximize2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                        <pre
+                          className="input-preview-body"
+                          id="generated-input-body"
+                          role="tabpanel"
+                        >
+                          <InputSource text={deferredStageInputText} />
+                        </pre>
+                      </div>
+                    ) : (
+                      <div
+                        className="output-empty page-input-preview"
+                        id="generated-input-preview"
+                        role="region"
+                        aria-label="Input preview"
+                      >
+                        <LoaderCircle
+                          className="spin"
+                          size={22}
+                          aria-hidden="true"
+                        />
+                        <FileCode2 size={16} aria-hidden="true" />
+                        <strong>Generating input…</strong>
+                      </div>
+                    )}
+
+                    <div className="footer-run" aria-label="Run command">
+                      <Terminal size={14} aria-hidden="true" />
+                      <code title={runLauncher.command}>
+                        {runLauncher.command}
+                      </code>
                       <button
                         type="button"
-                        className="preview-expand"
-                        aria-label="Copy input"
-                        title="Copy input"
-                        disabled={!selectedFile?.input_text}
+                        className="footer-run-copy"
+                        aria-label="Copy run command"
+                        title="Copy run command"
                         onClick={() =>
                           void navigator.clipboard.writeText(
-                            selectedFile?.input_text ?? "",
+                            runLauncher.command,
                           )
                         }
                       >
                         <Copy size={14} aria-hidden="true" />
                       </button>
-                      <button
-                        type="button"
-                        className="preview-expand"
-                        aria-haspopup="dialog"
-                        aria-label="Show full input"
-                        title="Show full input"
-                        onClick={() => setModal("input")}
-                      >
-                        <Maximize2 size={15} aria-hidden="true" />
-                      </button>
                     </div>
                   </div>
-                  <pre className="input-preview-body">
-                    <InputSource text={deferredStageInputText} />
-                  </pre>
-                </div>
-              ) : (
-                <div
-                  className="output-empty page-input-preview"
-                  id="generated-input-preview"
-                  role="region"
-                  aria-label="Input preview"
-                >
-                  {(rendering || !rendered) && (
-                    <LoaderCircle
-                      className="spin"
-                      size={22}
-                      aria-hidden="true"
-                    />
-                  )}
-                  <FileCode2 size={16} aria-hidden="true" />
-                  <strong>Generating input…</strong>
-                </div>
-              )}
-
-              <div className="footer-run" aria-label="Run command">
-                <Terminal size={14} aria-hidden="true" />
-                <code title={runLauncher.command}>{runLauncher.command}</code>
-                <button
-                  type="button"
-                  className="footer-run-copy"
-                  aria-label="Copy run command"
-                  title="Copy run command"
-                  onClick={() =>
-                    void navigator.clipboard.writeText(runLauncher.command)
-                  }
-                >
-                  <Copy size={14} aria-hidden="true" />
-                </button>
+                </ConditionRow>
               </div>
             </section>
           </div>
