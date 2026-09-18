@@ -3224,7 +3224,7 @@ export default function App() {
 
       <Modal
         open={modal === "input"}
-        size="full"
+        size="input"
         title={selectedFile?.name ?? "Generated input"}
         subtitle={
           selectedFile

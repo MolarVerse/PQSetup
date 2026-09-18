@@ -16,7 +16,7 @@ export default function Modal({
   open: boolean;
   title: ReactNode;
   subtitle?: ReactNode;
-  size?: "md" | "lg" | "full";
+  size?: "md" | "lg" | "full" | "input";
   onClose: () => void;
   children: ReactNode;
 }) {

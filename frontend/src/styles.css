@@ -483,6 +483,18 @@ kbd {
   height: min(860px, 100dvh - 32px);
 }
 
+/* Sized to the text: the input file is ~64 columns plus a gutter. */
+.modal-input {
+  width: min(66ch + 96px, 100vw - 32px);
+  height: min(860px, 100dvh - 32px);
+  font: 0.86rem/1.6 var(--mono);
+}
+
+.modal-input .modal-body {
+  padding: 0;
+  overflow: hidden;
+}
+
 .modal:not([open]) {
   display: none;
 }
@@ -2918,7 +2930,8 @@ kbd {
   }
 
 
-  .modal-full {
+  .modal-full,
+  .modal-input {
     width: 100vw;
     height: 100dvh;
     max-height: 100dvh;
