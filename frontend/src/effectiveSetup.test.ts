@@ -44,6 +44,18 @@ const base: SimulationSetup = {
 };
 
 describe("effectiveSetup", () => {
+  it("names a QM molecule descriptor only while the file is packed", () => {
+    const named = { ...base, moldescriptor_file: "moldescriptor.dat" };
+    expect(effectiveSetup(named, false).moldescriptor_file).toBeNull();
+    expect(
+      effectiveSetup(named, false, new Set(["moldescriptor"])).moldescriptor_file,
+    ).toBe("moldescriptor.dat");
+    expect(
+      effectiveSetup({ ...named, job_type: "mm-md" }, false).moldescriptor_file,
+    ).toBe("moldescriptor.dat");
+  });
+
+
   it("keeps remembered values out of the input when their controls are hidden", () => {
     const nve = effectiveSetup({ ...base, ensemble: "NVE" }, false);
     expect(nve.thermostat).toBeNull();

@@ -2,7 +2,7 @@ import {
   MACE_OFF_MODELS,
   pruneExtraSettings,
 } from "./calculatorSettings";
-import type { SimulationSetup } from "./types";
+import type { SetupFileRole, SimulationSetup } from "./types";
 
 /**
  * What the page state means for the run that gets written.
@@ -15,6 +15,7 @@ import type { SimulationSetup } from "./types";
 export function effectiveSetup(
   setup: SimulationSetup,
   cellGenerated: boolean,
+  packedRoles: ReadonlySet<SetupFileRole> = new Set(),
 ): SimulationSetup {
   const mm = setup.job_type === "mm-md" || setup.job_type === "mm-opt";
   const thermal = setup.ensemble === "NVT" || setup.ensemble === "NPT";
@@ -31,8 +32,14 @@ export function effectiveSetup(
     delete extra.mace_model_path;
   }
 
+  // Naming a molecule descriptor makes PQ require the file, so a QM run only
+  // keeps the name while the file is actually in the package.
+  const moldescriptor =
+    mm || packedRoles.has("moldescriptor") ? setup.moldescriptor_file : null;
+
   return {
     ...setup,
+    moldescriptor_file: moldescriptor,
     runner: mm ? null : setup.runner,
     runner_script: mm ? null : setup.runner_script,
     density_g_cm3: mm && cellGenerated ? setup.density_g_cm3 : null,

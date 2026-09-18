@@ -260,3 +260,27 @@ def test_native_external_runner_uses_only_advertised_scripts() -> None:
     assert render_input(configured).valid
     assert "qm_script = pyscf_mp2.py;" in render_input(configured).input_text
     assert not render_input(arbitrary).valid
+
+
+def test_setting_combinations_pq_rejects_are_flagged() -> None:
+    hubbard = SimulationSetup(
+        runner="ase_dftbplus",
+        extra_settings={"third_order": False, "hubbard_derivs": "O: -0.14"},
+    )
+    codes = [item.code for item in validate_setup(hubbard)]
+    assert "input.extra_value" in codes
+
+    reaction_field = SimulationSetup(
+        job_type="mm-md",
+        mm_force_field="off",
+        extra_settings={"long_range": "reaction-field"},
+    )
+    messages = [item.message for item in validate_setup(reaction_field)]
+    assert any("rf_epsilon" in message for message in messages)
+
+    with_epsilon = reaction_field.model_copy(
+        update={"extra_settings": {"long_range": "reaction-field", "rf_epsilon": 78.5}}
+    )
+    assert not any(
+        "rf_epsilon" in item.message for item in validate_setup(with_epsilon)
+    )

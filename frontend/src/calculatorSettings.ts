@@ -61,24 +61,11 @@ export const LONG_RANGE_KINDS: ChoiceOption[] = [
   { value: "reaction-field", label: "Reaction field" },
 ];
 
+// M-SHAKE (needs an mshake_file) and the water models / rnoncoulomb exist only
+// in PQ's development tree, not in the v0.7.x releases PQSetup targets.
 export const SHAKE_MODES: ChoiceOption[] = [
   { value: "off", label: "Off" },
-  { value: "on", label: "SHAKE" },
-  { value: "mshake", label: "M-SHAKE" },
-];
-
-export const WATER_MODELS: ChoiceOption[] = [
-  { value: "", label: "From GUFF table" },
-  { value: "SPC", label: "SPC" },
-  { value: "SPC_E", label: "SPC/E" },
-  { value: "SPC_Fw", label: "SPC/Fw" },
-  { value: "qSPC_Fw", label: "qSPC/Fw" },
-  { value: "SPC_DC", label: "SPC/DC" },
-  { value: "H2O-DC", label: "H2O-DC" },
-  { value: "TIP3P", label: "TIP3P" },
-  { value: "OPC3", label: "OPC3" },
-  { value: "SPC-mTR", label: "SPC-mTR" },
-  { value: "TIP3P-mTR", label: "TIP3P-mTR" },
+  { value: "on", label: "SHAKE + RATTLE" },
 ];
 
 /** Runners that PQ drives through an external script (qm_script_full_path). */
@@ -104,8 +91,6 @@ export const MM_DEFAULTS = {
   "shake-iter": 20,
   "rattle-tolerance": 1e4,
   "rattle-iter": 20,
-  "mshake-tolerance": 1e-8,
-  "mshake-iter": 20,
   "cell-number": 7,
 } as const;
 
@@ -143,8 +128,11 @@ export function dispersionDefault(runner: string | null): boolean {
   return runner === "ase_dftbplus";
 }
 
+/** PQ applies D3 dispersion for ASE DFTB+ and MACE; xTB ignores the key. */
 export function supportsDispersion(runner: string | null): boolean {
-  return runner === "ase_xtb" || runner === "ase_dftbplus";
+  return (
+    runner === "ase_dftbplus" || runner === "mace_mp" || runner === "mace_off"
+  );
 }
 
 export function usesGuff(mode: MMForceFieldMode): boolean {
@@ -173,12 +161,9 @@ export const QM_KEYS = [
 
 export const MM_KEYS = [
   "noncoulomb",
-  "rnoncoulomb",
   "long_range",
   "wolf_param",
   "rf_epsilon",
-  "water_intra",
-  "water_inter",
   "cell-list",
   "cell-number",
   "shake",
@@ -186,8 +171,6 @@ export const MM_KEYS = [
   "shake-iter",
   "rattle-tolerance",
   "rattle-iter",
-  "mshake-tolerance",
-  "mshake-iter",
   "distance-constraints",
 ] as const;
 
@@ -211,8 +194,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.job_type === "mm-md") {
     for (const key of [
-      "rnoncoulomb",
-      "long_range",
+          "long_range",
       "wolf_param",
       "rf_epsilon",
       "cell-list",
@@ -222,8 +204,6 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
     }
     if (usesGuff(setup.mm_force_field)) {
       keys.add("noncoulomb");
-      keys.add("water_intra");
-      keys.add("water_inter");
     }
     if (usesTopology(setup.mm_force_field)) {
       for (const key of [
@@ -232,9 +212,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
         "shake-iter",
         "rattle-tolerance",
         "rattle-iter",
-        "mshake-tolerance",
-        "mshake-iter",
-        "distance-constraints",
+                    "distance-constraints",
       ]) {
         keys.add(key);
       }
@@ -344,12 +322,9 @@ export function mmSettingsSummary(setup: SimulationSetup): string[] {
   if (extra.noncoulomb && extra.noncoulomb !== MM_DEFAULTS.noncoulomb) {
     parts.push(label(NONCOULOMB_KINDS, String(extra.noncoulomb)));
   }
-  const rnc = extraNumber(extra, "rnoncoulomb");
-  if (rnc != null) parts.push(`r_nc ${rnc} Å`);
   if (extra.long_range && extra.long_range !== MM_DEFAULTS.long_range) {
     parts.push(label(LONG_RANGE_KINDS, String(extra.long_range)));
   }
-  if (extra.water_intra || extra.water_inter) parts.push("water model");
   if (extraBool(extra, "cell-list", false)) parts.push("cell list");
   if (extra.shake && extra.shake !== MM_DEFAULTS.shake) {
     parts.push(label(SHAKE_MODES, String(extra.shake)));

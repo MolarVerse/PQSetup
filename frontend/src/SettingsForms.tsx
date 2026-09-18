@@ -10,7 +10,6 @@ import {
   QM_DEFAULTS,
   SHAKE_MODES,
   SLAKOS_SETS,
-  WATER_MODELS,
   XTB_METHODS,
   dispersionDefault,
   extraBool,
@@ -447,16 +446,6 @@ export function MMSettingsForm({
             }
           />
         )}
-        <NumberRow
-          label="Non-Coulomb cutoff"
-          keyName="rnoncoulomb"
-          unit="Å"
-          step="0.1"
-          hint="Defaults to the Coulomb cutoff"
-          placeholder="= Coulomb cutoff"
-          extra={extra}
-          setExtra={setExtra}
-        />
         <Choice
           label="Long-range correction"
           value={longRange}
@@ -491,22 +480,6 @@ export function MMSettingsForm({
             extra={extra}
             setExtra={setExtra}
           />
-        )}
-        {usesGuff(mode) && (
-          <div className="form-grid">
-            <Choice
-              label="Water · intramolecular"
-              value={extraString(extra, "water_intra", "")}
-              options={WATER_MODELS}
-              onChange={(value) => setExtra("water_intra", value || null)}
-            />
-            <Choice
-              label="Water · intermolecular"
-              value={extraString(extra, "water_inter", "")}
-              options={WATER_MODELS}
-              onChange={(value) => setExtra("water_inter", value || null)}
-            />
-          </div>
         )}
       </Group>
 
@@ -546,14 +519,9 @@ export function MMSettingsForm({
                   "shake-iter",
                   "rattle-tolerance",
                   "rattle-iter",
-                  "mshake-tolerance",
-                  "mshake-iter",
                 ]) {
                   setExtra(key, null);
                 }
-              } else if (value !== "mshake") {
-                setExtra("mshake-tolerance", null);
-                setExtra("mshake-iter", null);
               }
             }}
           />
@@ -592,26 +560,6 @@ export function MMSettingsForm({
                 extra={extra}
                 setExtra={setExtra}
               />
-              {shake === "mshake" && (
-                <>
-                  <NumberRow
-                    label="M-SHAKE tolerance"
-                    keyName="mshake-tolerance"
-                    step="1e-9"
-                    placeholder={String(MM_DEFAULTS["mshake-tolerance"])}
-                    extra={extra}
-                    setExtra={setExtra}
-                  />
-                  <NumberRow
-                    label="M-SHAKE iterations"
-                    keyName="mshake-iter"
-                    min="1"
-                    placeholder={String(MM_DEFAULTS["mshake-iter"])}
-                    extra={extra}
-                    setExtra={setExtra}
-                  />
-                </>
-              )}
             </div>
           )}
           <Toggle

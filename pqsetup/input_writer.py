@@ -218,11 +218,10 @@ def render_input(
         # PQ treats qm_script and qm_script_full_path as mutually exclusive.
         if runner_script and not has_script_full_path(setup):
             lines.append(f"qm_script = {runner_script.name};")
-        if setup.ensemble == "NPT":
-            lines.append(
-                "moldescriptor_file = "
-                f"{setup.moldescriptor_file or 'moldescriptor.dat'};"
-            )
+        # Only when a descriptor is actually packed: naming one makes PQ
+        # require the file, and it is not needed for NPT by itself.
+        if setup.moldescriptor_file:
+            lines.append(f"moldescriptor_file = {setup.moldescriptor_file};")
         if setup.runner == "dftbplus":
             lines.append(
                 f"dftb_file = {setup.dftb_template_file or 'dftb_in.template'};"
@@ -674,6 +673,29 @@ def validate_setup(
                         f"{field_name.replace('_', ' ').capitalize()} is too long.",
                     )
                 )
+    extras = {
+        key.replace("-", "_").lower(): value
+        for key, value in setup.extra_settings.items()
+    }
+    if extras.get("hubbard_derivs") and _is_off(extras.get("third_order")):
+        diagnostics.append(
+            _error(
+                "input.extra_value",
+                "Hubbard derivatives need third-order DFTB; PQ rejects them "
+                "with third_order off.",
+            )
+        )
+    if (
+        str(extras.get("long_range", "")).replace("-", "_").lower()
+        == "reaction_field"
+        and extras.get("rf_epsilon") is None
+    ):
+        diagnostics.append(
+            _error(
+                "input.extra_value",
+                "Reaction field needs a dielectric constant (rf_epsilon ≥ 1).",
+            )
+        )
     for key, value in setup.extra_settings.items():
         normalized = key.replace("-", "_").lower()
         if not _KEY.fullmatch(key):
@@ -705,6 +727,12 @@ def validate_setup(
                 )
             )
     return diagnostics
+
+
+def _is_off(value: object) -> bool:
+    if isinstance(value, bool):
+        return not value
+    return str(value).strip().lower() in {"off", "false", "no", "0"}
 
 
 def validate_input_file(path: Path) -> list[Diagnostic]:

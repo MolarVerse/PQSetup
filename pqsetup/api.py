@@ -29,6 +29,7 @@ from .mm import (
     validate_mm_structure,
 )
 from .models import (
+    Diagnostic,
     Bootstrap,
     ExportRequest,
     PlanRenderResult,
@@ -177,9 +178,16 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
         if request.structure.cell_generated and request.setup.ensemble == "NPT":
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    "NPT needs a physical periodic cell, not a generated vacuum cell."
-                ),
+                detail=[
+                    Diagnostic(
+                        code="conditions.generated_cell_npt",
+                        severity="error",
+                        message=(
+                            "NPT needs a physical periodic cell, "
+                            "not a generated vacuum cell."
+                        ),
+                    ).model_dump()
+                ],
             )
         archive = io.BytesIO()
         project_name = _safe_name(request.project_name)
@@ -407,16 +415,6 @@ def _export_plan(
             status_code=422,
             detail=[item.model_dump() for item in mm_structure_diagnostics],
         )
-    if (
-        request.structure.cell_generated
-        and request.setup.ensemble == "NPT"
-        and request.setup.job_type != "mm-md"
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail="NPT needs a physical periodic cell, not a generated vacuum cell.",
-        )
-
     project_name = _safe_name(request.project_name)
     structure_name = Path(request.setup.start_file).name
     initializes_velocities = bool(

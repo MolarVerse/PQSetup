@@ -121,7 +121,6 @@ const RUNNER_GROUPS: { label: string; ids: string[] }[] = [
   { label: "Semi-empirical", ids: ["ase_xtb"] },
   { label: "Ab initio", ids: ["pyscf", "turbomole"] },
   { label: "ML", ids: ["mace_mp", "mace_off"] },
-  { label: "Plane-wave", ids: ["vasp"] },
 ];
 
 function runnerAvailability(
@@ -935,7 +934,7 @@ export default function App() {
   const constrainedBonds =
     molecularMechanics &&
     usesTopology(setup.mm_force_field) &&
-    setup.extra_settings.shake === true;
+    setup.extra_settings.shake === "on";
   const timestepWarning =
     hasHydrogen &&
     !constrainedBonds &&
@@ -946,11 +945,6 @@ export default function App() {
         : "H present: use ≤ 0.5 fs"
       : undefined;
 
-  // The form remembers every choice; only what is visible reaches the input.
-  const effective = useMemo(
-    () => effectiveSetup(setup, analysis.structure.cell_generated),
-    [analysis.structure.cell_generated, setup],
-  );
   const electronicMethods = useMemo(
     () => electronicMethodOptions(externalQM, setup.runner),
     [externalQM, setup.runner],
@@ -1000,6 +994,16 @@ export default function App() {
     [methodFileSpecs, setupFiles],
   );
   const activeSetupFiles = methodSetupFiles; // everything the package ships
+  // The form remembers every choice; only what is visible reaches the input.
+  const effective = useMemo(
+    () =>
+      effectiveSetup(
+        setup,
+        analysis.structure.cell_generated,
+        new Set(methodSetupFiles.map((file) => file.role)),
+      ),
+    [analysis.structure.cell_generated, methodSetupFiles, setup],
+  );
   const setupFileReferences = useMemo(
     () =>
       activeSetupFiles.map(({ role, name, content }) => ({
@@ -2690,7 +2694,7 @@ export default function App() {
                     info={
                       molecularMechanics
                         ? "Force-field files PQ reads next to the input. Drop a run folder on the structure to add them all at once."
-                        : "Optional files are packed only when added. The molecule descriptor is read under pressure coupling (NPT) and ignored otherwise."
+                        : "Optional files are packed only when added. PQ reads the molecule descriptor when atoms carry molecule types; single-atom molecules need none."
                     }
                   >
                     <div className="condition-full">
