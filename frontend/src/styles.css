@@ -2279,6 +2279,10 @@ kbd {
   font-style: italic;
 }
 
+.src-ramp {
+  color: var(--accent);
+}
+
 /* Carbon primary button: blue-60 fill, square, left-aligned label. */
 
 .create-run {

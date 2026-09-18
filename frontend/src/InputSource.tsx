@@ -11,6 +11,7 @@ const BOX_COLUMNS = /^(\S(?:.*?\S)?)( {2,})(\S.*?)(\s*)$/;
 const SECTION = /^(# ── )([^─]+?) (─+)(?: ([^─]+?) (──))?$/;
 const ASSIGNMENT =
   /^(\s*)([A-Za-z][A-Za-z0-9_-]*)(\s*=\s*)(.*?)(;)(\s+#.*)?$/;
+const RAMP = /^(# .*? )(━+▶)( .*)$/;
 const NUMBER = /^[-+]?(\d|\.\d)/;
 const SWITCH = /^(true|false|on|off)$/i;
 
@@ -79,6 +80,16 @@ export default function InputSource({ text }: { text: string }) {
                     {` ${tail}`}
                   </>
                 )}
+              </span>
+            );
+          }
+          const ramp = RAMP.exec(line);
+          if (ramp) {
+            return (
+              <span className="src-line src-comment" key={key}>
+                {ramp[1]}
+                <span className="src-ramp">{ramp[2]}</span>
+                {ramp[3]}
               </span>
             );
           }

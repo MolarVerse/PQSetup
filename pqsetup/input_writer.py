@@ -124,6 +124,14 @@ def render_input(
                 f"thermostat = {setup.thermostat};",
             ]
         )
+        if setup.start_temperature_k is not None and setup.temperature_k is not None:
+            lines.append(
+                _ramp_bar(
+                    setup.start_temperature_k,
+                    setup.temperature_k,
+                    setup.temperature_ramp_steps or setup.steps,
+                )
+            )
         if setup.start_temperature_k is not None:
             lines.append(f"start_temp = {_number(setup.start_temperature_k)};")
             if setup.temperature_ramp_steps is not None:
@@ -799,7 +807,7 @@ NOTE_COLUMN = 30
 # One-line quips per section. Purely cosmetic (comments), always deterministic.
 _SECTION_QUIPS = {
     "dynamics": "how long, how fine",
-    "files & continuation": "where we start, where we end up",
+    "files & continuation": "from here to there",
     "initial state": "roll the dice (seeded)",
     "temperature coupling": "gentle nudges toward T",
     "pressure coupling": "squeeze, but politely",
@@ -807,6 +815,20 @@ _SECTION_QUIPS = {
     "force-field files": "the recipe book",
     "electronic structure": "where the electrons live",
     "additional settings": "the fine print",
+}
+
+# A glyph per section: the divider reads `# ── ψ electronic structure ───`.
+_SECTION_GLYPHS = {
+    "dynamics": "∫",
+    "files & continuation": "⇄",
+    "initial state": "⚄",
+    "temperature coupling": "T",
+    "pressure coupling": "P",
+    "molecular mechanics": "⚛",
+    "force-field files": "⚙",
+    "electronic structure": "ψ",
+    "additional settings": "+",
+    "fin": "∎",
 }
 
 _ENSEMBLE_QUIPS = {
@@ -826,6 +848,10 @@ _SIGN_OFFS = (
     "Integrate responsibly.",
     "Go compute something beautiful.",
     "The atoms are ready. Are you?",
+    "Equilibrated is a state of mind.",
+    "Boltzmann would have wanted this.",
+    "⟨A⟩ awaits. Sample well.",
+    "Verlet, not verily.",
 )
 
 
@@ -884,7 +910,8 @@ def _section(title: str, quip: str | None = None) -> str:
     `# ── dynamics ──────────────────── how long, how fine ──`
     """
     quip = _SECTION_QUIPS.get(title) if quip is None else quip
-    lead = f"# ── {title} "
+    glyph = _SECTION_GLYPHS.get(title)
+    lead = f"# ── {glyph} {title} " if glyph else f"# ── {title} "
     tail = f" {quip} ──" if quip else ""
     fill = "─" * max(4, SECTION_WIDTH - len(lead) - len(tail))
     return lead + fill + tail
@@ -902,6 +929,48 @@ def _span(steps: int | None, timestep_fs: float | None) -> str | None:
     else:
         total = f"{total_fs:.4g} fs"
     return f"{steps} × {_number(timestep_fs)} fs = {total} of physics"
+
+
+_BOLTZMANN_EV = 8.617333262e-5  # eV/K
+_BOLTZMANN_KJ_MOL = 8.314462618e-3  # kJ/(mol·K)
+_OH_STRETCH_PERIOD_FS = 9.1  # ~3650 cm⁻¹, the fastest common vibration
+
+
+def _thermal_energy(temperature_k: float | None) -> str | None:
+    """`25.7 meV · 2.48 kJ/mol` — what kT buys you at this temperature."""
+    if temperature_k is None or not math.isfinite(temperature_k):
+        return None
+    mev = _BOLTZMANN_EV * temperature_k * 1000
+    kj = _BOLTZMANN_KJ_MOL * temperature_k
+    return f"{mev:.3g} meV · {kj:.3g} kJ/mol"
+
+
+def _frames(steps: int | None, output_freq: object) -> str | None:
+    """How many snapshots the trajectory will hold."""
+    if steps is None:
+        return None
+    try:
+        every = max(1, int(output_freq))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        every = 1
+    count = steps // every
+    stride = "every step" if every == 1 else f"every {every} steps"
+    return f"{count} snapshots · {stride}"
+
+
+def _resolution(timestep_fs: float | None) -> str | None:
+    """Steps per O–H stretch period: the classic timestep sanity check."""
+    if timestep_fs is None or timestep_fs <= 0:
+        return None
+    per_period = _OH_STRETCH_PERIOD_FS / timestep_fs
+    verdict = "fine" if per_period >= 10 else "coarse" if per_period >= 4 else "bold"
+    return f"{per_period:.0f} steps per O–H stretch · {verdict}"
+
+
+def _ramp_bar(start_k: float, target_k: float, steps: int | None) -> str:
+    """`# 100 K ━━━━━━━━━━━▶ 298.15 K · 500 steps`."""
+    over = f" · {steps} steps" if steps else ""
+    return f"# {_number(start_k)} K {'━' * 14}▶ {_number(target_k)} K{over}"
 
 
 def sign_off(setup: SimulationSetup) -> list[str]:
@@ -930,6 +999,17 @@ def _header(setup: SimulationSetup) -> list[str]:
     span = _span(setup.steps, setup.timestep_fs)
     if span:
         facts.append(("span", span))
+    if setup.ensemble != "OPT":
+        resolution = _resolution(setup.timestep_fs)
+        if resolution:
+            facts.append(("timestep", resolution))
+        if setup.ensemble in {"NVT", "NPT"} or setup.initialize_velocities:
+            kt = _thermal_energy(setup.temperature_k)
+            if kt:
+                facts.append(("kT", kt))
+        frames = _frames(setup.steps, setup.extra_settings.get("output_freq"))
+        if frames:
+            facts.append(("frames", frames))
     facts.extend(
         [
             ("files", f"{setup.start_file} → {restart_filename(setup)}"),
