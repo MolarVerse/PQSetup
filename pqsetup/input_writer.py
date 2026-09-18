@@ -792,26 +792,17 @@ def restart_filename(setup: SimulationSetup) -> str:
     return setup.restart_file or f"{setup.file_prefix}.rst"
 
 
+SECTION_WIDTH = 56
+
+
 def _section(title: str) -> str:
-    """Sciency section divider that stays short enough for narrow panes."""
-    label = f"⟨ {title} ⟩"
-    fill = max(4, 54 - len(label))
-    return f"# ──{label}" + "─" * fill
+    """Flat section divider: `# ── title ────…` padded to a fixed width."""
+    lead = f"# ── {title} "
+    return lead + "─" * max(4, SECTION_WIDTH - len(lead))
 
 
 def _header(setup: SimulationSetup) -> list[str]:
-    """Run card banner: orbital glyph + ensemble / method / trajectory."""
-    width = 58
-
-    def row(left: str, right: str = "") -> str:
-        # Two-column interior: glyph | facts
-        glyph = f"{left:<14}"
-        fact = right
-        content = f"{glyph}{fact}"
-        if len(content) > width - 2:
-            content = f"{content[: width - 3]}…"
-        return f"# ║ {content:<{width - 2}} ║"
-
+    """Flat run card: one fact per comment line, aligned in two columns."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -820,20 +811,15 @@ def _header(setup: SimulationSetup) -> list[str]:
             setup.runner or setup.job_type,
         )
     )
-    transition = f"{setup.start_file} → {restart_filename(setup)}"
-    title = " PQSetup · molecular dynamics "
-    top = title + "═" * max(0, width - len(title))
-
+    facts = [
+        ("ensemble", setup.ensemble),
+        ("method", method),
+        ("files", f"{setup.start_file} → {restart_filename(setup)}"),
+        ("written by", f"PQSetup · target {TARGET_PQ_RELEASE}"),
+    ]
     return [
-        f"# ╔{top}╗",
-        row("", ""),
-        row("      ·", f"{setup.ensemble}"),
-        row("    ·   ·", f"{method}"),
-        row("  ·  ●─●  ·", transition),
-        row("    ·   ·", f"Written by PQSetup · target {TARGET_PQ_RELEASE}"),
-        row("      ·", ""),
-        row("", ""),
-        f"# ╚{'═' * width}╝",
+        "# PQSetup · molecular dynamics",
+        *(f"# {label:<11} {value}" for label, value in facts),
         "# Deterministic · review paths & resources before launch.",
     ]
 
