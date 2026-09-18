@@ -2228,6 +2228,15 @@ kbd {
   font-weight: 600;
 }
 
+.src-title-kind {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.src-note {
+  color: var(--muted);
+}
+
 .src-meta,
 .src-comment {
   color: var(--muted);

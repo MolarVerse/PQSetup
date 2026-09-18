@@ -2,11 +2,14 @@
  * Lightweight PQ input highlighter for the live preview.
  *
  * Every line is a block with a CSS-counter gutter. The generated header is
- * `# label   value` rows; sections are `# ── title ───`.
+ * `# run-name · kind` then `# label   value` rows; sections are
+ * `# ── title · quip ───`; assignments may carry a trailing `# unit` note.
  */
 const HEADER_ROW = /^# (\S(?:.*?\S)?) {2,}(\S.*)$/;
 const SECTION = /^(# ── )([^·─]+?)(?: · ([^─]+?))? (─+)$/;
-const ASSIGNMENT = /^(\s*)([A-Za-z][A-Za-z0-9_-]*)(\s*=\s*)(.*)$/;
+const ASSIGNMENT =
+  /^(\s*)([A-Za-z][A-Za-z0-9_-]*)(\s*=\s*)(.*?;)(\s+#.*)?$/;
+const TITLE = /^# (.+?)(?: · (.+))?$/;
 
 export default function InputSource({ text }: { text: string }) {
   const lines = text.split("\n");
@@ -15,10 +18,15 @@ export default function InputSource({ text }: { text: string }) {
       {lines.map((line, index) => {
         const key = `${index}:${line.slice(0, 24)}`;
         if (line.startsWith("#")) {
-          if (index === 0 && line.startsWith("# PQSetup")) {
+          if (index === 0) {
+            const title = TITLE.exec(line);
             return (
               <span className="src-line src-title" key={key}>
-                {line}
+                {"# "}
+                <span className="src-title-name">{title?.[1] ?? line}</span>
+                {title?.[2] && (
+                  <span className="src-title-kind">{` · ${title[2]}`}</span>
+                )}
               </span>
             );
           }
@@ -75,13 +83,14 @@ export default function InputSource({ text }: { text: string }) {
         }
         const match = ASSIGNMENT.exec(line);
         if (match) {
-          const [, indent, name, eq, rest] = match;
+          const [, indent, name, eq, rest, note] = match;
           return (
             <span className="src-line src-assign" key={key}>
               {indent}
               <span className="src-key">{name}</span>
               <span className="src-eq">{eq}</span>
               <span className="src-value">{rest}</span>
+              {note && <span className="src-note">{note}</span>}
             </span>
           );
         }

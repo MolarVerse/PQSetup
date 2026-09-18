@@ -115,7 +115,7 @@ def test_equilibration_and_sampling_segments_form_exact_chain() -> None:
         "init_velocities = true;" not in item.input_text for item in result.files[1:]
     )
     assert [
-        line
+        line.split("#", 1)[0].rstrip()
         for item in result.files
         for line in item.input_text.splitlines()
         if line.startswith("random_seed =")

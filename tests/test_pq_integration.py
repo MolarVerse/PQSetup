@@ -132,7 +132,7 @@ def test_unicode_header_runs_in_pq(tmp_path: Path) -> None:
     )
     rendered = render_input(setup)
     assert rendered.valid
-    assert rendered.input_text.startswith("# PQSetup · molecular dynamics\n")
+    assert rendered.input_text.startswith("# water-smoke · molecular dynamics\n")
     assert "# files       structure.rst → " in rendered.input_text
     shutil.copyfile(DATA / "water.rst", tmp_path / "structure.rst")
     input_path = tmp_path / "run.in"

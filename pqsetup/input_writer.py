@@ -242,7 +242,7 @@ def render_input(
             lines.append(f"{key} = {_value(setup.extra_settings[key])};")
     lines.extend(sign_off(setup))
     return RenderResult(
-        input_text="\n".join(lines).rstrip() + "\n",
+        input_text="\n".join(_annotate(lines)).rstrip() + "\n",
         diagnostics=diagnostics,
         valid=True,
     )
@@ -794,6 +794,7 @@ def restart_filename(setup: SimulationSetup) -> str:
 
 
 SECTION_WIDTH = 64
+NOTE_COLUMN = 30
 
 # One-line quips per section. Purely cosmetic (comments), always deterministic.
 _SECTION_QUIPS = {
@@ -828,6 +829,55 @@ _SIGN_OFFS = (
 )
 
 
+# Trailing `# unit` notes for numeric keys; aligned per section by _annotate.
+_NOTES = {
+    "nstep": "steps",
+    "timestep": "fs",
+    "temp": "K",
+    "start_temp": "K",
+    "temp_ramp_steps": "steps",
+    "temp_ramp_frequency": "steps",
+    "t_relaxation": "ps",
+    "friction": "ps⁻¹",
+    "coupling_frequency": "cm⁻¹",
+    "pressure": "bar",
+    "p_relaxation": "ps",
+    "compressibility": "bar⁻¹",
+    "density": "g/cm³",
+    "rcoulomb": "Å",
+    "rnoncoulomb": "Å",
+    "wolf_param": "Å⁻¹",
+    "output_freq": "steps",
+    "qm_loop_time_limit": "s",
+    "init_velocities": "Maxwell–Boltzmann",
+    "random_seed": "reproducible",
+}
+_ASSIGNMENT = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*) = .*;$")
+
+
+def _annotate(lines: list[str]) -> list[str]:
+    """Append `# unit` notes to known keys in one shared column.
+
+    Only annotated lines decide the column, so a long filename elsewhere does
+    not push the notes out; `key = value;` itself stays untouched/greppable.
+    """
+    notes: list[str | None] = []
+    for line in lines:
+        match = _ASSIGNMENT.match(line)
+        key = match.group(1).replace("-", "_").lower() if match else None
+        notes.append(_NOTES.get(key) if key else None)
+    if not any(notes):
+        return lines
+    column = max(
+        NOTE_COLUMN,
+        max(len(line) for line, note in zip(lines, notes) if note) + 2,
+    )
+    return [
+        f"{line:<{column}}# {note}" if note else line
+        for line, note in zip(lines, notes)
+    ]
+
+
 def _section(title: str) -> str:
     """Section divider: `# ── title · quip ────…` padded to a fixed width."""
     quip = _SECTION_QUIPS.get(title)
@@ -856,7 +906,7 @@ def sign_off(setup: SimulationSetup) -> list[str]:
 
 
 def _header(setup: SimulationSetup) -> list[str]:
-    """Run card: one fact per comment line, aligned in two columns."""
+    """Run card: the run name as title, then one fact per comment line."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -882,10 +932,10 @@ def _header(setup: SimulationSetup) -> list[str]:
             ("written by", f"PQSetup · target {TARGET_PQ_RELEASE}"),
         ]
     )
+    kind = "geometry optimization" if setup.ensemble == "OPT" else "molecular dynamics"
     return [
-        "# PQSetup · molecular dynamics",
+        f"# {setup.file_prefix} · {kind}",
         *(f"# {label:<11} {value}" for label, value in facts),
-        "# Same setup in, same file out. Enjoy the ride.",
     ]
 
 
