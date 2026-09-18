@@ -114,6 +114,23 @@ function rotate(point: Point3, rotationX: number, rotationY: number): Point3 {
   return [x1, y * cosX - z1 * sinX, y * sinX + z1 * cosX];
 }
 
+/**
+ * The x/y/z gizmo, rotated exactly like the atoms so it always shows where
+ * the structure's axes point. Sorted back to front; `front` dims axes that
+ * point away from the viewer.
+ */
+function axisTriad(rotation: [number, number]) {
+  const length = 28;
+  return (["x", "y", "z"] as const)
+    .map((name, index) => {
+      const unit: Point3 = [0, 0, 0];
+      unit[index] = 1;
+      const [x, y, z] = rotate(unit, rotation[0], rotation[1]);
+      return { name, x: x * length, y: -y * length, z, front: z >= 0 };
+    })
+    .sort((left, right) => left.z - right.z);
+}
+
 function distance(left: Atom, right: Atom): number {
   return Math.hypot(
     left.position[0] - right.position[0],
@@ -581,13 +598,15 @@ export default function StructureViewer({
               </g>
             );
           })}
-          <g className="axis" transform="translate(42 368)">
-            <line x1="0" y1="0" x2="28" y2="0" className="axis-x" />
-            <line x1="0" y1="0" x2="0" y2="-28" className="axis-y" />
-            <line x1="0" y1="0" x2="16" y2="16" className="axis-z" />
-            <text x="33" y="4">x</text>
-            <text x="-4" y="-34">y</text>
-            <text x="19" y="25">z</text>
+          <g className="axis" transform="translate(42 368)" aria-hidden="true">
+            {axisTriad(rotation).map(({ name, x, y, front }) => (
+              <g key={name} className={front ? "" : "axis-back"}>
+                <line x1="0" y1="0" x2={x} y2={y} className={`axis-${name}`} />
+                <text x={x * 1.25} y={y * 1.25}>
+                  {name}
+                </text>
+              </g>
+            ))}
           </g>
         </svg>
         <div

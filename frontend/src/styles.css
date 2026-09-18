@@ -2640,6 +2640,13 @@ kbd {
 .axis text {
   fill: #68787a;
   font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* Axes pointing away from the viewer fade back. */
+.axis .axis-back {
+  opacity: 0.4;
 }
 
 .viewer-help,
