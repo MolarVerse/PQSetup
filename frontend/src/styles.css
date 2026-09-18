@@ -456,12 +456,19 @@ kbd {
   padding-right: 8px;
 }
 
-/* Tags listing the advanced settings that differ from defaults. */
+/* Advanced button + tags for the settings that differ from defaults. */
+.settings-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin: -2px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -1276,7 +1283,7 @@ kbd {
   margin-left: auto;
 }
 
-.condition-action .settings-chip {
+.settings-line .settings-chip {
   height: 26px;
 }
 

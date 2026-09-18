@@ -795,15 +795,19 @@ function SettingsChip({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** Non-default advanced settings, listed as tags under the row's fields. */
-function SettingsSummary({ parts }: { parts: string[] }) {
-  if (parts.length === 0) return null;
+/** Advanced button under the model selection, with non-default settings as tags. */
+function SettingsLine({ parts, onOpen }: { parts: string[]; onOpen: () => void }) {
   return (
-    <ul className="settings-summary condition-full" aria-label="Advanced settings in use">
-      {parts.map((part) => (
-        <li key={part}>{part}</li>
-      ))}
-    </ul>
+    <div className="settings-line condition-full">
+      <SettingsChip onOpen={onOpen} />
+      {parts.length > 0 && (
+        <ul className="settings-summary" aria-label="Advanced settings in use">
+          {parts.map((part) => (
+            <li key={part}>{part}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -2467,11 +2471,6 @@ export default function App() {
                         </span>
                       ) : undefined
                     }
-                    action={
-                      setup.runner ? (
-                        <SettingsChip onOpen={() => setModal("calculator")} />
-                      ) : undefined
-                    }
                     className="method-fields"
                   >
                     <Field label="Program" controlId="calculator">
@@ -2535,7 +2534,12 @@ export default function App() {
                           </select>
                         </Field>
                       )}
-                    <SettingsSummary parts={qmSettingsSummary(setup)} />
+                    {setup.runner && (
+                      <SettingsLine
+                        parts={qmSettingsSummary(setup)}
+                        onOpen={() => setModal("calculator")}
+                      />
+                    )}
                   </ConditionRow>
                 ) : (
                   <ConditionRow
@@ -2545,9 +2549,6 @@ export default function App() {
                       MM_MODES.find(
                         (option) => option.value === setup.mm_force_field,
                       )?.description
-                    }
-                    action={
-                      <SettingsChip onOpen={() => setModal("calculator")} />
                     }
                     className="method-fields"
                   >
@@ -2612,7 +2613,10 @@ export default function App() {
                         }
                       />
                     </Field>
-                    <SettingsSummary parts={mmSettingsSummary(setup)} />
+                    <SettingsLine
+                      parts={mmSettingsSummary(setup)}
+                      onOpen={() => setModal("calculator")}
+                    />
                   </ConditionRow>
                 )}
 
