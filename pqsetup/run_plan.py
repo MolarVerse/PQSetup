@@ -9,7 +9,7 @@ from .companions import (
     with_seeded_setup_references,
 )
 from .external_qm import selected_external_qm_script
-from .input_writer import render_input, restart_filename
+from .input_writer import has_script_full_path, render_input, restart_filename
 from .mm import (
     mm_method_label,
     validate_mm_setup_contents,
@@ -93,6 +93,23 @@ def render_run_plan(
             valid=False,
         )
 
+    if (
+        not is_mm
+        and setup.ensemble == "NPT"
+        and request.structure is not None
+        and request.structure.cell_generated
+    ):
+        return PlanRenderResult(
+            files=[],
+            diagnostics=[
+                _error(
+                    "conditions.generated_cell_npt",
+                    "NPT needs a physical periodic cell, not a generated vacuum cell.",
+                )
+            ],
+            valid=False,
+        )
+
     if pq is not None and not pq.found:
         diagnostics.append(
             _warning(
@@ -123,10 +140,15 @@ def render_run_plan(
             setup.runner_script,
             external_qm,
         )
-        if script_error:
+        full_path = has_script_full_path(setup)
+        if script_error and (setup.runner_script or not full_path):
             diagnostics.append(_error("runner.script", script_error))
             return PlanRenderResult(files=[], diagnostics=diagnostics, valid=False)
-        if script is not None and setup.runner_script != script.name:
+        if (
+            script is not None
+            and not full_path
+            and setup.runner_script != script.name
+        ):
             setup = setup.model_copy(update={"runner_script": script.name})
         required = list(required_qm_file_roles(setup, external_qm))
         pq_executable = pq.executable if pq is not None and pq.found else None
@@ -282,6 +304,7 @@ def render_run_plan(
         files=files,
         diagnostics=diagnostics,
         valid=not any(item.severity == "error" for item in diagnostics),
+        setup=setup,
     )
 
 

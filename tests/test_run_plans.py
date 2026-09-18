@@ -238,6 +238,49 @@ def test_external_calculators_use_canonical_release_scripts(
     assert f"qm_script = {script};" in result.files[0].input_text
 
 
+def test_script_full_path_replaces_qm_script() -> None:
+    """PQ rejects inputs naming both qm_script and qm_script_full_path."""
+    result = _render(
+        RunPlanRequest(
+            setup=_setup(
+                runner="pyscf",
+                extra_settings={"qm_script_full_path": "/opt/qm/my_pyscf.py"},
+            ),
+        )
+    )
+
+    assert result.valid
+    text = result.files[0].input_text
+    assert "qm_script =" not in text
+    assert "qm_script_full_path = /opt/qm/my_pyscf.py;" in text
+    assert result.setup is not None and result.setup.runner_script is None
+
+
+def test_plan_rejects_npt_on_a_generated_vacuum_cell() -> None:
+    from pqsetup.models import Structure
+
+    structure = Structure(
+        atoms=[],
+        cell=[[10, 0, 0], [0, 10, 0], [0, 0, 10]],
+        cell_generated=True,
+    )
+    result = _render(
+        RunPlanRequest(
+            setup=_setup(
+                ensemble="NPT",
+                pressure_bar=1.01325,
+                manostat="stochastic_rescaling",
+            ),
+            structure=structure,
+        )
+    )
+
+    assert not result.valid
+    assert [item.code for item in result.diagnostics] == [
+        "conditions.generated_cell_npt"
+    ]
+
+
 def test_release_fallback_requires_an_explicit_pyscf_method() -> None:
     missing = _render(
         RunPlanRequest(

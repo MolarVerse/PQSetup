@@ -299,6 +299,9 @@ class PlanRenderResult(BaseModel):
     files: list[PlannedInput]
     diagnostics: list[Diagnostic]
     valid: bool
+    # The setup the inputs were written from (e.g. with the recommended
+    # script filled in), so a manifest can describe the files it ships with.
+    setup: SimulationSetup | None = None
 
 
 class Bootstrap(BaseModel):

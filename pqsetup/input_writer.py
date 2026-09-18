@@ -215,7 +215,8 @@ def render_input(
             setup.runner_script,
             external_qm,
         )
-        if runner_script:
+        # PQ treats qm_script and qm_script_full_path as mutually exclusive.
+        if runner_script and not has_script_full_path(setup):
             lines.append(f"qm_script = {runner_script.name};")
         if setup.ensemble == "NPT":
             lines.append(
@@ -251,6 +252,14 @@ def render_input(
         input_text="\n".join(_annotate(lines)).rstrip() + "\n",
         diagnostics=diagnostics,
         valid=True,
+    )
+
+
+def has_script_full_path(setup: SimulationSetup) -> bool:
+    """True when the user points PQ at a script by path; excludes ``qm_script``."""
+    return (
+        "qm_script_full_path" in setup.extra_settings
+        or "qm-script-full-path" in setup.extra_settings
     )
 
 
@@ -639,10 +648,7 @@ def validate_setup(
                 setup.runner_script,
                 external_qm,
             )
-            has_full_path = (
-                "qm_script_full_path" in setup.extra_settings
-                or "qm-script-full-path" in setup.extra_settings
-            )
+            has_full_path = has_script_full_path(setup)
             if script_error and (setup.runner_script or not has_full_path):
                 diagnostics.append(_error("runner.script", script_error))
         for field_name in (

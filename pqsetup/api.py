@@ -152,17 +152,6 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             external_qm=pq.external_qm,
         )
         if (
-            request.structure.cell_generated
-            and request.setup.ensemble == "NPT"
-            and request.setup.job_type != "mm-md"
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "NPT needs a physical periodic cell, not a generated vacuum cell."
-                ),
-            )
-        if (
             plan_requested(request.sampling_run_count, request.equilibration)
             or request.setup.job_type == "mm-md"
             or bool(request.setup_files)
@@ -532,7 +521,10 @@ def _export_plan(
             ),
         }
     )
-    plan_manifest = plan_request.model_dump(mode="json", exclude={"structure"})
+    # Describe the setup the inputs were written from, not the raw request.
+    plan_manifest = plan_request.model_copy(
+        update={"setup": rendered.setup or plan_request.setup}
+    ).model_dump(mode="json", exclude={"structure"})
     for setup_file in plan_manifest["setup_files"]:
         setup_file.pop("content", None)
 

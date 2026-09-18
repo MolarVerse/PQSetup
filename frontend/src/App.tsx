@@ -239,7 +239,7 @@ const EXAMPLE: StructureAnalysis = {
 };
 
 const INITIAL_SETUP: SimulationSetup = {
-  preset_id: "ambient-nvt",
+  preset_id: null,
   job_type: "qm-md",
   ensemble: "NVT",
   start_file: "water-example.rst",
@@ -981,6 +981,9 @@ export default function App() {
     () => externalQMProgram(externalQM, setup.runner),
     [externalQM, setup.runner],
   );
+  // A script given by full path replaces the bundled method (PQ treats
+  // qm_script and qm_script_full_path as mutually exclusive).
+  const scriptFullPath = Boolean(setup.extra_settings.qm_script_full_path);
   const selectedElectronicMethod = useMemo(
     () =>
       selectedExternalQMScript(
@@ -1181,35 +1184,16 @@ export default function App() {
   const methodReady = molecularMechanics
     ? hasTypedMolecules && mmDensityReady && missingMethodFiles.length === 0
     : Boolean(setup.runner) &&
-      (!electronicProgram || Boolean(selectedElectronicMethod)) &&
+      (!electronicProgram ||
+        Boolean(selectedElectronicMethod) ||
+        scriptFullPath) &&
       missingMethodFiles.length === 0;
 
-  const generatedCellNpt =
-    !molecularMechanics &&
-    analysis.structure.cell_generated &&
-    setup.ensemble === "NPT";
-
+  // The NPT / generated-cell rule is checked by the plan renderer, so it
+  // arrives with the other diagnostics instead of being duplicated here.
   const diagnostics = useMemo(
-    () => [
-      ...analysis.diagnostics,
-      ...(rendered?.diagnostics ?? []),
-      ...(generatedCellNpt
-        ? [
-            {
-              code: "conditions.generated_cell_npt",
-              severity: "error" as const,
-              message:
-                "NPT needs a physical periodic cell, not a generated vacuum cell.",
-              atom_indices: [],
-            },
-          ]
-        : []),
-    ],
-    [
-      analysis.diagnostics,
-      generatedCellNpt,
-      rendered?.diagnostics,
-    ],
+    () => [...analysis.diagnostics, ...(rendered?.diagnostics ?? [])],
+    [analysis.diagnostics, rendered?.diagnostics],
   );
   const displayedDiagnostics = useMemo(
     () =>
@@ -1222,7 +1206,6 @@ export default function App() {
   ).length;
   const ready = Boolean(
     analysis.valid &&
-      !generatedCellNpt &&
       rendered?.valid &&
       methodReady &&
       errorCount === 0,
@@ -1241,7 +1224,8 @@ export default function App() {
       } else if (
         !molecularMechanics &&
         electronicProgram &&
-        !selectedElectronicMethod
+        !selectedElectronicMethod &&
+        !scriptFullPath
       ) {
         issues.push({
           message: "Choose an electronic method",
@@ -1297,6 +1281,7 @@ export default function App() {
     mmDensityReady,
     molecularMechanics,
     rendered,
+    scriptFullPath,
     selectedElectronicMethod,
     setup.runner,
   ]);
@@ -1952,13 +1937,16 @@ export default function App() {
       const stem = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
       const restartName = `${stem || "structure"}.rst`;
       const runName = `${stem || "pq"}-run`;
+      // Read before setSetup: the updater runs later, after the ref moved on.
+      const previousDerived = derivedRunName.current;
+      derivedRunName.current = runName;
       setBaseStartFile(restartName);
       setSetup((existing) => ({
         ...existing,
         start_file: restartName,
         // A name the user typed in Output stays; only the derived one follows.
         file_prefix:
-          existing.file_prefix === derivedRunName.current
+          existing.file_prefix === previousDerived
             ? runName
             : existing.file_prefix,
         density_g_cm3:
@@ -1966,7 +1954,6 @@ export default function App() {
             ? existing.density_g_cm3 ?? 1
             : existing.density_g_cm3,
       }));
-      derivedRunName.current = runName;
       setNotice({
         kind: result.valid ? "success" : "info",
         message: result.valid ? file.name : `${file.name} needs review`,
