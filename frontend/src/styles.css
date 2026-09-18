@@ -367,8 +367,203 @@ kbd {
   gap: 16px;
 }
 
-.output-name {
+/* Output header row: Name | Runs | (Inputs) | Write every */
+.output-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 120px 168px;
+  align-items: start;
+  gap: 16px;
+}
+
+.output-grid .field-label {
+  white-space: nowrap;
+}
+
+.output-grid .sampling-output-modes {
+  width: 220px;
+  max-width: 100%;
+}
+
+/* Settings chip sits on the field baseline next to inputs. */
+.field-inline-action {
+  justify-content: flex-end;
+}
+
+.field-inline-action .settings-chip {
+  height: var(--control);
+}
+
+.settings-chip strong {
   max-width: 320px;
+}
+
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-form .field-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.switch-row.settings-toggle {
+  grid-template-columns: minmax(0, 1fr) 28px;
+  min-height: 40px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.switch-row.settings-toggle > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------- modal */
+
+.modal {
+  width: min(560px, 100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  margin: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.modal-lg {
+  width: min(880px, 100vw - 32px);
+}
+
+.modal-full {
+  width: min(1280px, 100vw - 32px);
+  height: min(860px, 100dvh - 32px);
+}
+
+.modal:not([open]) {
+  display: none;
+}
+
+.modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.modal::backdrop {
+  background: rgb(22 22 22 / 50%);
+}
+
+.modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.modal-heading p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  margin: -6px -6px 0 0;
+  padding: 0;
+  border: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: auto;
+}
+
+.modal-full .modal-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* Stage viewer fills the modal body. */
+.modal-body .viewer.viewer-stage-mode {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+}
+
+.modal-body .viewer-stage-mode .viewer-heading {
+  display: none;
+}
+
+.modal-body .viewer-stage-mode .viewer-stage {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  height: auto !important;
+}
+
+.modal-body .viewer-stage-mode .viewer-stage > svg {
+  min-height: 0;
+}
+
+.modal-body .viewer-stage-mode .view-controls {
+  flex-shrink: 0;
+  padding: 8px 16px;
+}
+
+/* Full input fills the modal body. */
+.modal-input-preview {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 0;
+}
+
+.modal-input-preview .input-preview-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .result-cards {
@@ -1748,10 +1943,6 @@ kbd {
   min-height: 220px;
 }
 
-.page-input-preview.expanded .input-preview-body {
-  max-height: none;
-}
-
 .page-input-preview.output-empty {
   min-height: 120px;
   border-style: dashed;
@@ -1801,6 +1992,7 @@ kbd {
 
 .preview-title .preview-navigator select {
   border-color: var(--border);
+  background-color: var(--surface-subtle);
 }
 
 .preview-title-actions {
@@ -2596,6 +2788,25 @@ kbd {
 @media (max-width: 720px) {
   .setup-page {
     padding: 28px 20px 32px;
+  }
+
+  .output-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .output-grid > .field:nth-child(-n + 2) {
+    grid-column: 1 / -1;
+  }
+
+  .output-grid .sampling-output-modes {
+    width: 100%;
+  }
+
+  .modal-full {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
   }
 
   .setup-section {

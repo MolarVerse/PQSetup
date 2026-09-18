@@ -17,10 +17,10 @@ import {
   Gauge,
   LoaderCircle,
   Maximize2,
-  Minimize2,
   Package as PackageIcon,
   Rotate3d,
   Search,
+  SlidersHorizontal,
   Sparkles,
   Terminal,
   Thermometer,
@@ -52,6 +52,13 @@ import {
   renderPlan,
 } from "./api";
 import CommandPalette, { type Command } from "./CommandPalette";
+import Modal from "./Modal";
+import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
+import {
+  mmSettingsSummary,
+  pruneExtraSettings,
+  qmSettingsSummary,
+} from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
 import {
@@ -559,12 +566,7 @@ function TemperatureRampContent({
   );
 }
 
-type RunOpenOption =
-  | "equilibration"
-  | "output"
-  | "thermostat"
-  | "ramp"
-  | "manostat";
+type RunOpenOption = "equilibration" | "thermostat" | "ramp" | "manostat";
 
 function runOptionForControl(controlId: string): RunOpenOption | null {
   switch (controlId) {
@@ -572,8 +574,6 @@ function runOptionForControl(controlId: string): RunOpenOption | null {
       return "thermostat";
     case "sampling-manostat":
       return "manostat";
-    case "sampling-run-count":
-      return "output";
     case "sampling-temperature":
     case "sampling-pressure":
     case "sampling-timestep":
@@ -766,6 +766,29 @@ function InputNavigator({
   );
 }
 
+/** Chip that opens the calculator / force-field settings dialog. */
+function SettingsChip({
+  summary,
+  onOpen,
+}: {
+  summary: string[];
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="option-chip settings-chip"
+      aria-haspopup="dialog"
+      title="Advanced settings"
+      onClick={onOpen}
+    >
+      <SlidersHorizontal size={14} aria-hidden="true" />
+      <span>Settings</span>
+      <strong>{summary.length > 0 ? summary.join(" · ") : "defaults"}</strong>
+    </button>
+  );
+}
+
 function SetupFileStatus({
   selected,
   optional,
@@ -822,10 +845,12 @@ export default function App() {
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [previewExpanded, setPreviewExpanded] = useState(false);
-  const [structureOpen, setStructureOpen] = useState(false);
+  const [modal, setModal] = useState<
+    "structure" | "input" | "calculator" | null
+  >(null);
   const [openOption, setOpenOption] = useState<RunOpenOption | null>(null);
   const generatedInputSelectId = useId();
+  const modalInputSelectId = useId();
   const searchShortcut =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform)
@@ -846,6 +871,16 @@ export default function App() {
   );
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
+
+  // Settings picked for one calculator must not leak into another's input.
+  useEffect(() => {
+    setSetup((existing) => {
+      const pruned = pruneExtraSettings(existing);
+      return pruned === existing.extra_settings
+        ? existing
+        : { ...existing, extra_settings: pruned };
+    });
+  }, [setup.job_type, setup.runner, setup.mm_force_field]);
   const electronicMethods = useMemo(
     () => electronicMethodOptions(externalQM, setup.runner),
     [externalQM, setup.runner],
@@ -1155,6 +1190,19 @@ export default function App() {
   const firstBlockingIssue = blockingIssues[0] ?? null;
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
+
+  // Optional PQ keywords live in extra_settings; null removes the key.
+  const setExtra = useCallback(
+    (key: string, value: string | number | boolean | null) => {
+      setSetup((existing) => {
+        const next = { ...existing.extra_settings };
+        if (value === null) delete next[key];
+        else next[key] = value;
+        return { ...existing, preset_id: null, extra_settings: next };
+      });
+    },
+    [],
+  );
 
   // Scroll the page to a section and, when given, focus a specific control.
   const goToControl = useCallback(
@@ -1646,10 +1694,27 @@ export default function App() {
         label: "View structure in 3D",
         detail: `${analysis.summary.formula} · ${analysis.summary.atom_count} atoms`,
         keywords: ["3d", "viewer", "model", "rotate", "structure", "show"],
-        run: () => {
-          setStructureOpen(true);
-          goToControl("system");
-        },
+        run: () => setModal("structure"),
+      },
+      {
+        id: "input-full",
+        group: "Actions",
+        label: "Show full input",
+        detail: selectedFile?.name ?? "Generated input",
+        keywords: ["input", "preview", "large", "expand", "full"],
+        run: () => setModal("input"),
+      },
+      {
+        id: "calculator-settings",
+        group: "Actions",
+        label: molecularMechanics
+          ? "Force-field settings"
+          : "Calculator settings",
+        detail: molecularMechanics
+          ? "Non-Coulomb potential, long-range, constraints"
+          : "Method variant, model, dispersion, time limit",
+        keywords: ["settings", "advanced", "options", "extra", "keywords"],
+        run: () => setModal("calculator"),
       },
       {
         id: "import",
@@ -1719,6 +1784,7 @@ export default function App() {
     runShortcut,
     samplingMode,
     samplingRunCount,
+    selectedFile?.name,
     selectedRunnerStatus,
     setup,
     sourceFile,
@@ -2198,13 +2264,10 @@ export default function App() {
                   )}
                   <button
                     type="button"
-                    className={`structure-replace${
-                      structureOpen ? " selected" : ""
-                    }`}
-                    aria-expanded={structureOpen}
-                    aria-controls="structure-viewer"
-                    title={structureOpen ? "Hide 3D view" : "View in 3D"}
-                    onClick={() => setStructureOpen((value) => !value)}
+                    className="structure-replace"
+                    aria-haspopup="dialog"
+                    title="View in 3D"
+                    onClick={() => setModal("structure")}
                   >
                     <Rotate3d size={14} aria-hidden="true" />
                     3D
@@ -2220,18 +2283,6 @@ export default function App() {
                     Import
                   </button>
                 </div>
-
-                {structureOpen && (
-                  <div id="structure-viewer">
-                    <StructureViewer
-                      chromeless
-                      analysis={analysis}
-                      generatedCellTreatment={
-                        molecularMechanics ? "density" : "padding"
-                      }
-                    />
-                  </div>
-                )}
 
                 <div className="structure-meta band-row">
                   <div
@@ -2421,6 +2472,12 @@ export default function App() {
                         </div>
                       );
                     })()}
+                    {setup.runner && (
+                      <SettingsChip
+                        summary={qmSettingsSummary(setup)}
+                        onOpen={() => setModal("calculator")}
+                      />
+                    )}
                   </div>
                   </div>
                   {electronicMethods.length > 0 &&
@@ -2553,7 +2610,7 @@ export default function App() {
                     </div>
                   </fieldset>
 
-                  <div className="form-grid">
+                  <div className="form-grid mm-primary-grid">
                     {analysis.structure.cell_generated && (
                       <Field
                         label="Density"
@@ -2594,6 +2651,12 @@ export default function App() {
                         }
                       />
                     </Field>
+                    <div className="field field-inline-action">
+                      <SettingsChip
+                        summary={mmSettingsSummary(setup)}
+                        onOpen={() => setModal("calculator")}
+                      />
+                    </div>
                   </div>
 
                   {!hasTypedMolecules && (
@@ -2795,26 +2858,6 @@ export default function App() {
                       : "off"}
                   </strong>
                 </button>
-                <button
-                  type="button"
-                  className={`option-chip${
-                    openOption === "output" ? " selected" : ""
-                  }`}
-                  aria-pressed={openOption === "output"}
-                  onClick={() =>
-                    setOpenOption((current) =>
-                      current === "output" ? null : "output",
-                    )
-                  }
-                >
-                  <Files size={14} aria-hidden="true" />
-                  <span>Runs</span>
-                  <strong>
-                    {samplingMode === "continued"
-                      ? `${samplingRunCount} continued`
-                      : "1"}
-                  </strong>
-                </button>
                 {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
                   <button
                     type="button"
@@ -2948,82 +2991,6 @@ export default function App() {
                 </div>
               )}
 
-              {openOption === "output" && (
-                <div className="option-chip-body">
-                  <fieldset className="sampling-output-fieldset">
-                    <legend className="visually-hidden">Sampling mode</legend>
-                    <div className="sampling-output-modes">
-                      <label
-                        className={
-                          samplingMode === "single" ? "selected" : ""
-                        }
-                      >
-                        <input
-                          type="radio"
-                          name="sampling-output-mode"
-                          value="single"
-                          checked={samplingMode === "single"}
-                          onChange={() => chooseSamplingOutputMode("single")}
-                        />
-                        <span>
-                          <FileIcon size={15} aria-hidden="true" />
-                          <strong>Single</strong>
-                        </span>
-                      </label>
-                      <label
-                        className={
-                          samplingMode === "continued" ? "selected" : ""
-                        }
-                      >
-                        <input
-                          type="radio"
-                          name="sampling-output-mode"
-                          value="continued"
-                          checked={samplingMode === "continued"}
-                          onChange={() =>
-                            chooseSamplingOutputMode("continued")
-                          }
-                        />
-                        <span>
-                          <Files size={15} aria-hidden="true" />
-                          <strong>Continued</strong>
-                        </span>
-                      </label>
-                    </div>
-                  </fieldset>
-                  {samplingMode === "continued" && (
-                    <div className="form-grid">
-                      <Field label="Inputs" controlId="sampling-run-count">
-                        <input
-                          type="number"
-                          min="2"
-                          max={MAX_SAMPLING_RUNS}
-                          step="1"
-                          inputMode="numeric"
-                          value={samplingRunCountDraft}
-                          onChange={(event) => {
-                            const draft = event.target.value;
-                            setSamplingRunCountDraft(draft);
-                            const count =
-                              parseContinuedSamplingRunCountDraft(draft);
-                            if (count !== null) {
-                              lastContinuedSamplingRunCount.current = count;
-                              setSamplingRunCount(count);
-                            }
-                          }}
-                          onBlur={commitSamplingRunCount}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.currentTarget.blur();
-                            }
-                          }}
-                        />
-                      </Field>
-                    </div>
-                  )}
-                </div>
-              )}
-
               {openOption === "thermostat" &&
                 (setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
                   <div className="option-chip-body">
@@ -3083,7 +3050,7 @@ export default function App() {
               <h2 className="section-title" id="section-output-title">
                 Output
               </h2>
-              <div className="output-name">
+              <div className="output-grid">
                 <Field label="Name" controlId="run-name">
                   <input
                     value={setup.file_prefix}
@@ -3095,13 +3062,109 @@ export default function App() {
                     }
                   />
                 </Field>
+                <div className="field">
+                  <span className="field-label">
+                    <span id="sampling-mode-label">Runs</span>
+                  </span>
+                  <div
+                    className="sampling-output-modes"
+                    role="radiogroup"
+                    aria-labelledby="sampling-mode-label"
+                  >
+                    <label
+                      className={samplingMode === "single" ? "selected" : ""}
+                    >
+                      <input
+                        type="radio"
+                        name="sampling-output-mode"
+                        value="single"
+                        checked={samplingMode === "single"}
+                        onChange={() => chooseSamplingOutputMode("single")}
+                      />
+                      <span>
+                        <FileIcon size={15} aria-hidden="true" />
+                        <strong>Single</strong>
+                      </span>
+                    </label>
+                    <label
+                      className={
+                        samplingMode === "continued" ? "selected" : ""
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name="sampling-output-mode"
+                        value="continued"
+                        checked={samplingMode === "continued"}
+                        onChange={() => chooseSamplingOutputMode("continued")}
+                      />
+                      <span>
+                        <Files size={15} aria-hidden="true" />
+                        <strong>Continued</strong>
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                {samplingMode === "continued" && (
+                  <Field
+                    label="Inputs"
+                    controlId="sampling-run-count"
+                    info="Chained restarts: each input starts from the previous restart file"
+                  >
+                    <input
+                      type="number"
+                      min="2"
+                      max={MAX_SAMPLING_RUNS}
+                      step="1"
+                      inputMode="numeric"
+                      value={samplingRunCountDraft}
+                      onChange={(event) => {
+                        const draft = event.target.value;
+                        setSamplingRunCountDraft(draft);
+                        const count = parseContinuedSamplingRunCountDraft(draft);
+                        if (count !== null) {
+                          lastContinuedSamplingRunCount.current = count;
+                          setSamplingRunCount(count);
+                        }
+                      }}
+                      onBlur={commitSamplingRunCount}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </Field>
+                )}
+                <Field
+                  label="Write every"
+                  unit="steps"
+                  controlId="output-freq"
+                  info="output_freq · trajectory, energy and restart write interval"
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="1"
+                    value={
+                      typeof setup.extra_settings.output_freq === "number"
+                        ? setup.extra_settings.output_freq
+                        : ""
+                    }
+                    onChange={(event) =>
+                      setExtra(
+                        "output_freq",
+                        event.target.value ? Number(event.target.value) : null,
+                      )
+                    }
+                  />
+                </Field>
               </div>
 
               {rendered ? (
                 <div
-                  className={`input-preview page-input-preview${
-                    previewExpanded ? " expanded" : ""
-                  }`}
+                  className="input-preview page-input-preview"
                   id="generated-input-preview"
                   role="region"
                   aria-label={`Input preview: ${
@@ -3139,20 +3202,12 @@ export default function App() {
                       <button
                         type="button"
                         className="preview-expand"
-                        aria-pressed={previewExpanded}
-                        aria-label={
-                          previewExpanded
-                            ? "Collapse input preview"
-                            : "Show full input"
-                        }
-                        title={previewExpanded ? "Collapse" : "Show full input"}
-                        onClick={() => setPreviewExpanded((value) => !value)}
+                        aria-haspopup="dialog"
+                        aria-label="Show full input"
+                        title="Show full input"
+                        onClick={() => setModal("input")}
                       >
-                        {previewExpanded ? (
-                          <Minimize2 size={15} aria-hidden="true" />
-                        ) : (
-                          <Maximize2 size={15} aria-hidden="true" />
-                        )}
+                        <Maximize2 size={15} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -3255,6 +3310,109 @@ export default function App() {
             </div>
           </footer>
       </main>
+
+      <Modal
+        open={modal === "structure"}
+        size="full"
+        title={
+          <>
+            <ChemicalFormula
+              formula={analysis.summary.formula}
+              fallback="Structure"
+            />
+            {" · "}
+            {analysis.summary.atom_count}{" "}
+            {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
+          </>
+        }
+        subtitle={analysis.structure.source_name}
+        onClose={() => setModal(null)}
+      >
+        <StructureViewer
+          variant="stage"
+          analysis={analysis}
+          generatedCellTreatment={molecularMechanics ? "density" : "padding"}
+          defaultOpen
+        />
+      </Modal>
+
+      <Modal
+        open={modal === "input"}
+        size="full"
+        title={selectedFile?.name ?? "Generated input"}
+        subtitle={
+          selectedFile
+            ? `${selectedFile.start_file} → ${selectedFile.restart_file}`
+            : undefined
+        }
+        onClose={() => setModal(null)}
+      >
+        {rendered ? (
+          <div className="input-preview modal-input-preview">
+            <div className="preview-title">
+              <InputNavigator
+                rendered={rendered}
+                selectedFile={selectedFile}
+                selectedFileIndex={selectedFileIndex}
+                selectId={modalInputSelectId}
+                equilibrationFiles={equilibrationFiles}
+                samplingFiles={samplingFiles}
+                onSelect={setSelectedFileKey}
+              />
+              <div className="preview-title-actions">
+                <button
+                  type="button"
+                  className="preview-expand"
+                  aria-label="Copy input"
+                  title="Copy input"
+                  disabled={!selectedFile?.input_text}
+                  onClick={() =>
+                    void navigator.clipboard.writeText(
+                      selectedFile?.input_text ?? "",
+                    )
+                  }
+                >
+                  <Copy size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <pre className="input-preview-body">
+              <InputSource text={deferredStageInputText} />
+            </pre>
+          </div>
+        ) : (
+          <div className="output-empty">
+            <LoaderCircle className="spin" size={22} aria-hidden="true" />
+            <strong>Generating input…</strong>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={modal === "calculator"}
+        title={molecularMechanics ? "Force-field settings" : "Calculator settings"}
+        subtitle={
+          molecularMechanics
+            ? MM_MODES.find((option) => option.value === setup.mm_force_field)
+                ?.label
+            : selectedRunnerStatus?.label ?? setup.runner ?? undefined
+        }
+        onClose={() => setModal(null)}
+      >
+        {molecularMechanics ? (
+          <MMSettingsForm
+            mode={setup.mm_force_field}
+            extra={setup.extra_settings}
+            setExtra={setExtra}
+          />
+        ) : (
+          <QMSettingsForm
+            runner={setup.runner}
+            extra={setup.extra_settings}
+            setExtra={setExtra}
+          />
+        )}
+      </Modal>
 
       <CommandPalette
         open={paletteOpen}
