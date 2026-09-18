@@ -191,7 +191,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.job_type === "mm-md") {
     for (const key of [
-          "long_range",
+      "long_range",
       "wolf_param",
       "rf_epsilon",
       "cell-list",
@@ -209,7 +209,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
         "shake-iter",
         "rattle-tolerance",
         "rattle-iter",
-                    "distance-constraints",
+        "distance-constraints",
       ]) {
         keys.add(key);
       }

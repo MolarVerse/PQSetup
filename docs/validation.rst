@@ -14,9 +14,17 @@ Local checks run while the setup is edited. They cover:
 * readable structure data, finite coordinates, and known elements;
 * periodic-cell geometry and PQ's centered wrapping convention;
 * unusually close atom pairs using ASE covalent radii;
-* ensemble and coupling parameters;
-* required calculator, topology, parameter, and template files;
+* ensemble and coupling parameters, including the temperature ramp;
+* required calculator, topology, parameter, template, and molecule-descriptor
+  files;
+* advanced-keyword combinations PQ rejects (for example Hubbard derivatives
+  without third order, or a reaction field without ``rf_epsilon``);
 * restart names and generated-input consistency.
+
+Only settings that are visible on the page reach the input. Values you typed
+under a hidden control — a manostat after switching back to NVT, MM
+constraints after switching to QM — are remembered for when you return, but
+never written.
 
 The close-contact scan is a bounded geometric heuristic. It reports up to 200
 contacts and does not establish bonding, protonation, or chemical correctness.
@@ -24,7 +32,7 @@ contacts and does not establish bonding, protonation, or chemical correctness.
 Environment discovery
 ---------------------
 
-``pqsetup doctor`` and the Method step inspect PQ and supported external
+``pqsetup doctor`` and the Method section inspect PQ and supported external
 calculators. A detected executable means that the command or package was found
 and its setup appears complete enough for input generation.
 
@@ -69,7 +77,7 @@ Passing preflight does not prove:
 * that the structure has the intended bonding, charge, spin, or protonation;
 * that a detected calculator will produce scientifically meaningful results.
 
-Treat every preset as a starting template. Review the generated inputs and test
+Treat every default as a starting template. Review the generated inputs and test
 the protocol on the intended execution environment.
 
 Validate an existing input
