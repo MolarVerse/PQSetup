@@ -1,4 +1,5 @@
 import { useId, type ReactElement, type ReactNode, cloneElement } from "react";
+import Info from "./Info";
 import {
   LONG_RANGE_KINDS,
   MACE_MODELS,
@@ -41,7 +42,7 @@ function Group({
     <section className="settings-group">
       <h3>
         {title}
-        {hint && <small>{hint}</small>}
+        {hint && <Info text={hint} />}
       </h3>
       <div className="settings-group-body">{children}</div>
     </section>
@@ -64,10 +65,12 @@ function Row({
     <div className="field">
       <span className="field-label">
         <label htmlFor={id}>{label}</label>
-        {unit && <span className="unit">{unit}</span>}
+        <span className="field-label-tools">
+          {unit && <span className="unit">{unit}</span>}
+          {hint && <Info text={hint} />}
+        </span>
       </span>
       {cloneElement(children, { id })}
-      {hint && <small className="field-hint">{hint}</small>}
     </div>
   );
 }
@@ -113,7 +116,7 @@ function Toggle({
     <label className="switch-row settings-toggle">
       <span>
         <strong>{label}</strong>
-        {hint && <small>{hint}</small>}
+        {hint && <Info text={hint} />}
       </span>
       <input
         type="checkbox"

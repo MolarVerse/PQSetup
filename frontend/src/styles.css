@@ -456,8 +456,22 @@ kbd {
   padding-right: 8px;
 }
 
-.settings-chip strong {
-  max-width: 320px;
+/* Tags listing the advanced settings that differ from defaults. */
+.settings-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-summary > li {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .settings-form {
@@ -480,12 +494,8 @@ kbd {
   text-transform: uppercase;
 }
 
-.settings-group h3 small {
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 400;
-  letter-spacing: 0;
-  text-transform: none;
+.settings-group h3 {
+  align-items: center;
 }
 
 .settings-group-body {
@@ -509,12 +519,6 @@ kbd {
   padding-top: 8px;
 }
 
-.settings-form .field-hint {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 0.78rem;
-}
-
 .switch-row.settings-toggle {
   grid-template-columns: minmax(0, 1fr) 28px;
   min-height: 40px;
@@ -525,7 +529,8 @@ kbd {
 .switch-row.settings-toggle > span:first-child {
   min-width: 0;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ---------------------------------------------------------------- modal */
@@ -896,11 +901,67 @@ kbd {
   outline-offset: -2px;
 }
 
-.field-help {
-  margin-top: 5px;
+/* ⓘ affordance + portal tooltip (fixed, so nothing can clip it). */
+.info {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  background: transparent;
+  cursor: help;
+}
+
+.info:hover,
+.info:focus-visible {
+  color: var(--accent-dark);
+}
+
+.info:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -1px;
+}
+
+.info-bubble {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  max-width: 280px;
+  padding: 8px 12px;
+  color: #fff;
+  background: var(--ink);
+  font: 0.8rem/1.45 var(--mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.info-bubble.below {
+  transform: translate(-50%, 0);
+}
+
+.info-bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  border: 6px solid transparent;
+  transform: translateX(-50%);
+}
+
+.info-bubble.above::after {
+  top: 100%;
+  border-top-color: var(--ink);
+}
+
+.info-bubble.below::after {
+  bottom: 100%;
+  border-bottom-color: var(--ink);
 }
 
 .inline-warning {

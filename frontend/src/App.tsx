@@ -4,6 +4,7 @@ import {
   Boxes,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -51,6 +52,7 @@ import {
   renderPlan,
 } from "./api";
 import CommandPalette, { type Command } from "./CommandPalette";
+import Info from "./Info";
 import Modal from "./Modal";
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
@@ -356,13 +358,13 @@ function thermostatDescription(value: string | null): string {
 function Field({
   label,
   unit,
-  help,
+  info,
   controlId,
   children,
 }: {
   label: ReactNode;
   unit?: string;
-  help?: string;
+  info?: string;
   controlId?: string;
   children: ReactElement<{ id?: string }>;
 }) {
@@ -375,10 +377,10 @@ function Field({
         <label htmlFor={fieldId}>{label}</label>
         <span className="field-label-tools">
           {unit && <span className="unit">{unit}</span>}
+          {info && <Info text={info} />}
         </span>
       </span>
       {cloneElement(children, { id: fieldId })}
-      {help && <span className="field-help">{help}</span>}
     </div>
   );
 }
@@ -734,6 +736,7 @@ function ConditionRow({
   icon: Icon,
   title,
   hint,
+  info,
   toggle,
   action,
   className,
@@ -742,6 +745,7 @@ function ConditionRow({
   icon: LucideIcon;
   title: string;
   hint?: ReactNode;
+  info?: string;
   toggle?: { label: string; checked: boolean; onChange: (on: boolean) => void };
   action?: ReactNode;
   className?: string;
@@ -752,6 +756,7 @@ function ConditionRow({
       <div className="condition-head">
         <Icon size={14} aria-hidden="true" />
         <span className="condition-title">{title}</span>
+        {info && <Info text={info} />}
         {hint && <span className="condition-hint">{hint}</span>}
         {toggle && (
           <label className="condition-toggle">
@@ -774,13 +779,7 @@ function ConditionRow({
 }
 
 /** Chip that opens the calculator / force-field settings dialog. */
-function SettingsChip({
-  summary,
-  onOpen,
-}: {
-  summary: string[];
-  onOpen: () => void;
-}) {
+function SettingsChip({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
@@ -791,8 +790,20 @@ function SettingsChip({
     >
       <SlidersHorizontal size={14} aria-hidden="true" />
       <span>Advanced</span>
-      <strong>{summary.length > 0 ? summary.join(" · ") : "defaults"}</strong>
+      <ChevronDown size={13} aria-hidden="true" />
     </button>
+  );
+}
+
+/** Non-default advanced settings, listed as tags under the row's fields. */
+function SettingsSummary({ parts }: { parts: string[] }) {
+  if (parts.length === 0) return null;
+  return (
+    <ul className="settings-summary condition-full" aria-label="Advanced settings in use">
+      {parts.map((part) => (
+        <li key={part}>{part}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -2458,10 +2469,7 @@ export default function App() {
                     }
                     action={
                       setup.runner ? (
-                        <SettingsChip
-                          summary={qmSettingsSummary(setup)}
-                          onOpen={() => setModal("calculator")}
-                        />
+                        <SettingsChip onOpen={() => setModal("calculator")} />
                       ) : undefined
                     }
                     className="method-fields"
@@ -2527,21 +2535,19 @@ export default function App() {
                           </select>
                         </Field>
                       )}
+                    <SettingsSummary parts={qmSettingsSummary(setup)} />
                   </ConditionRow>
                 ) : (
                   <ConditionRow
                     icon={Boxes}
                     title="Force field"
-                    hint={
+                    info={
                       MM_MODES.find(
                         (option) => option.value === setup.mm_force_field,
                       )?.description
                     }
                     action={
-                      <SettingsChip
-                        summary={mmSettingsSummary(setup)}
-                        onOpen={() => setModal("calculator")}
-                      />
+                      <SettingsChip onOpen={() => setModal("calculator")} />
                     }
                     className="method-fields"
                   >
@@ -2606,6 +2612,7 @@ export default function App() {
                         }
                       />
                     </Field>
+                    <SettingsSummary parts={mmSettingsSummary(setup)} />
                   </ConditionRow>
                 )}
 
@@ -2713,7 +2720,11 @@ export default function App() {
               <ConditionRow
                 icon={Thermometer}
                 title="Temperature"
-                hint={thermalEnsemble ? undefined : "initial velocities only"}
+                info={
+                  thermalEnsemble
+                    ? undefined
+                    : "NVE has no thermostat: this temperature only seeds the initial velocities."
+                }
                 toggle={
                   thermalEnsemble
                     ? {
@@ -2861,11 +2872,7 @@ export default function App() {
                 <Field
                   label="Runs"
                   controlId="sampling-run-count"
-                  help={
-                    samplingRunCount > 1
-                      ? `chained 01 → ${samplingLabel(samplingRunCount)}`
-                      : "one input · more chain restarts"
-                  }
+                  info="One input file per run. With more than one, each run continues from the previous run's restart file (run-01 → run-02 → …)."
                 >
                   <input
                     type="number"
@@ -2969,7 +2976,7 @@ export default function App() {
                     label="Write every"
                     unit="steps"
                     controlId="output-freq"
-                    help="trajectory · energy · restart"
+                    info="How often PQ writes the trajectory, energy and restart files."
                   >
                     <input
                       type="number"
