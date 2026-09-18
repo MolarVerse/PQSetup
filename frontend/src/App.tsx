@@ -24,10 +24,12 @@ import {
   Sparkles,
   Terminal,
   Thermometer,
+  Timer,
   TrendingUp,
   Upload,
   X,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import {
   cloneElement,
@@ -479,7 +481,7 @@ function TemperatureCoupling({
                 }
               />
             </Field>
-            <Field label="Coupling frequency" unit="cm⁻¹">
+            <Field label="Coupling freq." unit="cm⁻¹">
               <input
                 type="number"
                 min="0"
@@ -497,17 +499,6 @@ function TemperatureCoupling({
       </div>
     </section>
   );
-}
-
-function temperatureRampSummary(value: TemperatureScheduleSettings): string {
-  if (
-    value.start_temperature_k != null &&
-    value.temperature_ramp_steps != null &&
-    value.temperature_ramp_steps > 0
-  ) {
-    return `${value.start_temperature_k} → … · ${value.temperature_ramp_steps} steps`;
-  }
-  return "off";
 }
 
 function TemperatureRampContent({
@@ -564,24 +555,6 @@ function TemperatureRampContent({
       </Field>
     </div>
   );
-}
-
-type RunOpenOption = "equilibration" | "thermostat" | "ramp" | "manostat";
-
-function runOptionForControl(controlId: string): RunOpenOption | null {
-  switch (controlId) {
-    case "sampling-thermostat":
-      return "thermostat";
-    case "sampling-manostat":
-      return "manostat";
-    case "sampling-temperature":
-    case "sampling-pressure":
-    case "sampling-timestep":
-    case "sampling-steps":
-      return null;
-    default:
-      return null;
-  }
 }
 
 type ManostatSettings = Pick<
@@ -766,6 +739,46 @@ function InputNavigator({
   );
 }
 
+/**
+ * One physical condition in the Run section: a header with an optional
+ * on/off toggle, then the value and its coupling controls in one grid.
+ */
+function ConditionRow({
+  icon: Icon,
+  title,
+  hint,
+  toggle,
+  children,
+}: {
+  icon: LucideIcon;
+  title: string;
+  hint?: string;
+  toggle?: { label: string; checked: boolean; onChange: (on: boolean) => void };
+  children: ReactNode;
+}) {
+  return (
+    <div className="condition-row">
+      <div className="condition-head">
+        <Icon size={14} aria-hidden="true" />
+        <span className="condition-title">{title}</span>
+        {hint && <span className="condition-hint">{hint}</span>}
+        {toggle && (
+          <label className="condition-toggle">
+            <span>{toggle.label}</span>
+            <input
+              type="checkbox"
+              checked={toggle.checked}
+              onChange={(event) => toggle.onChange(event.target.checked)}
+            />
+            <span className="switch" aria-hidden="true" />
+          </label>
+        )}
+      </div>
+      <div className="condition-fields">{children}</div>
+    </div>
+  );
+}
+
 /** Chip that opens the calculator / force-field settings dialog. */
 function SettingsChip({
   summary,
@@ -848,7 +861,6 @@ export default function App() {
   const [modal, setModal] = useState<
     "structure" | "input" | "calculator" | null
   >(null);
-  const [openOption, setOpenOption] = useState<RunOpenOption | null>(null);
   const generatedInputSelectId = useId();
   const modalInputSelectId = useId();
   const searchShortcut =
@@ -871,6 +883,24 @@ export default function App() {
   );
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
+  const thermalEnsemble =
+    setup.ensemble === "NVT" || setup.ensemble === "NPT";
+  // A ramp is "on" when a start temperature is set; off clears the schedule.
+  const rampEnabled = setup.start_temperature_k != null;
+  const setRampEnabled = useCallback((on: boolean) => {
+    setSetup((existing) => ({
+      ...existing,
+      preset_id: null,
+      start_temperature_k: on
+        ? existing.start_temperature_k ??
+          Math.round((existing.temperature_k ?? 300) / 3)
+        : null,
+      temperature_ramp_steps: on
+        ? existing.temperature_ramp_steps ??
+          Math.max(1, Math.round((existing.steps ?? 1000) / 2))
+        : null,
+    }));
+  }, []);
 
   // Settings picked for one calculator must not leak into another's input.
   useEffect(() => {
@@ -1207,10 +1237,6 @@ export default function App() {
   // Scroll the page to a section and, when given, focus a specific control.
   const goToControl = useCallback(
     (section: SectionId, controlId?: string) => {
-      if (controlId) {
-        const runOption = runOptionForControl(controlId);
-        if (runOption) setOpenOption(runOption);
-      }
       const anchor =
         SECTIONS.find((item) => item.id === section)?.anchor ?? section;
       window.requestAnimationFrame(() => {
@@ -2710,7 +2736,6 @@ export default function App() {
                 Run
               </h2>
               <div className="run-band">
-              <div className="run-primary band-row">
               <fieldset className="ensemble-fieldset">
                 <legend className="visually-hidden">Ensemble</legend>
                 <div role="radiogroup" aria-label="Sampling ensemble">
@@ -2750,13 +2775,24 @@ export default function App() {
                 </div>
               </fieldset>
 
-              <div
-                className={`form-grid sampling-condition-grid${
-                  setup.ensemble === "NPT" ? " has-pressure" : ""
-                }`}
+              {/* Each condition is its own row: value + the coupling that
+                  controls it. Nothing here depends on another row. */}
+              <ConditionRow
+                icon={Thermometer}
+                title="Temperature"
+                hint={thermalEnsemble ? undefined : "initial velocities only"}
+                toggle={
+                  thermalEnsemble
+                    ? {
+                        label: "Ramp",
+                        checked: rampEnabled,
+                        onChange: setRampEnabled,
+                      }
+                    : undefined
+                }
               >
                 <Field
-                  label="Temperature"
+                  label="Target"
                   unit="K"
                   controlId="sampling-temperature"
                 >
@@ -2775,7 +2811,84 @@ export default function App() {
                     }
                   />
                 </Field>
-                <Field label="Steps" controlId="sampling-steps">
+                {thermalEnsemble && (
+                  <TemperatureCoupling
+                    value={setup}
+                    controlId="sampling-thermostat"
+                    onChange={(patch) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        preset_id: null,
+                        ...patch,
+                      }))
+                    }
+                  />
+                )}
+                {thermalEnsemble && rampEnabled && (
+                  <div className="condition-subrow">
+                    <span className="condition-sublabel">
+                      <TrendingUp size={13} aria-hidden="true" />
+                      Ramp
+                    </span>
+                    <TemperatureRampContent
+                      value={setup}
+                      onChange={(patch) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          ...patch,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+              </ConditionRow>
+
+              {setup.ensemble === "NPT" && (
+                <ConditionRow icon={Gauge} title="Pressure">
+                  <Field
+                    label="Target"
+                    unit="bar"
+                    controlId="sampling-pressure"
+                  >
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={setup.pressure_bar ?? ""}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          pressure_bar: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <PressureCoupling
+                    value={setup}
+                    controlId="sampling-manostat"
+                    onChange={(patch) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        preset_id: null,
+                        ...patch,
+                      }))
+                    }
+                  />
+                </ConditionRow>
+              )}
+
+              <ConditionRow
+                icon={Timer}
+                title="Steps"
+                toggle={{
+                  label: "Equilibration",
+                  checked: Boolean(equilibration),
+                  onChange: chooseProtocol,
+                }}
+              >
+                <Field label="Sampling" unit="steps" controlId="sampling-steps">
                   <input
                     type="number"
                     min="1"
@@ -2811,153 +2924,13 @@ export default function App() {
                     }
                   />
                 </Field>
-                {setup.ensemble === "NPT" && (
-                  <Field
-                    label="Pressure"
-                    unit="bar"
-                    controlId="sampling-pressure"
-                  >
-                    <input
-                      type="number"
-                      step="0.00001"
-                      value={setup.pressure_bar ?? ""}
-                      onChange={(event) =>
-                        setSetup((existing) => ({
-                          ...existing,
-                          pressure_bar: event.target.value
-                            ? Number(event.target.value)
-                            : null,
-                        }))
-                      }
-                    />
-                  </Field>
-                )}
-              </div>
-              </div>
-
-              <div className="option-chips" role="toolbar" aria-label="Run options">
-                <button
-                  type="button"
-                  className={`option-chip${
-                    openOption === "equilibration" ? " selected" : ""
-                  }`}
-                  aria-pressed={openOption === "equilibration"}
-                  onClick={() =>
-                    setOpenOption((current) =>
-                      current === "equilibration" ? null : "equilibration",
-                    )
-                  }
-                >
-                  <Flame size={14} aria-hidden="true" />
-                  <span>Equilibration</span>
-                  <strong>
-                    {equilibration
-                      ? `${equilibration.steps} steps · ${equilibration.temperature_k} K`
-                      : "off"}
-                  </strong>
-                </button>
-                {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <button
-                    type="button"
-                    className={`option-chip${
-                      openOption === "thermostat" ? " selected" : ""
-                    }`}
-                    aria-pressed={openOption === "thermostat"}
-                    onClick={() =>
-                      setOpenOption((current) =>
-                        current === "thermostat" ? null : "thermostat",
-                      )
-                    }
-                  >
-                    <Thermometer size={14} aria-hidden="true" />
-                    <span>Thermostat</span>
-                    <strong>
-                      {THERMOSTATS.find(
-                        (option) => option.value === setup.thermostat,
-                      )?.label ?? "—"}
-                      {setup.thermostat_relaxation_ps != null &&
-                        (setup.thermostat === "berendsen" ||
-                          setup.thermostat === "velocity_rescaling") &&
-                        ` · ${setup.thermostat_relaxation_ps} ps`}
-                    </strong>
-                  </button>
-                )}
-                {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <button
-                    type="button"
-                    className={`option-chip${
-                      openOption === "ramp" ? " selected" : ""
-                    }`}
-                    aria-pressed={openOption === "ramp"}
-                    onClick={() =>
-                      setOpenOption((current) =>
-                        current === "ramp" ? null : "ramp",
-                      )
-                    }
-                  >
-                    <TrendingUp size={14} aria-hidden="true" />
-                    <span>Ramp</span>
-                    <strong>{temperatureRampSummary(setup)}</strong>
-                  </button>
-                )}
-                {setup.ensemble === "NPT" && (
-                  <button
-                    type="button"
-                    className={`option-chip${
-                      openOption === "manostat" ? " selected" : ""
-                    }`}
-                    aria-pressed={openOption === "manostat"}
-                    onClick={() =>
-                      setOpenOption((current) =>
-                        current === "manostat" ? null : "manostat",
-                      )
-                    }
-                  >
-                    <Gauge size={14} aria-hidden="true" />
-                    <span>Manostat</span>
-                    <strong>
-                      {MANOSTATS.find(
-                        (option) => option.value === setup.manostat,
-                      )?.label ?? "—"}
-                    </strong>
-                  </button>
-                )}
-              </div>
-
-              {openOption === "equilibration" && (
-                <div className="option-chip-body">
-                  <label className="switch-row">
-                    <span className="prepare-icon">
-                      <Flame size={16} aria-hidden="true" />
+                {equilibration && (
+                  <div className="condition-subrow">
+                    <span className="condition-sublabel">
+                      <Flame size={13} aria-hidden="true" />
+                      Equilibration
                     </span>
-                    <span>
-                      <strong>Equilibration</strong>
-                    </span>
-                    <input
-                      type="checkbox"
-                      aria-label="Include equilibration stage"
-                      checked={Boolean(equilibration)}
-                      onChange={(event) =>
-                        chooseProtocol(event.target.checked)
-                      }
-                    />
-                    <span className="switch" aria-hidden="true" />
-                  </label>
-                  {equilibration && (
                     <div className="form-grid stage-primary-grid">
-                      <Field label="Temperature" unit="K">
-                        <input
-                          type="number"
-                          min="0.000001"
-                          step="0.01"
-                          value={equilibration.temperature_k}
-                          onChange={(event) =>
-                            updateEquilibration({
-                              temperature_k: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </Field>
                       <Field label="Steps">
                         <input
                           type="number"
@@ -2984,59 +2957,23 @@ export default function App() {
                           }
                         />
                       </Field>
+                      <Field label="Temperature" unit="K">
+                        <input
+                          type="number"
+                          min="0.000001"
+                          step="0.01"
+                          value={equilibration.temperature_k}
+                          onChange={(event) =>
+                            updateEquilibration({
+                              temperature_k: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </Field>
                     </div>
-                  )}
-                </div>
-              )}
-
-              {openOption === "thermostat" &&
-                (setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <div className="option-chip-body">
-                    <TemperatureCoupling
-                      value={setup}
-                      controlId="sampling-thermostat"
-                      onChange={(patch) =>
-                        setSetup((existing) => ({
-                          ...existing,
-                          preset_id: null,
-                          ...patch,
-                        }))
-                      }
-                    />
                   </div>
                 )}
-
-              {openOption === "ramp" &&
-                (setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
-                  <div className="option-chip-body">
-                    <TemperatureRampContent
-                      value={setup}
-                      onChange={(patch) =>
-                        setSetup((existing) => ({
-                          ...existing,
-                          preset_id: null,
-                          ...patch,
-                        }))
-                      }
-                    />
-                  </div>
-                )}
-
-              {openOption === "manostat" && setup.ensemble === "NPT" && (
-                <div className="option-chip-body">
-                  <PressureCoupling
-                    value={setup}
-                    controlId="sampling-manostat"
-                    onChange={(patch) =>
-                      setSetup((existing) => ({
-                        ...existing,
-                        preset_id: null,
-                        ...patch,
-                      }))
-                    }
-                  />
-                </div>
-              )}
+              </ConditionRow>
               </div>
             </section>
 

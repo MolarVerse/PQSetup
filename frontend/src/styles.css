@@ -1474,30 +1474,134 @@ kbd {
   color: #c6c6c6;
 }
 
-.sampling-condition-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.sampling-condition-grid.has-pressure {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 .run-band {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
-.run-primary .ensemble-fieldset {
+.run-band .ensemble-fieldset {
   max-width: 320px;
 }
 
-.option-chips {
+/* Condition rows: Temperature / Pressure / Steps, each self-contained. */
+.condition-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.condition-head {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-height: 24px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-soft);
+}
+
+.condition-head > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.condition-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.condition-hint {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.condition-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.condition-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.condition-toggle input:checked + .switch {
+  border-color: var(--accent);
+}
+
+.condition-toggle input:checked + .switch::after {
+  background: var(--accent);
+  transform: translateX(14px);
+}
+
+.condition-toggle:has(input:checked) {
+  color: var(--ink);
+}
+
+.condition-toggle:has(input:focus-visible) .switch {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 1px;
+}
+
+.condition-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+
+/* Coupling components render their own grids; flatten them into the row. */
+.condition-fields > .coupling-section,
+.condition-fields > .coupling-section > .coupling-grid {
+  display: contents;
+}
+
+.condition-fields .field-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sub-rows (Ramp, Equilibration) sit under the main row, labelled. */
+.condition-subrow {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding-top: 6px;
+}
+
+.condition-sublabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control);
+  margin-top: 20px;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+.condition-sublabel > svg {
+  color: var(--accent-dark);
+}
+
+.condition-subrow .schedule-grid,
+.condition-subrow .stage-primary-grid {
+  padding: 0;
 }
 
 /* Option chips: icon + value. Off state is just dimmed. */
@@ -1557,13 +1661,6 @@ kbd {
   font-weight: 500;
   color: var(--ink);
   text-overflow: ellipsis;
-}
-
-.option-chip-body {
-  padding: 10px 0 2px;
-  border: 0;
-  border-top: 1px solid var(--border);
-  background: transparent;
 }
 
 .option-panel {
@@ -2767,13 +2864,8 @@ kbd {
     grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   }
 
-  .run-primary.band-row {
-    grid-template-columns: 1fr;
-  }
-
-  .sampling-condition-grid,
-  .sampling-condition-grid.has-pressure {
-    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  .condition-fields {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   }
 
   .method-band .calculator-select {
@@ -2783,10 +2875,6 @@ kbd {
 
   .calculator-status {
     white-space: normal;
-  }
-
-  .option-chips {
-    flex-wrap: wrap;
   }
 }
 
@@ -2805,15 +2893,13 @@ kbd {
   }
 
   .structure-meta.band-row,
-  .method-band.band-row,
-  .run-primary.band-row {
+  .method-band.band-row {
     flex-direction: column;
     align-items: stretch;
   }
 
   .structure-meta.band-row > *,
-  .method-band.band-row > *,
-  .run-primary.band-row > * {
+  .method-band.band-row > * {
     flex: 1 1 auto;
   }
 
@@ -2919,8 +3005,17 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .sampling-condition-grid {
+  .condition-fields {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .condition-subrow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .condition-sublabel {
+    min-height: 0;
+    margin-top: 0;
   }
 
   .preparation-applied {
