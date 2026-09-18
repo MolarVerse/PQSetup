@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Search, X } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -74,8 +74,13 @@ export default function CommandPalette({
     background.forEach((element) => {
       element.inert = true;
     });
+    // Lock scrolling without the layout shift: keep the scrollbar's width
+    // as padding so the page behind does not jump when the bar disappears.
     const previousOverflow = document.body.style.overflow;
+    const previousPadding = document.body.style.paddingRight;
+    const gutter = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = "hidden";
+    if (gutter > 0) document.body.style.paddingRight = `${gutter}px`;
     setQuery("");
     setSelected(0);
     requestAnimationFrame(() => input.current?.focus());
@@ -84,6 +89,7 @@ export default function CommandPalette({
         element.inert = false;
       });
       document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPadding;
       restoreFocus.current?.focus();
     };
   }, [open]);
@@ -183,7 +189,7 @@ export default function CommandPalette({
                 run(ordered[selected]);
               }
             }}
-            placeholder="Search settings, methods, or actions"
+            placeholder="Search…"
             aria-label="Search setup"
             role="combobox"
             aria-expanded="true"
@@ -227,19 +233,11 @@ export default function CommandPalette({
                   >
                     <span className="command-copy">
                       <strong>{command.label}</strong>
-                      {(command.disabledReason || command.detail) && (
-                        <small>
-                          {command.disabledReason ?? command.detail}
-                        </small>
-                      )}
                     </span>
                     <span className="command-hint">
+                      {command.disabledReason ?? command.hint}
                       {command.current && (
                         <Check size={15} aria-label="Current" />
-                      )}
-                      {command.hint}
-                      {!command.current && (
-                        <ArrowRight size={15} aria-hidden="true" />
                       )}
                     </span>
                   </button>
@@ -249,22 +247,10 @@ export default function CommandPalette({
             ))
           ) : (
             <div className="palette-empty">
-              <strong>No matching setting</strong>
-              <span>Try temperature, barostat, calculator, eq, or xyz.</span>
+              <strong>No results</strong>
             </div>
           )}
         </div>
-        <footer>
-          <span>
-            <kbd>↑↓</kbd> navigate
-          </span>
-          <span>
-            <kbd>Enter</kbd> select
-          </span>
-          <span>
-            <kbd>Esc</kbd> close
-          </span>
-        </footer>
       </section>
     </div>
   );
