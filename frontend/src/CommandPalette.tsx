@@ -1,11 +1,5 @@
 import { Check, Search, X } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   COMMAND_GROUP_ORDER,
   rankCommands,
@@ -31,9 +25,8 @@ export default function CommandPalette({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const selectedRow = useRef<HTMLButtonElement>(null);
-  const restoreFocus = useRef<HTMLElement | null>(null);
   const filtered = useMemo(
     () => rankCommands(commands, query),
     [commands, query],
@@ -65,27 +58,22 @@ export default function CommandPalette({
     ? `command-option-${ordered[selected].id}`
     : undefined;
 
+  // Native modal <dialog>: the browser handles the top layer, inertness of
+  // the page behind, focus trapping and focus restore. Nothing on <body>
+  // changes, so the page cannot reflow while the palette is open. The dialog
+  // fills the viewport as its own scroll container (overscroll-behavior:
+  // contain), so wheel events over the dimmed area do not scroll the page.
   useEffect(() => {
-    if (!open) return;
-    restoreFocus.current = document.activeElement as HTMLElement | null;
-    const background = document.querySelectorAll<HTMLElement>(
-      ".app-header, .page",
-    );
-    background.forEach((element) => {
-      element.inert = true;
-    });
-    // Scrolling is not locked on <body>: hiding its scrollbar reflows the
-    // page behind the palette. The backdrop is its own scroll container with
-    // overscroll-behavior: contain, which stops wheel events from chaining.
-    setQuery("");
-    setSelected(0);
-    requestAnimationFrame(() => input.current?.focus());
-    return () => {
-      background.forEach((element) => {
-        element.inert = false;
-      });
-      restoreFocus.current?.focus();
-    };
+    const element = dialog.current;
+    if (!element) return;
+    if (open && !element.open) {
+      element.showModal();
+      setQuery("");
+      setSelected(0);
+      requestAnimationFrame(() => input.current?.focus());
+    } else if (!open && element.open) {
+      element.close();
+    }
   }, [open]);
 
   useEffect(() => {
@@ -102,53 +90,28 @@ export default function CommandPalette({
     selectedRow.current?.scrollIntoView({ block: "nearest" });
   }, [query, selected]);
 
-  useEffect(() => {
-    if (!open) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
   function run(command: Command) {
     if (command.disabledReason) return;
     onClose();
     command.run();
   }
 
-  function trapFocus(event: ReactKeyboardEvent<HTMLElement>) {
-    if (event.key !== "Tab" || !dialog.current) return;
-    const focusable = Array.from(
-      dialog.current.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled])",
-      ),
-    );
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
-      <section
-        ref={dialog}
-        className="command-palette"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search setup"
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={trapFocus}
-      >
+    <dialog
+      ref={dialog}
+      className="command-palette"
+      aria-label="Search setup"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        // Clicks on the ::backdrop arrive with the dialog itself as target.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      {open && (
+        <div className="palette-panel">
         <div className="palette-search">
           <Search size={19} aria-hidden="true" />
           <input
@@ -245,7 +208,8 @@ export default function CommandPalette({
             </div>
           )}
         </div>
-      </section>
-    </div>
+        </div>
+      )}
+    </dialog>
   );
 }
