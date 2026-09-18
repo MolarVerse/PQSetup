@@ -978,8 +978,18 @@ def sign_off(setup: SimulationSetup) -> list[str]:
     return ["", _section("fin", _SIGN_OFFS[setup.random_seed % len(_SIGN_OFFS)])]
 
 
+# figlet "small": the PQ wordmark that opens every run card.
+_PQ_ART = (
+    r" ___  ___   ",
+    r"| _ \/ _ \  ",
+    r"|  _/ (_) | ",
+    r"|_|  \__\_\ ",
+)
+ART_WIDTH = 13  # art column incl. gutter; InputSource.tsx splits here too
+
+
 def _header(setup: SimulationSetup) -> list[str]:
-    """Run card in a box: name and kind on the title row, then facts."""
+    """Run card in a box: PQ wordmark + name/kind, a rule, then facts."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -1010,24 +1020,27 @@ def _header(setup: SimulationSetup) -> list[str]:
         frames = _frames(setup.steps, setup.extra_settings.get("output_freq"))
         if frames:
             facts.append(("frames", frames))
-    facts.extend(
-        [
-            ("files", f"{setup.start_file} → {restart_filename(setup)}"),
-            ("written by", f"PQSetup · target {TARGET_PQ_RELEASE}"),
-        ]
-    )
+    facts.append(("files", f"{setup.start_file} → {restart_filename(setup)}"))
     kind = "geometry optimization" if setup.ensemble == "OPT" else "molecular dynamics"
+    title_texts = [
+        "",
+        setup.file_prefix,
+        f"{kind} · PQ {TARGET_PQ_RELEASE}",
+        "written by PQSetup",
+    ]
+    title_rows = [
+        f"{art:<{ART_WIDTH}}{text}" for art, text in zip(_PQ_ART, title_texts)
+    ]
     rows = [f"{label:<11} {value}" for label, value in facts]
     inner = max(
         SECTION_WIDTH - 6,
-        len(setup.file_prefix) + 2 + len(kind),
+        *(len(row) for row in title_rows),
         *(len(row) for row in rows),
     )
-    title = f"{setup.file_prefix:<{inner - len(kind)}}{kind}"
     rule = "─" * (inner + 2)
     return [
         f"# ┌{rule}┐",
-        f"# │ {title} │",
+        *(f"# │ {row:<{inner}} │" for row in title_rows),
         f"# ├{rule}┤",
         *(f"# │ {row:<{inner}} │" for row in rows),
         f"# └{rule}┘",

@@ -31,10 +31,10 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "qm_prog = ase-xtb;" in result.input_text
     assert "xtb_method = gfn2-xtb;" in result.input_text
     assert result.input_text.startswith("# ┌")
-    assert f"# │ {setup_from_preset('ambient-npt').file_prefix} " in result.input_text
-    assert "molecular dynamics │\n" in result.input_text
+    assert f"| _ \\/ _ \\   {setup_from_preset('ambient-npt').file_prefix}" in result.input_text
+    assert f"molecular dynamics · PQ {TARGET_PQ_RELEASE}" in result.input_text
     assert "# │ ensemble    NPT" in result.input_text
-    assert f"# │ written by  PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
+    assert "written by PQSetup" in result.input_text
     assert "# ── P pressure coupling ─" in result.input_text
     assert " squeeze, but politely ──\n" in result.input_text
     assert "# │ span        " in result.input_text

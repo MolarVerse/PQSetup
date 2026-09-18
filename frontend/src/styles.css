@@ -2218,6 +2218,11 @@ kbd {
   font-weight: 700;
 }
 
+.src-art {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .src-title-kind {
   color: var(--muted);
 }

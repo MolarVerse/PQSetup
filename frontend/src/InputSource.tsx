@@ -7,6 +7,8 @@
  */
 const BOX_RULE = /^# ([┌├└])(─+)([┐┤┘])$/;
 const BOX_ROW = /^# │ (.*) │$/;
+/** Title block rows are `art (ART_WIDTH cols) + text`; see input_writer.py. */
+const ART_WIDTH = 13;
 const BOX_COLUMNS = /^(\S(?:.*?\S)?)( {2,})(\S.*?)(\s*)$/;
 const SECTION = /^(# ── )([^─]+?) (─+)(?: ([^─]+?) (──))?$/;
 const ASSIGNMENT =
@@ -39,21 +41,39 @@ export default function InputSource({ text }: { text: string }) {
           }
           const row = BOX_ROW.exec(line);
           if (row) {
-            const isTitle = index > 0 && lines[index - 1].startsWith("# ┌");
+            // Rows between the ┌ and ├ rules form the title block.
+            let start = index - 1;
+            while (start >= 0 && !BOX_RULE.test(lines[start])) start -= 1;
+            const inTitle = start >= 0 && lines[start].startsWith("# ┌");
+            if (inTitle) {
+              const art = row[1].slice(0, ART_WIDTH);
+              const text = row[1].slice(ART_WIDTH);
+              const isName = index - start === 2;
+              return (
+                <span className="src-line src-box src-title" key={key}>
+                  {"# │ "}
+                  <span className="src-art">{art}</span>
+                  <span className={isName ? "src-title-name" : "src-title-kind"}>
+                    {text}
+                  </span>
+                  {" │"}
+                </span>
+              );
+            }
             const columns = BOX_COLUMNS.exec(row[1]);
             return (
               <span
-                className={`src-line src-box ${isTitle ? "src-title" : "src-meta"}`}
+                className="src-line src-box src-meta"
                 key={key}
               >
                 {"# │ "}
                 {columns ? (
                   <>
-                    <span className={isTitle ? "src-title-name" : "src-meta-label"}>
+                    <span className="src-meta-label">
                       {columns[1]}
                     </span>
                     {columns[2]}
-                    <span className={isTitle ? "src-title-kind" : "src-meta-value"}>
+                    <span className="src-meta-value">
                       {columns[3]}
                     </span>
                     {columns[4]}
