@@ -74,13 +74,9 @@ export default function CommandPalette({
     background.forEach((element) => {
       element.inert = true;
     });
-    // Lock scrolling without the layout shift: keep the scrollbar's width
-    // as padding so the page behind does not jump when the bar disappears.
-    const previousOverflow = document.body.style.overflow;
-    const previousPadding = document.body.style.paddingRight;
-    const gutter = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = "hidden";
-    if (gutter > 0) document.body.style.paddingRight = `${gutter}px`;
+    // Scrolling is not locked on <body>: hiding its scrollbar reflows the
+    // page behind the palette. The backdrop is its own scroll container with
+    // overscroll-behavior: contain, which stops wheel events from chaining.
     setQuery("");
     setSelected(0);
     requestAnimationFrame(() => input.current?.focus());
@@ -88,8 +84,6 @@ export default function CommandPalette({
       background.forEach((element) => {
         element.inert = false;
       });
-      document.body.style.overflow = previousOverflow;
-      document.body.style.paddingRight = previousPadding;
       restoreFocus.current?.focus();
     };
   }, [open]);
