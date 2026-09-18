@@ -57,7 +57,6 @@ import Modal from "./Modal";
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
   mmSettingsSummary,
-  pruneExtraSettings,
   qmSettingsSummary,
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
@@ -67,7 +66,8 @@ import {
   PRESSURE_ISOTROPIES,
   THERMOSTATS,
 } from "./conditionOptions";
-import { diagnosticStep } from "./diagnosticNavigation";
+import { diagnosticStep, diagnosticControl } from "./diagnosticNavigation";
+import { effectiveSetup } from "./effectiveSetup";
 import {
   activeFilesForSpecs,
   defaultSetupFileName,
@@ -925,6 +925,7 @@ export default function App() {
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
   const firstGeneratedFileName = useRef<string | null>(null);
+  const derivedRunName = useRef(INITIAL_SETUP.file_prefix);
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
   const thermalEnsemble =
@@ -967,15 +968,11 @@ export default function App() {
     }));
   }, []);
 
-  // Settings picked for one calculator must not leak into another's input.
-  useEffect(() => {
-    setSetup((existing) => {
-      const pruned = pruneExtraSettings(existing);
-      return pruned === existing.extra_settings
-        ? existing
-        : { ...existing, extra_settings: pruned };
-    });
-  }, [setup.job_type, setup.runner, setup.mm_force_field]);
+  // The form remembers every choice; only what is visible reaches the input.
+  const effective = useMemo(
+    () => effectiveSetup(setup, analysis.structure.cell_generated),
+    [analysis.structure.cell_generated, setup],
+  );
   const electronicMethods = useMemo(
     () => electronicMethodOptions(externalQM, setup.runner),
     [externalQM, setup.runner],
@@ -1085,12 +1082,12 @@ export default function App() {
     setRendering(true);
     const timeout = window.setTimeout(() => {
       renderPlan(
-        setup,
+        effective,
         equilibration,
         samplingRunCount,
         setupFileReferences,
         analysis.structure,
-        )
+      )
         .then((result) => {
           if (sequence !== renderSequence.current) return;
           const previousFirstName = firstGeneratedFileName.current;
@@ -1131,9 +1128,9 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [
     analysis.structure,
+    effective,
     equilibration,
     samplingRunCount,
-    setup,
     setupFileReferences,
   ]);
 
@@ -1282,6 +1279,7 @@ export default function App() {
       issues.push({
         message: item.message,
         section: diagnosticStep(item.code),
+        controlId: diagnosticControl(item.code),
       });
     }
     if (issues.length === 0 && rendered && !rendered.valid) {
@@ -1347,7 +1345,7 @@ export default function App() {
   );
 
   const createRun = useCallback(async () => {
-    if (!ready || exporting) {
+    if (!ready || exporting || rendering) {
       if (firstBlockingIssue) {
         goToControl(firstBlockingIssue.section, firstBlockingIssue.controlId);
       }
@@ -1357,13 +1355,13 @@ export default function App() {
     setNotice(null);
     try {
       const blob = await exportProject(
-        setup,
+        effective,
         analysis.structure,
         setup.file_prefix,
         preparation,
         equilibration,
         samplingRunCount,
-        methodSetupFiles,
+        activeSetupFiles,
       );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -1381,16 +1379,18 @@ export default function App() {
       setExporting(false);
     }
   }, [
+    activeSetupFiles,
     analysis.structure,
+    effective,
     equilibration,
     exporting,
     firstBlockingIssue,
     goToControl,
-    methodSetupFiles,
     preparation,
     ready,
+    rendering,
     samplingRunCount,
-    setup,
+    setup.file_prefix,
   ]);
 
   const commands = useMemo<Command[]>(() => {
@@ -1492,7 +1492,7 @@ export default function App() {
             method.name,
             method.label,
           ],
-          current: setup.runner_script === method.name,
+          current: !molecularMechanics && setup.runner_script === method.name,
           run: () => {
             chooseElectronicMethod(method.name);
             goToControl("method");
@@ -1823,6 +1823,10 @@ export default function App() {
           ? "Potentials, neighbour search, constraints, resets"
           : "Calculator, QM run, resets",
         keywords: ["settings", "advanced", "options", "extra", "keywords"],
+        disabledReason:
+          !molecularMechanics && !setup.runner
+            ? "Choose a calculator first."
+            : undefined,
         run: () => setModal("calculator"),
       },
       {
@@ -1947,16 +1951,22 @@ export default function App() {
       setPreparation(null);
       const stem = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
       const restartName = `${stem || "structure"}.rst`;
+      const runName = `${stem || "pq"}-run`;
       setBaseStartFile(restartName);
       setSetup((existing) => ({
         ...existing,
         start_file: restartName,
-        file_prefix: `${stem || "pq"}-run`,
+        // A name the user typed in Output stays; only the derived one follows.
+        file_prefix:
+          existing.file_prefix === derivedRunName.current
+            ? runName
+            : existing.file_prefix,
         density_g_cm3:
           isMolecularMechanics(existing) && result.structure.cell_generated
             ? existing.density_g_cm3 ?? 1
             : existing.density_g_cm3,
       }));
+      derivedRunName.current = runName;
       setNotice({
         kind: result.valid ? "success" : "info",
         message: result.valid ? file.name : `${file.name} needs review`,
@@ -2092,7 +2102,6 @@ export default function App() {
         ...withMMFileNames(existing, existing.mm_force_field),
         preset_id: null,
         job_type: "mm-md",
-        runner: null,
         density_g_cm3:
           analysis.structure.cell_generated
             ? existing.density_g_cm3 ?? 1
@@ -2115,7 +2124,6 @@ export default function App() {
       ...withMMFileNames(existing, mode),
       preset_id: null,
       job_type: "mm-md",
-      runner: null,
     }));
   }
 
@@ -2172,25 +2180,15 @@ export default function App() {
   }
 
   function chooseSamplingEnsemble(ensemble: Exclude<Ensemble, "OPT">) {
+    // Only fill gaps; a thermostat or pressure chosen earlier survives a
+    // detour through NVE / NVT and comes back unchanged.
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
       ensemble,
-      thermostat:
-        ensemble === "NVE"
-          ? null
-          : existing.thermostat ?? "velocity_rescaling",
-      manostat:
-        ensemble === "NPT"
-          ? existing.manostat ?? "stochastic_rescaling"
-          : null,
-      pressure_bar:
-        ensemble === "NPT" ? existing.pressure_bar ?? 1.01325 : null,
-      moldescriptor_file:
-        ensemble === "NPT"
-          ? existing.moldescriptor_file ??
-            defaultSetupFileName("moldescriptor")
-          : existing.moldescriptor_file,
+      thermostat: existing.thermostat ?? "velocity_rescaling",
+      manostat: existing.manostat ?? "stochastic_rescaling",
+      pressure_bar: existing.pressure_bar ?? 1.01325,
     }));
   }
 
@@ -2548,7 +2546,8 @@ export default function App() {
                     </Field>
                     {electronicMethods.length > 0 &&
                       (electronicMethods.length > 1 ||
-                        !electronicProgram?.recommended_script) && (
+                        !electronicProgram?.recommended_script ||
+                        !selectedElectronicMethod) && (
                         <Field label="Method" controlId="electronic-method">
                           <select
                             value={selectedElectronicMethod ? setup.runner_script ?? "" : ""}
@@ -2572,7 +2571,7 @@ export default function App() {
                       )}
                     {setup.runner && (
                       <SettingsLine
-                        parts={qmSettingsSummary(setup)}
+                        parts={qmSettingsSummary(effective)}
                         onOpen={() => setModal("calculator")}
                       />
                     )}
@@ -2650,7 +2649,7 @@ export default function App() {
                       />
                     </Field>
                     <SettingsLine
-                      parts={mmSettingsSummary(setup)}
+                      parts={mmSettingsSummary(effective)}
                       onOpen={() => setModal("calculator")}
                     />
                   </ConditionRow>
@@ -2925,6 +2924,7 @@ export default function App() {
                     <span className="condition-sublabel">
                       <Flame size={13} aria-hidden="true" />
                       Equilibration
+                      <Info text="A separate NVT stage (run-eq.in) with a Berendsen thermostat, 0.1 ps. Sampling run 01 continues from its restart file." />
                     </span>
                     <div className="form-grid stage-primary-grid">
                       <Field label="Steps">
@@ -3243,7 +3243,6 @@ export default function App() {
         <StructureViewer
           variant="stage"
           analysis={analysis}
-          generatedCellTreatment={molecularMechanics ? "density" : "padding"}
           defaultOpen
         />
       </Modal>

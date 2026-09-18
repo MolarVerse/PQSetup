@@ -58,7 +58,6 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        generatedCellTreatment="padding"
         defaultOpen
       />,
     );
@@ -82,7 +81,6 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={physicalAnalysis}
-        generatedCellTreatment="padding"
         defaultOpen
       />,
     );
@@ -97,7 +95,6 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        generatedCellTreatment="density"
         defaultOpen
       />,
     );
@@ -109,7 +106,6 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        generatedCellTreatment="padding"
         variant="stage"
         defaultOpen
       />,
@@ -125,7 +121,6 @@ describe("StructureViewer cell presentation", () => {
     const markup = renderToStaticMarkup(
       <StructureViewer
         analysis={ANALYSIS}
-        generatedCellTreatment="padding"
         defaultOpen={false}
       />,
     );

@@ -232,11 +232,9 @@ def render_input(
             and "xtb-method" not in setup.extra_settings
         ):
             lines.append("xtb_method = gfn2-xtb;")
-        if (
-            setup.runner == "ase_dftbplus"
-            and "slakos" not in setup.extra_settings
-        ):
-            lines.append("slakos = 3ob;")
+        if setup.runner == "ase_dftbplus":
+            if "slakos" not in setup.extra_settings:
+                lines.append("slakos = 3ob;")
             if "dispersion" not in setup.extra_settings:
                 lines.append("dispersion = on;")
     if setup.extra_settings:
@@ -346,60 +344,63 @@ def validate_setup(
                     "Temperature must be finite and positive.",
                 )
             )
-    if setup.start_temperature_k is not None and not _nonnegative_finite(
-        setup.start_temperature_k
-    ):
-        diagnostics.append(
-            _error(
-                "conditions.start_temperature",
-                "Starting temperature must be finite and non-negative.",
-            )
-        )
-    if setup.temperature_ramp_steps is not None and setup.start_temperature_k is None:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "A temperature ramp needs a starting temperature.",
-            )
-        )
-    if setup.temperature_ramp_steps is not None and setup.temperature_ramp_steps < 0:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "Temperature ramp steps must be non-negative.",
-            )
-        )
-    if (
-        setup.temperature_ramp_steps is not None
-        and setup.steps is not None
-        and setup.temperature_ramp_steps > setup.steps
-    ):
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "Temperature ramp steps cannot exceed the run length.",
-            )
-        )
-    if setup.temperature_ramp_frequency <= 0:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_frequency",
-                "Temperature ramp frequency must be positive.",
-            )
-        )
-    elif setup.start_temperature_k is not None:
-        effective_ramp_steps = setup.temperature_ramp_steps or setup.steps
-        if (
-            effective_ramp_steps is not None
-            and effective_ramp_steps > 0
-            and setup.temperature_ramp_frequency > effective_ramp_steps
+    # A ramp only exists under a thermostat; the writer ignores it otherwise,
+    # so it must not block an NVE run either.
+    if setup.ensemble in {"NVT", "NPT"}:
+        if setup.start_temperature_k is not None and not _nonnegative_finite(
+            setup.start_temperature_k
         ):
             diagnostics.append(
                 _error(
-                    "conditions.ramp_frequency",
-                    "Temperature ramp frequency cannot exceed the ramp length.",
+                    "conditions.start_temperature",
+                    "Starting temperature must be finite and non-negative.",
                 )
             )
+        if setup.temperature_ramp_steps is not None and setup.start_temperature_k is None:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "A temperature ramp needs a starting temperature.",
+                )
+            )
+        if setup.temperature_ramp_steps is not None and setup.temperature_ramp_steps < 0:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "Temperature ramp steps must be non-negative.",
+                )
+            )
+        if (
+            setup.temperature_ramp_steps is not None
+            and setup.steps is not None
+            and setup.temperature_ramp_steps > setup.steps
+        ):
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "Temperature ramp steps cannot exceed the run length.",
+                )
+            )
+        if setup.temperature_ramp_frequency <= 0:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_frequency",
+                    "Temperature ramp frequency must be positive.",
+                )
+            )
+        elif setup.start_temperature_k is not None:
+            effective_ramp_steps = setup.temperature_ramp_steps or setup.steps
+            if (
+                effective_ramp_steps is not None
+                and effective_ramp_steps > 0
+                and setup.temperature_ramp_frequency > effective_ramp_steps
+            ):
+                diagnostics.append(
+                    _error(
+                        "conditions.ramp_frequency",
+                        "Temperature ramp frequency cannot exceed the ramp length.",
+                    )
+                )
     if setup.ensemble in {"NVT", "NPT"}:
         if not setup.thermostat:
             diagnostics.append(

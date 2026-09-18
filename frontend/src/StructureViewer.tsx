@@ -60,7 +60,6 @@ function writeStoredViewerHeight(height: number) {
 
 interface StructureViewerProps {
   analysis: StructureAnalysis;
-  generatedCellTreatment: "padding" | "density";
   /** Bump after a successful import to auto-expand once per session. */
   importNonce?: number;
   /** Initial open state override (tests). */
@@ -157,7 +156,6 @@ const CELL_EDGES: [number, number][] = [
 
 export default function StructureViewer({
   analysis,
-  generatedCellTreatment,
   importNonce = 0,
   defaultOpen,
   variant = "inline",
@@ -225,7 +223,7 @@ export default function StructureViewer({
 
   useEffect(() => {
     setShowGeneratedCell(false);
-  }, [analysis.structure, generatedCellTreatment]);
+  }, [analysis.structure]);
 
   const generatedCell = analysis.structure.cell_generated;
   const displayCell = Boolean(
