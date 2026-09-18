@@ -18,6 +18,7 @@ import {
   Gauge,
   LoaderCircle,
   Maximize2,
+  Minimize2,
   Package as PackageIcon,
   Search,
   Sparkles,
@@ -88,7 +89,6 @@ import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
-  Diagnostic,
   Ensemble,
   EquilibrationStage,
   MMForceFieldMode,
@@ -775,21 +775,24 @@ function SetupFileStatus({
 }) {
   if (selected) {
     return (
-      <span className="file-added" title="Added" aria-label="Added">
+      <span className="file-added" title="Added">
         <Check size={14} aria-hidden="true" />
+        Added
       </span>
     );
   }
   if (optional) {
     return (
-      <span className="file-optional" title="Optional" aria-label="Optional">
+      <span className="file-optional" title="Optional file">
         <CircleDashed size={14} aria-hidden="true" />
+        Optional
       </span>
     );
   }
   return (
-    <span className="file-required" title="Required" aria-label="Required">
+    <span className="file-required" title="Required file">
       <CircleAlert size={14} aria-hidden="true" />
+      Add file
     </span>
   );
 }
@@ -819,10 +822,8 @@ export default function App() {
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [stageTab, setStageTab] = useState<"model" | "input">("model");
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [openOption, setOpenOption] = useState<RunOpenOption | null>(null);
-  const stageDialogRef = useRef<HTMLDialogElement>(null);
-  const stageInputSelectId = useId();
   const generatedInputSelectId = useId();
   const searchShortcut =
     typeof navigator !== "undefined" &&
@@ -1151,33 +1152,12 @@ export default function App() {
     setup.runner,
   ]);
   const firstBlockingIssue = blockingIssues[0] ?? null;
-  const footerDiagnostics = useMemo(
-    () =>
-      displayedDiagnostics
-        .filter(
-          (item) => !ready ? item.message !== firstBlockingIssue?.message : true,
-        )
-        .slice(0, 3),
-    [displayedDiagnostics, firstBlockingIssue, ready],
-  );
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
-
-  const openStage = useCallback((tab: "model" | "input") => {
-    setStageTab(tab);
-    stageDialogRef.current?.showModal();
-  }, []);
-
-  const closeStage = useCallback(() => {
-    stageDialogRef.current?.close();
-  }, []);
 
   // Scroll the page to a section and, when given, focus a specific control.
   const goToControl = useCallback(
     (section: SectionId, controlId?: string) => {
-      if (section === "review") {
-        openStage("input");
-      }
       if (controlId) {
         const runOption = runOptionForControl(controlId);
         if (runOption) setOpenOption(runOption);
@@ -1203,7 +1183,7 @@ export default function App() {
         }
       });
     },
-    [openStage],
+    [],
   );
 
   const createRun = useCallback(async () => {
@@ -1655,26 +1635,10 @@ export default function App() {
           ],
           run: () => {
             setSelectedFileKey(file.name);
-            openStage("input");
+            goToControl("review");
           },
         }),
       ),
-      {
-        id: "stage-model",
-        group: "Actions",
-        label: "Show large structure view",
-        detail: "Full-screen 3D model overlay",
-        keywords: ["stage", "model", "structure", "3d", "large", "expand"],
-        run: () => openStage("model"),
-      },
-      {
-        id: "stage-input",
-        group: "Actions",
-        label: "Show large input preview",
-        detail: "Full-screen generated input overlay",
-        keywords: ["stage", "input", "preview", "large", "expand"],
-        run: () => openStage("input"),
-      },
       {
         id: "import",
         group: "Actions",
@@ -1735,7 +1699,6 @@ export default function App() {
     goToControl,
     molecularMechanics,
     openFilePicker,
-    openStage,
     ready,
     rendered?.files,
     rendering,
@@ -1772,18 +1735,6 @@ export default function App() {
         goToControl(SECTIONS[Number(event.key) - 1].id);
         return;
       }
-      if (!editing && event.altKey) {
-        if (event.key.toLowerCase() === "m") {
-          event.preventDefault();
-          openStage("model");
-          return;
-        }
-        if (event.key.toLowerCase() === "i") {
-          event.preventDefault();
-          openStage("input");
-          return;
-        }
-      }
       if (!editing && event.key === "/") {
         event.preventDefault();
         setPaletteOpen(true);
@@ -1791,7 +1742,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createRun, goToControl, openStage, paletteOpen]);
+  }, [createRun, goToControl, paletteOpen]);
 
   async function useFile(file: File) {
     const sequence = ++uploadSequence.current;
@@ -2205,17 +2156,7 @@ export default function App() {
                 />
                 <div
                   className="structure-summary"
-                  role="button"
-                  tabIndex={0}
-                  title="Drop a structure or click to replace · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
-                  aria-label="Current structure. Drop a file to replace, or use Replace."
-                  onClick={openFilePicker}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      openFilePicker();
-                    }
-                  }}
+                  aria-label="Current structure. Drop a file here to replace it."
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event: DragEvent<HTMLDivElement>) => {
                     event.preventDefault();
@@ -2239,43 +2180,25 @@ export default function App() {
                       {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
                     </small>
                   </div>
-                  <span
-                    className={analysis.valid ? "file-valid" : "file-invalid"}
-                    title={analysis.valid ? "Valid" : "Needs review"}
-                    aria-label={analysis.valid ? "Valid" : "Needs review"}
-                  >
-                    {analysis.valid ? (
-                      <CheckCircle2 size={16} aria-hidden="true" />
-                    ) : (
+                  {!analysis.valid && (
+                    <span
+                      className="file-invalid"
+                      title="Needs review"
+                      aria-label="Needs review"
+                    >
                       <CircleAlert size={16} aria-hidden="true" />
-                    )}
-                  </span>
-                  <span className="structure-actions">
-                    <button
-                      type="button"
-                      className="structure-replace"
-                      aria-label={`Open structure: ${analysis.structure.source_name}`}
-                      title="Large view"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openStage("model");
-                      }}
-                    >
-                      <Maximize2 size={15} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className="structure-replace"
-                      aria-label="Replace structure"
-                      title="Replace · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        openFilePicker();
-                      }}
-                    >
-                      <Upload size={15} aria-hidden="true" />
-                    </button>
-                  </span>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="structure-replace"
+                    aria-label="Import structure"
+                    title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · or drop a file here"
+                    onClick={openFilePicker}
+                  >
+                    <Upload size={14} aria-hidden="true" />
+                    Import
+                  </button>
                 </div>
 
                 <div className="structure-meta band-row">
@@ -2454,31 +2377,12 @@ export default function App() {
                         ) : null;
                       }
                       const state = runnerAvailability(selected);
-                      const readyCount = (bootstrap?.runners ?? []).filter(
-                        (runner) =>
-                          runner.supported &&
-                          runnerAvailability(runner) === "ready",
-                      ).length;
-                      const totalCount = (bootstrap?.runners ?? []).filter(
-                        (runner) => runner.supported,
-                      ).length;
-                      if (state === "ready") {
-                        return (
-                          <div
-                            className="calculator-status"
-                            role="status"
-                            title={`${readyCount} of ${totalCount} calculators detected`}
-                          >
-                            <Check size={14} aria-hidden="true" />
-                            {readyCount}/{totalCount}
-                          </div>
-                        );
-                      }
+                      if (state === "ready") return null;
                       return (
                         <div
                           className="calculator-status warn"
                           role="status"
-                          title={`${readyCount} of ${totalCount} calculators detected`}
+                          title="Calculator not detected on this machine"
                         >
                           <CircleAlert size={14} aria-hidden="true" />
                           {runnerAvailabilityLabel(state)}
@@ -2663,7 +2567,8 @@ export default function App() {
                   {!hasTypedMolecules && (
                     <div className="inline-warning" role="alert">
                       <CircleAlert size={15} aria-hidden="true" />
-                      Needs molecule type IDs
+                      Atoms carry no molecule types — import a PQ restart
+                      (.rst) with molecule type IDs
                     </div>
                   )}
 
@@ -2851,12 +2756,12 @@ export default function App() {
                   }
                 >
                   <Flame size={14} aria-hidden="true" />
-                  <strong>eq</strong>
-                  <em>
+                  <span>Equilibration</span>
+                  <strong>
                     {equilibration
-                      ? `${equilibration.steps} · ${equilibration.temperature_k} K`
+                      ? `${equilibration.steps} steps · ${equilibration.temperature_k} K`
                       : "off"}
-                  </em>
+                  </strong>
                 </button>
                 <button
                   type="button"
@@ -2871,8 +2776,11 @@ export default function App() {
                   }
                 >
                   <Files size={14} aria-hidden="true" />
+                  <span>Runs</span>
                   <strong>
-                    ×{samplingMode === "continued" ? samplingRunCount : 1}
+                    {samplingMode === "continued"
+                      ? `${samplingRunCount} continued`
+                      : "1"}
                   </strong>
                 </button>
                 {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
@@ -2889,16 +2797,16 @@ export default function App() {
                     }
                   >
                     <Thermometer size={14} aria-hidden="true" />
+                    <span>Thermostat</span>
                     <strong>
                       {THERMOSTATS.find(
                         (option) => option.value === setup.thermostat,
                       )?.label ?? "—"}
+                      {setup.thermostat_relaxation_ps != null &&
+                        (setup.thermostat === "berendsen" ||
+                          setup.thermostat === "velocity_rescaling") &&
+                        ` · ${setup.thermostat_relaxation_ps} ps`}
                     </strong>
-                    {setup.thermostat_relaxation_ps != null &&
-                      (setup.thermostat === "berendsen" ||
-                        setup.thermostat === "velocity_rescaling") && (
-                        <em>τ {setup.thermostat_relaxation_ps} ps</em>
-                      )}
                   </button>
                 )}
                 {(setup.ensemble === "NVT" || setup.ensemble === "NPT") && (
@@ -2915,8 +2823,8 @@ export default function App() {
                     }
                   >
                     <TrendingUp size={14} aria-hidden="true" />
-                    <strong>ramp</strong>
-                    <em>{temperatureRampSummary(setup)}</em>
+                    <span>Ramp</span>
+                    <strong>{temperatureRampSummary(setup)}</strong>
                   </button>
                 )}
                 {setup.ensemble === "NPT" && (
@@ -2933,6 +2841,7 @@ export default function App() {
                     }
                   >
                     <Gauge size={14} aria-hidden="true" />
+                    <span>Manostat</span>
                     <strong>
                       {MANOSTATS.find(
                         (option) => option.value === setup.manostat,
@@ -2949,7 +2858,7 @@ export default function App() {
                       <Flame size={16} aria-hidden="true" />
                     </span>
                     <span>
-                      <strong>Equilibrate</strong>
+                      <strong>Equilibration</strong>
                     </span>
                     <input
                       type="checkbox"
@@ -3158,7 +3067,9 @@ export default function App() {
 
               {rendered ? (
                 <div
-                  className="input-preview page-input-preview"
+                  className={`input-preview page-input-preview${
+                    previewExpanded ? " expanded" : ""
+                  }`}
                   id="generated-input-preview"
                   role="region"
                   aria-label={`Input preview: ${
@@ -3182,11 +3093,20 @@ export default function App() {
                       <button
                         type="button"
                         className="preview-expand"
-                        aria-label="Open large input preview"
-                        title="Larger view"
-                        onClick={() => openStage("input")}
+                        aria-pressed={previewExpanded}
+                        aria-label={
+                          previewExpanded
+                            ? "Collapse input preview"
+                            : "Show full input"
+                        }
+                        title={previewExpanded ? "Collapse" : "Show full input"}
+                        onClick={() => setPreviewExpanded((value) => !value)}
                       >
-                        <Maximize2 size={15} aria-hidden="true" />
+                        {previewExpanded ? (
+                          <Minimize2 size={15} aria-hidden="true" />
+                        ) : (
+                          <Maximize2 size={15} aria-hidden="true" />
+                        )}
                       </button>
                     </div>
                   </div>
@@ -3235,33 +3155,6 @@ export default function App() {
                   <Copy size={14} aria-hidden="true" />
                 </button>
               </div>
-
-              {footerDiagnostics.length > 0 && (
-                <div className="diagnostics">
-                {footerDiagnostics.map((item: Diagnostic, index) =>
-                  item.severity === "info" ? (
-                    <div
-                      className="diagnostic-row info"
-                      key={`${item.code}-${index}`}
-                    >
-                      <CircleHelp size={14} aria-hidden="true" />
-                      <span>{item.message}</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      key={`${item.code}-${index}`}
-                      className={item.severity}
-                      onClick={() => goToControl(diagnosticStep(item.code))}
-                    >
-                      <CircleAlert size={14} aria-hidden="true" />
-                      <span>{item.message}</span>
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
-                  ),
-                )}
-                </div>
-              )}
             </section>
           </div>
 
@@ -3299,6 +3192,9 @@ export default function App() {
                 >
                   <CircleAlert aria-hidden="true" />
                   <span className="footer-status-copy">
+                    {blockingIssues.length > 1 && (
+                      <strong>{blockingIssues.length} issues</strong>
+                    )}
                     <span>{firstBlockingIssue.message}</span>
                   </span>
                   <ChevronRight size={14} aria-hidden="true" />
@@ -3320,106 +3216,6 @@ export default function App() {
             </div>
           </footer>
       </main>
-
-      <dialog
-        ref={stageDialogRef}
-        className="stage-dialog"
-        aria-label="Structure and input stage"
-        onCancel={(event) => {
-          event.preventDefault();
-          closeStage();
-        }}
-        onClick={(event) => {
-          if (event.target === event.currentTarget) closeStage();
-        }}
-      >
-        <header className="stage-dialog-header">
-          <div className="stage-dialog-tabs" role="tablist" aria-label="Stage view">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={stageTab === "model"}
-              className={stageTab === "model" ? "selected" : ""}
-              onClick={() => setStageTab("model")}
-            >
-              Model
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={stageTab === "input"}
-              className={stageTab === "input" ? "selected" : ""}
-              onClick={() => setStageTab("input")}
-            >
-              Input
-            </button>
-          </div>
-          <div className="stage-dialog-meta">
-            {stageTab === "model" ? (
-              <>
-                <ChemicalFormula
-                  formula={analysis.summary.formula}
-                  fallback="Structure"
-                />
-                {" · "}
-                {analysis.structure.source_name ?? "structure"}
-              </>
-            ) : (
-              selectedFile?.name ?? "Generated input"
-            )}
-          </div>
-          <button
-            type="button"
-            className="stage-dialog-close"
-            aria-label="Close stage"
-            onClick={closeStage}
-          >
-            <X size={16} aria-hidden="true" />
-          </button>
-        </header>
-        <div className="stage-dialog-body">
-          {stageTab === "model" ? (
-            <StructureViewer
-              variant="stage"
-              analysis={analysis}
-              generatedCellTreatment={
-                molecularMechanics ? "density" : "padding"
-              }
-              defaultOpen
-            />
-          ) : rendered ? (
-            <div className="stage-dialog-input input-preview">
-              <div className="preview-title">
-                <InputNavigator
-                  rendered={rendered}
-                  selectedFile={selectedFile}
-                  selectedFileIndex={selectedFileIndex}
-                  selectId={stageInputSelectId}
-                  equilibrationFiles={equilibrationFiles}
-                  samplingFiles={samplingFiles}
-                  onSelect={setSelectedFileKey}
-                />
-              </div>
-              {selectedFile && (
-                <div className="preview-continuation">
-                  <code>{selectedFile.start_file}</code>
-                  <ArrowRight size={13} aria-hidden="true" />
-                  <code>{selectedFile.restart_file}</code>
-                </div>
-              )}
-              <pre className="input-preview-body">
-                <InputSource text={deferredStageInputText} />
-              </pre>
-            </div>
-          ) : (
-            <div className="output-empty">
-              <LoaderCircle className="spin" size={22} aria-hidden="true" />
-              <span>Preparing inputs…</span>
-            </div>
-          )}
-        </div>
-        <footer className="stage-dialog-footer">Esc to close</footer>
-      </dialog>
 
       <CommandPalette
         open={paletteOpen}
