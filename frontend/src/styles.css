@@ -461,7 +461,8 @@ kbd {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-top: -4px;
 }
 
 .settings-summary {
@@ -474,10 +475,10 @@ kbd {
 }
 
 .settings-summary > li {
-  padding: 2px 8px;
+  padding: 1px 7px;
   border: 1px solid var(--border);
-  color: var(--ink-soft);
-  font-size: 0.78rem;
+  color: var(--muted);
+  font-size: 0.75rem;
   white-space: nowrap;
 }
 
@@ -1283,8 +1284,30 @@ kbd {
   margin-left: auto;
 }
 
+/* Ghost link: no box, muted text; only hover/focus lift it. */
 .settings-line .settings-chip {
-  height: 26px;
+  height: 24px;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.settings-line .settings-chip > span {
+  color: inherit;
+}
+
+.settings-line .settings-chip:hover,
+.settings-line .settings-chip:focus-visible {
+  color: var(--accent-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.settings-line .settings-chip:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }
 
 .hint-warn {
