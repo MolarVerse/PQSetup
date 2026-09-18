@@ -1437,7 +1437,21 @@ kbd {
 /* Chromeless viewer: bare canvas on the page, controls underneath. */
 
 .viewer-chromeless {
+  display: flex;
+  flex-direction: column;
   border: 0;
+}
+
+.viewer-chromeless .viewer-stage {
+  order: 0;
+}
+
+.viewer-chromeless .viewer-resize {
+  order: 1;
+}
+
+.viewer-chromeless .view-controls {
+  order: 2;
 }
 
 .viewer-chromeless .viewer-stage {
@@ -1512,6 +1526,16 @@ kbd {
 .structure-replace:hover {
   border-color: var(--ink);
   background: var(--surface-subtle);
+}
+
+.structure-replace.selected {
+  border-color: var(--selected);
+  color: #fff;
+  background: var(--selected);
+}
+
+.structure-replace + .structure-replace {
+  margin-left: -4px;
 }
 
 .structure-meta.band-row {
@@ -1706,13 +1730,13 @@ kbd {
   white-space: nowrap;
 }
 
-/* Code pane: the one dark surface on the page. Flat. */
+/* Code pane: Carbon code snippet — white layer, gray-10 body, gutter. */
 
 .input-preview {
   overflow: hidden;
-  border: 1px solid #14191b;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #14191b;
+  background: var(--surface);
 }
 
 .page-input-preview {
@@ -1737,14 +1761,14 @@ kbd {
 }
 
 .preview-title {
-  min-height: 36px;
+  min-height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 var(--pad);
-  border-bottom: 1px solid #263034;
-  color: #cfd8d6;
+  padding: 0 8px 0 var(--pad);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
   font-size: 0.86rem;
   font-weight: 500;
 }
@@ -1759,49 +1783,59 @@ kbd {
   white-space: nowrap;
 }
 
+.preview-title > span > svg {
+  color: var(--muted);
+}
+
 .preview-title .preview-navigator {
   flex: 1;
   min-width: 0;
-  margin: 0 calc(var(--pad) * -1);
+  max-width: 480px;
+  height: 40px;
+  margin: 0 0 0 calc(var(--pad) * -1);
   border: 0;
+  border-right: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
 }
 
-.preview-title .preview-navigator button {
-  color: #9fb0ad;
-}
-
-.preview-title .preview-navigator button:hover:not(:disabled) {
-  color: #e6ecea;
-  background: rgb(255 255 255 / 6%);
-}
-
 .preview-title .preview-navigator select {
-  color: #e6ecea;
-  background-color: transparent;
-  border-color: #263034;
+  border-color: var(--border);
 }
 
-.preview-title .preview-navigator output {
-  color: #8a9a97;
-}
-
-.preview-continuation {
-  min-height: 28px;
-  display: flex;
+.preview-title-actions {
+  display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 3px var(--pad);
-  border-bottom: 1px solid #263034;
-  color: #8a9a97;
-  background: transparent;
-  font: 0.78rem var(--mono);
+  gap: 4px;
+  margin-left: auto;
 }
 
-.preview-continuation code {
-  color: #c4cfcc;
+.preview-expand {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+}
+
+.preview-expand:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-subtle);
+}
+
+.preview-expand:disabled {
+  color: var(--border-strong);
+  cursor: default;
+}
+
+.preview-expand[aria-pressed="true"] {
+  color: var(--accent-dark);
 }
 
 .input-preview pre,
@@ -1810,11 +1844,11 @@ kbd {
   min-height: 200px;
   overflow: auto;
   margin: 0;
-  padding: 12px var(--pad) 16px;
-  color: #e6ecea;
-  font: 0.86rem/1.55 var(--mono);
+  padding: 10px 0 14px;
+  color: var(--ink);
+  background: var(--surface-subtle);
+  font: 0.86rem/1.6 var(--mono);
   tab-size: 2;
-  /* Keep box-drawing banners column-aligned. */
   white-space: pre;
   scrollbar-width: thin;
   contain: layout paint;
@@ -1822,41 +1856,63 @@ kbd {
 
 .input-source {
   display: block;
+  counter-reset: line;
   font: inherit;
   white-space: inherit;
 }
 
+/* One block per line; gutter from a CSS counter so copy/paste stays clean. */
 .src-line {
-  display: inline;
+  display: block;
+  min-height: 1.6em;
+  padding: 0 var(--pad) 0 0;
 }
 
-.src-banner {
-  color: #5fb7cc;
+.src-line::before {
+  content: counter(line);
+  counter-increment: line;
+  display: inline-block;
+  width: 44px;
+  margin-right: 12px;
+  padding-right: 8px;
+  color: var(--border-strong);
+  text-align: right;
+  user-select: none;
+}
+
+.src-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.src-meta,
+.src-comment {
+  color: var(--muted);
+}
+
+.src-meta-label {
+  color: var(--muted);
+}
+
+.src-meta-value {
+  color: var(--ink-soft);
 }
 
 .src-section {
-  color: #86c99a;
+  color: var(--ink-soft);
   font-weight: 500;
 }
 
-.src-comment {
-  color: #6b7a78;
-}
-
 .src-key {
-  color: #9cd0e2;
+  color: var(--accent-dark);
 }
 
 .src-eq {
-  color: #6f807e;
+  color: var(--muted);
 }
 
 .src-value {
-  color: #e6ecea;
-}
-
-.src-assign .src-value {
-  color: #f1f5f4;
+  color: var(--ink);
 }
 
 /* Carbon primary button: blue-60 fill, square, left-aligned label. */
@@ -2269,37 +2325,6 @@ kbd {
 
 .view-controls .fit-view {
   margin-left: auto;
-}
-
-.preview-title-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-}
-
-.preview-expand {
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.preview-title .preview-expand {
-  border-color: #263034;
-  color: #9fb0ad;
-}
-
-.preview-title .preview-expand:hover {
-  border-color: #4a5a5e;
-  color: #e6ecea;
 }
 
 .viewer-heading-actions {

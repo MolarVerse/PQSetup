@@ -1,5 +1,4 @@
 import {
-  ArrowRight,
   Atom,
   BookOpen,
   Boxes,
@@ -20,6 +19,7 @@ import {
   Maximize2,
   Minimize2,
   Package as PackageIcon,
+  Rotate3d,
   Search,
   Sparkles,
   Terminal,
@@ -823,6 +823,7 @@ export default function App() {
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [structureOpen, setStructureOpen] = useState(false);
   const [openOption, setOpenOption] = useState<RunOpenOption | null>(null);
   const generatedInputSelectId = useId();
   const searchShortcut =
@@ -1640,6 +1641,17 @@ export default function App() {
         }),
       ),
       {
+        id: "structure-3d",
+        group: "Actions",
+        label: "View structure in 3D",
+        detail: `${analysis.summary.formula} · ${analysis.summary.atom_count} atoms`,
+        keywords: ["3d", "viewer", "model", "rotate", "structure", "show"],
+        run: () => {
+          setStructureOpen(true);
+          goToControl("system");
+        },
+      },
+      {
         id: "import",
         group: "Actions",
         label: "Import a structure",
@@ -1691,6 +1703,8 @@ export default function App() {
     ];
   }, [
     analysis.structure.cell_generated,
+    analysis.summary.atom_count,
+    analysis.summary.formula,
     bootstrap,
     createRun,
     displayedDiagnostics,
@@ -2147,13 +2161,6 @@ export default function App() {
                 onChange={onFileChange}
               />
               <div className="structure-card">
-                <StructureViewer
-                  chromeless
-                  analysis={analysis}
-                  generatedCellTreatment={
-                    molecularMechanics ? "density" : "padding"
-                  }
-                />
                 <div
                   className="structure-summary"
                   aria-label="Current structure. Drop a file here to replace it."
@@ -2191,6 +2198,19 @@ export default function App() {
                   )}
                   <button
                     type="button"
+                    className={`structure-replace${
+                      structureOpen ? " selected" : ""
+                    }`}
+                    aria-expanded={structureOpen}
+                    aria-controls="structure-viewer"
+                    title={structureOpen ? "Hide 3D view" : "View in 3D"}
+                    onClick={() => setStructureOpen((value) => !value)}
+                  >
+                    <Rotate3d size={14} aria-hidden="true" />
+                    3D
+                  </button>
+                  <button
+                    type="button"
                     className="structure-replace"
                     aria-label="Import structure"
                     title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · or drop a file here"
@@ -2200,6 +2220,18 @@ export default function App() {
                     Import
                   </button>
                 </div>
+
+                {structureOpen && (
+                  <div id="structure-viewer">
+                    <StructureViewer
+                      chromeless
+                      analysis={analysis}
+                      generatedCellTreatment={
+                        molecularMechanics ? "density" : "padding"
+                      }
+                    />
+                  </div>
+                )}
 
                 <div className="structure-meta band-row">
                   <div
@@ -3093,6 +3125,20 @@ export default function App() {
                       <button
                         type="button"
                         className="preview-expand"
+                        aria-label="Copy input"
+                        title="Copy input"
+                        disabled={!selectedFile?.input_text}
+                        onClick={() =>
+                          void navigator.clipboard.writeText(
+                            selectedFile?.input_text ?? "",
+                          )
+                        }
+                      >
+                        <Copy size={14} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="preview-expand"
                         aria-pressed={previewExpanded}
                         aria-label={
                           previewExpanded
@@ -3110,13 +3156,6 @@ export default function App() {
                       </button>
                     </div>
                   </div>
-                  {selectedFile && (
-                    <div className="preview-continuation">
-                      <code>{selectedFile.start_file}</code>
-                      <ArrowRight size={13} aria-hidden="true" />
-                      <code>{selectedFile.restart_file}</code>
-                    </div>
-                  )}
                   <pre className="input-preview-body">
                     <InputSource text={deferredStageInputText} />
                   </pre>
@@ -3136,7 +3175,7 @@ export default function App() {
                     />
                   )}
                   <FileCode2 size={16} aria-hidden="true" />
-                  <strong>input</strong>
+                  <strong>Generating input…</strong>
                 </div>
               )}
 

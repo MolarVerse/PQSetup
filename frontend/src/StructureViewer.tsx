@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Focus,
-  Maximize2,
   Move3d,
   Rotate3d,
 } from "lucide-react";
@@ -67,8 +66,6 @@ interface StructureViewerProps {
   /** Initial open state override (tests). */
   defaultOpen?: boolean;
   variant?: "inline" | "stage";
-  /** Open the large stage overlay (inline variant only). */
-  onStageOpen?: () => void;
   /** Always-open inline canvas without its own heading (page embeds). */
   chromeless?: boolean;
 }
@@ -164,7 +161,6 @@ export default function StructureViewer({
   importNonce = 0,
   defaultOpen,
   variant = "inline",
-  onStageOpen,
   chromeless = false,
 }: StructureViewerProps) {
   const isStage = variant === "stage";
@@ -478,17 +474,6 @@ export default function StructureViewer({
         </div>
         {!isStage && (
           <div className="viewer-heading-actions">
-            {onStageOpen && (
-              <button
-                type="button"
-                className="stage-expand"
-                aria-label="Open large structure view"
-                title="Open large view"
-                onClick={onStageOpen}
-              >
-                <Maximize2 size={15} aria-hidden="true" />
-              </button>
-            )}
             <button
               type="button"
               className="viewer-toggle"
@@ -653,7 +638,7 @@ export default function StructureViewer({
           </button>
         )}
       </div>
-      {!isStage && !chromeless && (
+      {!isStage && (
         <button
           type="button"
           className="viewer-resize"
