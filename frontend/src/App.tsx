@@ -11,6 +11,7 @@ import {
   CircleDashed,
   Copy,
   FileCode2,
+  FolderOpen,
   Flame,
   Gauge,
   LoaderCircle,
@@ -23,7 +24,6 @@ import {
   Terminal,
   Thermometer,
   Timer,
-  TrendingUp,
   Upload,
   X,
   Zap,
@@ -56,8 +56,8 @@ import Info from "./Info";
 import Modal from "./Modal";
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
-  mmSettingsSummary,
-  qmSettingsSummary,
+  settingsLines,
+  usesTopology,
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
@@ -77,8 +77,9 @@ import {
   MM_MODES,
   packagedSetupFileName,
   preferredRunner,
-  pressureFileSpecs,
   qmSetupFileSpecs,
+  companionRoleForFileName,
+  isStructureFileName,
   recommendedRunnerScript,
   selectedExternalQMScript,
   setupFileSpecs,
@@ -346,6 +347,40 @@ function withSetupFileName(
   return { ...setup, turbomole_define_template_file: name };
 }
 
+/** Flatten a drop into files; dropped folders are read one level deep. */
+async function filesFromDrop(transfer: DataTransfer): Promise<File[]> {
+  const items = Array.from(transfer.items ?? []);
+  const entries = items
+    .map((item) =>
+      "webkitGetAsEntry" in item ? item.webkitGetAsEntry() : null,
+    )
+    .filter((entry): entry is FileSystemEntry => entry != null);
+  if (entries.length === 0 || !entries.some((entry) => entry.isDirectory)) {
+    return Array.from(transfer.files);
+  }
+  const files: File[] = [];
+  const readEntry = (entry: FileSystemEntry, depth: number): Promise<void> =>
+    new Promise((resolve) => {
+      if (entry.isFile) {
+        (entry as FileSystemFileEntry).file((file) => {
+          files.push(file);
+          resolve();
+        }, () => resolve());
+      } else if (entry.isDirectory && depth < 2) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        reader.readEntries((children) => {
+          void Promise.all(
+            children.map((child) => readEntry(child, depth + 1)),
+          ).then(() => resolve());
+        }, () => resolve());
+      } else {
+        resolve();
+      }
+    });
+  await Promise.all(entries.map((entry) => readEntry(entry, 0)));
+  return files;
+}
+
 function formatError(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
@@ -362,19 +397,22 @@ function Field({
   unit,
   info,
   controlId,
+  wide,
   children,
 }: {
   label: ReactNode;
   unit?: string;
   info?: string;
   controlId?: string;
+  /** Span two grid columns, for selects with long option labels. */
+  wide?: boolean;
   children: ReactElement<{ id?: string }>;
 }) {
   const generatedFieldId = useId();
   const fieldId = controlId ?? generatedFieldId;
 
   return (
-    <div className="field">
+    <div className={wide ? "field field-wide" : "field"}>
       <span className="field-label">
         <label htmlFor={fieldId}>{label}</label>
         <span className="field-label-tools">
@@ -396,13 +434,6 @@ type ThermostatSettings = Pick<
   | "coupling_frequency_cm_inverse"
 >;
 
-type TemperatureScheduleSettings = Pick<
-  SimulationSetup,
-  | "start_temperature_k"
-  | "temperature_ramp_steps"
-  | "temperature_ramp_frequency"
->;
-
 function TemperatureCoupling({
   value,
   onChange,
@@ -415,7 +446,7 @@ function TemperatureCoupling({
   return (
     <section className="coupling-section" aria-label="Temperature coupling">
       <div className="form-grid coupling-grid">
-        <Field label="Thermostat" controlId={controlId}>
+        <Field label="Thermostat" controlId={controlId} wide>
           <select
             value={value.thermostat ?? "velocity_rescaling"}
             onChange={(event) => onChange({ thermostat: event.target.value })}
@@ -493,62 +524,6 @@ function TemperatureCoupling({
   );
 }
 
-function TemperatureRampContent({
-  value,
-  onChange,
-}: {
-  value: TemperatureScheduleSettings;
-  onChange: (patch: Partial<TemperatureScheduleSettings>) => void;
-}) {
-  return (
-    <div className="form-grid schedule-grid">
-      <Field label="Start temperature" unit="K">
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          value={value.start_temperature_k ?? ""}
-          onChange={(event) =>
-            onChange({
-              start_temperature_k: event.target.value
-                ? Number(event.target.value)
-                : null,
-            })
-          }
-        />
-      </Field>
-      <Field label="Ramp steps">
-        <input
-          type="number"
-          min="0"
-          step="1"
-          value={value.temperature_ramp_steps ?? ""}
-          onChange={(event) =>
-            onChange({
-              temperature_ramp_steps: event.target.value
-                ? Number(event.target.value)
-                : null,
-            })
-          }
-        />
-      </Field>
-      <Field label="Ramp frequency" unit="steps">
-        <input
-          type="number"
-          min="1"
-          step="1"
-          value={value.temperature_ramp_frequency}
-          onChange={(event) =>
-            onChange({
-              temperature_ramp_frequency: Number(event.target.value),
-            })
-          }
-        />
-      </Field>
-    </div>
-  );
-}
-
 type ManostatSettings = Pick<
   SimulationSetup,
   | "manostat"
@@ -569,10 +544,7 @@ function PressureCoupling({
   return (
     <section className="coupling-section" aria-label="Pressure coupling">
       <div className="form-grid coupling-grid">
-        <Field
-          label="Manostat"
-          controlId={controlId}
-        >
+        <Field label="Manostat" controlId={controlId} wide>
           <select
             value={value.manostat ?? "stochastic_rescaling"}
             onChange={(event) => onChange({ manostat: event.target.value })}
@@ -612,7 +584,7 @@ function PressureCoupling({
             }
           />
         </Field>
-        <Field label="Cell response">
+        <Field label="Cell response" wide>
           <select
             value={value.pressure_isotropy}
             onChange={(event) =>
@@ -748,7 +720,7 @@ function ConditionRow({
   title: string;
   hint?: ReactNode;
   info?: string;
-  toggle?: { label: string; checked: boolean; onChange: (on: boolean) => void };
+  toggle?: { label?: string; checked: boolean; onChange: (on: boolean) => void };
   action?: ReactNode;
   className?: string;
   children: ReactNode;
@@ -762,9 +734,10 @@ function ConditionRow({
         {hint && <span className="condition-hint">{hint}</span>}
         {toggle && (
           <label className="condition-toggle">
-            <span>{toggle.label}</span>
+            {toggle.label && <span>{toggle.label}</span>}
             <input
               type="checkbox"
+              aria-label={toggle.label ?? title}
               checked={toggle.checked}
               onChange={(event) => toggle.onChange(event.target.checked)}
             />
@@ -773,9 +746,11 @@ function ConditionRow({
         )}
         {action && <div className="condition-action">{action}</div>}
       </div>
-      <div className={`condition-fields${className ? ` ${className}` : ""}`}>
-        {children}
-      </div>
+      {children && (
+        <div className={`condition-fields${className ? ` ${className}` : ""}`}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -797,17 +772,18 @@ function SettingsChip({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-/** Advanced button under the model selection, with non-default settings as tags. */
+/** Advanced button under the model selection; the keywords in force follow
+ *  in input-file form, so what you read here is what the file will say. */
 function SettingsLine({ parts, onOpen }: { parts: string[]; onOpen: () => void }) {
   return (
     <div className="settings-line condition-full">
       <SettingsChip onOpen={onOpen} />
       {parts.length > 0 && (
-        <ul className="settings-summary" aria-label="Advanced settings in use">
+        <code className="settings-summary" aria-label="Advanced settings in use">
           {parts.map((part) => (
-            <li key={part}>{part}</li>
+            <span key={part}>{part}</span>
           ))}
-        </ul>
+        </code>
       )}
     </div>
   );
@@ -921,6 +897,7 @@ export default function App() {
     message: string;
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
@@ -951,22 +928,23 @@ export default function App() {
     preparation != null &&
     (preparation.sigma_angstrom !== sigma ||
       preparation.seed !== setup.random_seed);
-  // A ramp is "on" when a start temperature is set; off clears the schedule.
-  const rampEnabled = setup.start_temperature_k != null;
-  const setRampEnabled = useCallback((on: boolean) => {
-    setSetup((existing) => ({
-      ...existing,
-      preset_id: null,
-      start_temperature_k: on
-        ? existing.start_temperature_k ??
-          Math.round((existing.temperature_k ?? 300) / 3)
-        : null,
-      temperature_ramp_steps: on
-        ? existing.temperature_ramp_steps ??
-          Math.max(1, Math.round((existing.steps ?? 1000) / 2))
-        : null,
-    }));
-  }, []);
+  // Hydrogen moves fast: above 0.5 fs its bonds need constraints.
+  const hasHydrogen = analysis.structure.atoms.some(
+    (atom) => atom.symbol.toUpperCase() === "H",
+  );
+  const constrainedBonds =
+    molecularMechanics &&
+    usesTopology(setup.mm_force_field) &&
+    setup.extra_settings.shake === true;
+  const timestepWarning =
+    hasHydrogen &&
+    !constrainedBonds &&
+    setup.timestep_fs != null &&
+    setup.timestep_fs > 0.5
+      ? molecularMechanics && usesTopology(setup.mm_force_field)
+        ? "H present: use ≤ 0.5 fs or turn on SHAKE in Advanced"
+        : "H present: use ≤ 0.5 fs"
+      : undefined;
 
   // The form remembers every choice; only what is visible reaches the input.
   const effective = useMemo(
@@ -1006,12 +984,6 @@ export default function App() {
       setup.runner_script,
     ],
   );
-  // The NPT molecule descriptor belongs to the Pressure row in Run, so
-  // choosing an ensemble never changes the Method section above it.
-  const pressureFiles = useMemo(
-    () => pressureFileSpecs(setup.job_type, setup.ensemble),
-    [setup.ensemble, setup.job_type],
-  );
   const methodFilesHint = useMemo(() => {
     const required = methodFileSpecs.filter((spec) => !spec.optional);
     const added = required.filter((spec) =>
@@ -1027,10 +999,7 @@ export default function App() {
     () => activeFilesForSpecs(methodFileSpecs, setupFiles),
     [methodFileSpecs, setupFiles],
   );
-  const activeSetupFiles = useMemo(
-    () => activeFilesForSpecs([...methodFileSpecs, ...pressureFiles], setupFiles),
-    [methodFileSpecs, pressureFiles, setupFiles],
-  );
+  const activeSetupFiles = methodSetupFiles; // everything the package ships
   const setupFileReferences = useMemo(
     () =>
       activeSetupFiles.map(({ role, name, content }) => ({
@@ -1968,9 +1937,66 @@ export default function App() {
   }
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (file) void useFile(file);
+    if (files.length > 0) void importFiles(files);
+  }
+
+  async function addSetupFile(role: SetupFileRole, file: File) {
+    const content = await file.text();
+    const packageName = packagedSetupFileName(role, file.name);
+    setSetupFiles((existing) => [
+      ...existing.filter((item) => item.role !== role),
+      { role, name: packageName, content },
+    ]);
+    setSetup((existing) => withSetupFileName(existing, role, packageName));
+  }
+
+  /**
+   * Import a structure together with whatever companion files sit next to
+   * it: a multi-select, a dropped folder, or a folder picked with "Folder".
+   * Companions are sorted by name; the structure (an .rst wins) is analysed.
+   */
+  async function importFiles(files: File[]) {
+    const structures = files.filter((file) => isStructureFileName(file.name));
+    const structure =
+      structures.find((file) => file.name.toLowerCase().endsWith(".rst")) ??
+      structures[0] ??
+      null;
+    const companions = new Map<SetupFileRole, File>();
+    for (const file of files) {
+      if (file === structure) continue;
+      const role = companionRoleForFileName(file.name);
+      if (role && !companions.has(role)) companions.set(role, file);
+    }
+    try {
+      await Promise.all(
+        [...companions].map(([role, file]) => addSetupFile(role, file)),
+      );
+    } catch (error) {
+      setNotice({ kind: "error", message: formatError(error) });
+      return;
+    }
+    if (structure) {
+      await useFile(structure);
+    }
+    if (companions.size > 0) {
+      const roles = [...companions.keys()]
+        .map((role) => defaultSetupFileName(role).split(".")[0])
+        .join(", ");
+      setNotice({
+        kind: "success",
+        message: structure
+          ? `${structure.name} · ${roles}`
+          : `Added ${roles}`,
+      });
+    } else if (!structure) {
+      const names = files.map((file) => file.name).slice(0, 3).join(", ");
+      setNotice({
+        kind: "error",
+        message: `${names}: not a structure (.rst, .xyz, .cif, .pdb, .mol, .sdf, .traj) or a companion file.`,
+      });
+    }
   }
 
   async function applyJitter() {
@@ -2123,13 +2149,7 @@ export default function App() {
     if (!file) return;
 
     try {
-      const content = await file.text();
-      const packageName = packagedSetupFileName(role, file.name);
-      setSetupFiles((existing) => [
-        ...existing.filter((item) => item.role !== role),
-        { role, name: packageName, content },
-      ]);
-      setSetup((existing) => withSetupFileName(existing, role, packageName));
+      await addSetupFile(role, file);
     } catch (error) {
       setNotice({ kind: "error", message: formatError(error) });
     }
@@ -2292,18 +2312,28 @@ export default function App() {
                 ref={fileInput}
                 className="visually-hidden"
                 type="file"
-                accept=".rst,.xyz,.cif,.pdb,.mol,.sdf,.traj,.extxyz"
+                multiple
+                accept=".rst,.xyz,.cif,.pdb,.mol,.sdf,.traj,.extxyz,.dat,.template,.hsd"
                 onChange={onFileChange}
+              />
+              <input
+                ref={folderInput}
+                className="visually-hidden"
+                type="file"
+                multiple
+                onChange={onFileChange}
+                {...{ webkitdirectory: "" }}
               />
               <div className="structure-card">
                 <div
                   className="structure-summary"
-                  aria-label="Current structure. Drop a file here to replace it."
+                  aria-label="Current structure. Drop a file or a run folder here."
                   onDragOver={(event) => event.preventDefault()}
                   onDrop={(event: DragEvent<HTMLDivElement>) => {
                     event.preventDefault();
-                    const file = event.dataTransfer.files[0];
-                    if (file) void useFile(file);
+                    void filesFromDrop(event.dataTransfer).then((files) => {
+                      if (files.length > 0) void importFiles(files);
+                    });
                   }}
                 >
                   <div className="file-icon">
@@ -2345,11 +2375,21 @@ export default function App() {
                     type="button"
                     className="structure-replace"
                     aria-label="Import structure"
-                    title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · or drop a file here"
+                    title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · select companion files along, or drop them here"
                     onClick={openFilePicker}
                   >
                     <Upload size={14} aria-hidden="true" />
                     Import
+                  </button>
+                  <button
+                    type="button"
+                    className="structure-replace"
+                    aria-label="Import a run folder"
+                    title="Pick a folder: the structure and companion files (moldescriptor, guff, topology, …) are sorted by name"
+                    onClick={() => folderInput.current?.click()}
+                  >
+                    <FolderOpen size={14} aria-hidden="true" />
+                    Folder
                   </button>
                 </div>
 
@@ -2558,7 +2598,7 @@ export default function App() {
                       )}
                     {setup.runner && (
                       <SettingsLine
-                        parts={qmSettingsSummary(effective)}
+                        parts={settingsLines(effective)}
                         onOpen={() => setModal("calculator")}
                       />
                     )}
@@ -2636,7 +2676,7 @@ export default function App() {
                       />
                     </Field>
                     <SettingsLine
-                      parts={mmSettingsSummary(effective)}
+                      parts={settingsLines(effective)}
                       onOpen={() => setModal("calculator")}
                     />
                   </ConditionRow>
@@ -2647,6 +2687,11 @@ export default function App() {
                     icon={Upload}
                     title="Files"
                     hint={methodFilesHint}
+                    info={
+                      molecularMechanics
+                        ? "Force-field files PQ reads next to the input. Drop a run folder on the structure to add them all at once."
+                        : "Optional files are packed only when added. The molecule descriptor is read under pressure coupling (NPT) and ignored otherwise."
+                    }
                   >
                     <div className="condition-full">
                       {molecularMechanics && !hasTypedMolecules && (
@@ -2724,15 +2769,6 @@ export default function App() {
                     ? undefined
                     : "NVE has no thermostat: this temperature only seeds the initial velocities."
                 }
-                toggle={
-                  thermalEnsemble
-                    ? {
-                        label: "Ramp",
-                        checked: rampEnabled,
-                        onChange: setRampEnabled,
-                      }
-                    : undefined
-                }
               >
                 <Field
                   label="Target"
@@ -2767,23 +2803,56 @@ export default function App() {
                     }
                   />
                 )}
-                {thermalEnsemble && rampEnabled && (
-                  <div className="condition-subrow">
-                    <span className="condition-sublabel">
-                      <TrendingUp size={13} aria-hidden="true" />
-                      Ramp
-                    </span>
-                    <TemperatureRampContent
-                      value={setup}
-                      onChange={(patch) =>
+                {thermalEnsemble && (
+                  <Field
+                    label="Start"
+                    unit="K"
+                    controlId="sampling-start-temperature"
+                    info="Optional. A different start temperature ramps linearly to the target over the ramp steps (or the whole run)."
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="= target"
+                      value={setup.start_temperature_k ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value
+                          ? Number(event.target.value)
+                          : null;
                         setSetup((existing) => ({
                           ...existing,
                           preset_id: null,
-                          ...patch,
+                          start_temperature_k: value,
+                          temperature_ramp_steps:
+                            value == null ? null : existing.temperature_ramp_steps,
+                        }));
+                      }}
+                    />
+                  </Field>
+                )}
+                {thermalEnsemble && (
+                  <Field label="Ramp" unit="steps" controlId="sampling-ramp-steps">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      disabled={setup.start_temperature_k == null}
+                      placeholder={
+                        setup.start_temperature_k == null ? "—" : "whole run"
+                      }
+                      value={setup.temperature_ramp_steps ?? ""}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          temperature_ramp_steps: event.target.value
+                            ? Number(event.target.value)
+                            : null,
                         }))
                       }
                     />
-                  </div>
+                  </Field>
                 )}
               </ConditionRow>
 
@@ -2819,32 +2888,19 @@ export default function App() {
                       }))
                     }
                   />
-                  {pressureFiles.length > 0 && (
-                    <div className="condition-subrow condition-subrow-files">
-                      <span className="condition-sublabel">
-                        <Upload size={13} aria-hidden="true" />
-                        Molecules
-                        <Info text="Pressure coupling needs the molecular virial, so PQ reads a molecule descriptor. Without one, PQSetup packs a water descriptor." />
-                      </span>
-                      <SetupFileList
-                        specs={pressureFiles}
-                        files={setupFiles}
-                        onChoose={chooseSetupFile}
-                      />
-                    </div>
-                  )}
                 </ConditionRow>
               )}
 
               <ConditionRow
                 icon={Timer}
                 title="Steps"
-                hint={samplingSpan}
-                toggle={{
-                  label: "Equilibration",
-                  checked: Boolean(equilibration),
-                  onChange: chooseProtocol,
-                }}
+                hint={
+                  timestepWarning ? (
+                    <span className="hint-warn">{timestepWarning}</span>
+                  ) : (
+                    samplingSpan
+                  )
+                }
               >
                 <Field label="Sampling" unit="steps" controlId="sampling-steps">
                   <input
@@ -2906,55 +2962,85 @@ export default function App() {
                     }}
                   />
                 </Field>
-                {equilibration && (
-                  <div className="condition-subrow">
-                    <span className="condition-sublabel">
-                      <Flame size={13} aria-hidden="true" />
-                      Equilibration
-                      <Info text="A separate NVT stage (run-eq.in) with a Berendsen thermostat, 0.1 ps. Sampling run 01 continues from its restart file." />
+              </ConditionRow>
+
+              {/* A separate NVT stage written as run-eq.in; sampling run 01
+                  continues from its restart file. */}
+              <ConditionRow
+                icon={Flame}
+                title="Equilibration"
+                info="An NVT stage that runs before sampling, written as run-eq.in. Sampling run 01 starts from its restart file, velocities included."
+                hint={
+                  equilibration ? (
+                    "NVT · runs first"
+                  ) : setup.ensemble === "NPT" ? (
+                    <span className="hint-warn">
+                      recommended before pressure coupling
                     </span>
-                    <div className="form-grid stage-primary-grid">
-                      <Field label="Steps">
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          value={equilibration.steps}
-                          onChange={(event) =>
-                            updateEquilibration({
-                              steps: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </Field>
-                      <Field label="Timestep" unit="fs">
-                        <input
-                          type="number"
-                          min="0.000001"
-                          step="0.1"
-                          value={equilibration.timestep_fs}
-                          onChange={(event) =>
-                            updateEquilibration({
-                              timestep_fs: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </Field>
-                      <Field label="Temperature" unit="K">
-                        <input
-                          type="number"
-                          min="0.000001"
-                          step="0.01"
-                          value={equilibration.temperature_k}
-                          onChange={(event) =>
-                            updateEquilibration({
-                              temperature_k: Number(event.target.value),
-                            })
-                          }
-                        />
-                      </Field>
-                    </div>
-                  </div>
+                  ) : (
+                    "off"
+                  )
+                }
+                toggle={{
+                  checked: Boolean(equilibration),
+                  onChange: chooseProtocol,
+                }}
+              >
+                {equilibration && (
+                  <>
+                    <Field label="Steps" controlId="equilibration-steps">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={equilibration.steps}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            steps: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Timestep" unit="fs">
+                      <input
+                        type="number"
+                        min="0.000001"
+                        step="0.1"
+                        value={equilibration.timestep_fs}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            timestep_fs: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Temperature" unit="K">
+                      <input
+                        type="number"
+                        min="0.000001"
+                        step="0.01"
+                        value={equilibration.temperature_k}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            temperature_k: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <TemperatureCoupling
+                      value={equilibration}
+                      controlId="equilibration-thermostat"
+                      onChange={(patch) =>
+                        updateEquilibration({
+                          ...patch,
+                          thermostat: patch.thermostat ?? equilibration.thermostat,
+                          thermostat_relaxation_ps:
+                            patch.thermostat_relaxation_ps ??
+                            equilibration.thermostat_relaxation_ps,
+                        })
+                      }
+                    />
+                  </>
                 )}
               </ConditionRow>
               </div>

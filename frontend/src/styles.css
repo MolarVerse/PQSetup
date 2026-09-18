@@ -468,17 +468,15 @@ kbd {
 .settings-summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px 14px;
   margin: 0;
   padding: 0;
-  list-style: none;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.6;
 }
 
-.settings-summary > li {
-  padding: 1px 7px;
-  border: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.75rem;
+.settings-summary > span {
   white-space: nowrap;
 }
 
@@ -1611,6 +1609,10 @@ kbd {
   display: contents;
 }
 
+.condition-fields .field-wide {
+  grid-column: span 2;
+}
+
 .condition-fields .field-label {
   white-space: nowrap;
   overflow: hidden;
@@ -1641,15 +1643,6 @@ kbd {
   color: var(--accent-dark);
 }
 
-/* A file picker in a sub-row: single column, label centred on the row. */
-.condition-subrow-files .condition-sublabel {
-  margin-top: 0;
-  min-height: 52px;
-}
-
-.condition-subrow-files .setup-file-list {
-  grid-template-columns: minmax(0, 1fr);
-}
 
 .condition-subrow .schedule-grid,
 .condition-subrow .stage-primary-grid {
@@ -3062,8 +3055,7 @@ kbd {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .condition-sublabel,
-  .condition-subrow-files .condition-sublabel {
+  .condition-sublabel {
     min-height: 0;
     margin-top: 0;
   }

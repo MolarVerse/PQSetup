@@ -7,7 +7,8 @@ import {
   mmModeLabel,
   packagedSetupFileName,
   preferredRunner,
-  pressureFileSpecs,
+  companionRoleForFileName,
+  isStructureFileName,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
@@ -114,10 +115,14 @@ describe("molecular mechanics method", () => {
 });
 
 describe("QM companion files", () => {
-  it("requests only files required by the selected calculator", () => {
-    expect(qmSetupFileSpecs("ase_xtb")).toEqual([]);
+  it("lists the optional molecule descriptor plus what the calculator needs", () => {
+    expect(qmSetupFileSpecs("ase_xtb").map((file) => file.role)).toEqual([
+      "moldescriptor",
+    ]);
+    expect(qmSetupFileSpecs("ase_xtb")[0]?.optional).toBe(true);
     expect(qmSetupFileSpecs("dftbplus").map((file) => file.role)).toEqual([
       "dftb_template",
+      "moldescriptor",
     ]);
     expect(qmSetupFileSpecs("dftbplus").every((file) => file.optional)).toBe(
       true,
@@ -125,13 +130,24 @@ describe("QM companion files", () => {
     expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
   });
 
-  it("keeps the NPT molecule descriptor with pressure, not the calculator", () => {
-    expect(pressureFileSpecs("qm-md", "NVT")).toEqual([]);
-    expect(pressureFileSpecs("mm-md", "NPT")).toEqual([]);
-    expect(pressureFileSpecs("qm-md", "NPT").map((file) => file.role)).toEqual(
-      ["moldescriptor"],
+  it("sorts a dropped folder into structure and companion files", () => {
+    expect(isStructureFileName("water.rst")).toBe(true);
+    expect(isStructureFileName("run-01.in")).toBe(false);
+    expect(companionRoleForFileName("moldescriptor.dat")).toBe("moldescriptor");
+    expect(companionRoleForFileName("water_moldescriptor.dat")).toBe(
+      "moldescriptor",
     );
-    expect(pressureFileSpecs("qm-md", "NPT")[0]?.optional).toBe(true);
+    expect(companionRoleForFileName("guff.dat")).toBe("guff");
+    expect(companionRoleForFileName("topology.dat")).toBe("topology");
+    expect(companionRoleForFileName("parameter.dat")).toBe("parameter");
+    expect(companionRoleForFileName("intra-nonbonded.dat")).toBe(
+      "intra_nonbonded",
+    );
+    expect(companionRoleForFileName("dftb_in.template")).toBe("dftb_template");
+    expect(companionRoleForFileName("tm_define.template")).toBe(
+      "turbomole_define_template",
+    );
+    expect(companionRoleForFileName("notes.txt")).toBeNull();
   });
 
   it("requires an explicit PySCF method without installed capabilities", () => {
@@ -188,7 +204,7 @@ describe("QM companion files", () => {
       qmSetupFileSpecs("turbomole", "turbomole_rimp2", capabilities).map(
         (file) => file.role,
       ),
-    ).toEqual(["turbomole_define_template"]);
+    ).toEqual(["turbomole_define_template", "moldescriptor"]);
     expect(defaultSetupFileName("turbomole_define_template")).toBe(
       "tm_define.template",
     );

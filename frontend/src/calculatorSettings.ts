@@ -274,6 +274,24 @@ export function pruneExtraSettings(setup: SimulationSetup): ExtraSettings {
   return next;
 }
 
+/**
+ * The advanced keywords in force, in input-file form (`key = value;`), so the
+ * line under "Advanced" reads exactly like the file it produces.
+ */
+export function settingsLines(setup: SimulationSetup): string[] {
+  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS]);
+  const allowed = applicableSettingKeys(setup);
+  return Object.keys(setup.extra_settings)
+    .filter((key) => owned.has(key) && allowed.has(key))
+    .sort()
+    .map((key) => {
+      const value = setup.extra_settings[key];
+      const text =
+        typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+      return `${key} = ${text};`;
+    });
+}
+
 function label(options: ChoiceOption[], value: string): string {
   return options.find((option) => option.value === value)?.label ?? value;
 }

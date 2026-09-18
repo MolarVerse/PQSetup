@@ -1,5 +1,4 @@
 import type {
-  Ensemble,
   ExternalQMCapabilities,
   ExternalQMProgram,
   ExternalQMScript,
@@ -173,10 +172,10 @@ export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
 }
 
 /**
- * Files the QM calculator itself needs. Deliberately independent of the
- * ensemble: the page reads top to bottom, so a Run choice must never change
- * the Method section above it. NPT's molecule descriptor lives with Pressure
- * (see `pressureFileSpecs`).
+ * Files a QM run may need. Independent of the ensemble: the page reads top to
+ * bottom, so a Run choice must never change the Method section above it. The
+ * molecule descriptor is therefore always listed (optional); PQ reads it for
+ * the molecular virial under pressure coupling and ignores it otherwise.
  */
 export function qmSetupFileSpecs(
   runner: string | null,
@@ -193,22 +192,51 @@ export function qmSetupFileSpecs(
     const role = WORKING_FILE_ROLES[dependency];
     if (role) roles.add(role);
   });
+  roles.add("moldescriptor");
   return [...roles].map((role) => ({
     ...FILE_SPECS[role],
-    optional: role === "dftb_template",
+    optional: role === "moldescriptor" || role === "dftb_template",
   }));
 }
 
+/** Companion-file extensions and name stems, used to sort a dropped folder. */
+const STRUCTURE_EXTENSIONS = new Set([
+  "rst",
+  "xyz",
+  "extxyz",
+  "cif",
+  "pdb",
+  "mol",
+  "sdf",
+  "traj",
+]);
+
+export function isStructureFileName(name: string): boolean {
+  const extension = name.toLowerCase().split(".").pop() ?? "";
+  return STRUCTURE_EXTENSIONS.has(extension);
+}
+
 /**
- * Pressure coupling in a QM run computes the molecular virial, so PQ wants a
- * molecule descriptor. MM runs already require it as a force-field file.
+ * Guess which companion role a file plays from its name, so a whole run
+ * folder can be dropped at once. Returns null for anything unrecognised.
  */
-export function pressureFileSpecs(
-  jobType: string,
-  ensemble: Ensemble,
-): SetupFileSpec[] {
-  if (!jobType.startsWith("qm-") || ensemble !== "NPT") return [];
-  return [{ ...FILE_SPECS.moldescriptor, optional: true }];
+export function companionRoleForFileName(name: string): SetupFileRole | null {
+  const lower = name.toLowerCase();
+  const base = lower.split("/").pop() ?? lower;
+  if (base === "tm_define.template" || base.startsWith("tm_define")) {
+    return "turbomole_define_template";
+  }
+  if (base.startsWith("dftb_in") || base.endsWith(".hsd")) return "dftb_template";
+  if (base.includes("moldescriptor") || base.includes("moldesc")) {
+    return "moldescriptor";
+  }
+  if (base.includes("intra") && base.includes("nonbonded")) {
+    return "intra_nonbonded";
+  }
+  if (base.includes("guff")) return "guff";
+  if (base.includes("topolog")) return "topology";
+  if (base.includes("param")) return "parameter";
+  return null;
 }
 
 export function externalQMProgram(
