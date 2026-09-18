@@ -43,3 +43,16 @@ export function clampLayoutNumber(
 ): number {
   return Math.min(max, Math.max(min, value));
 }
+
+const layoutWriteTimers = new Map<string, number>();
+
+/** Persist a layout value after a short idle period to avoid storage churn. */
+export function scheduleLayoutWrite(key: string, value: number): void {
+  const existing = layoutWriteTimers.get(key);
+  if (existing != null) window.clearTimeout(existing);
+  const timer = window.setTimeout(() => {
+    layoutWriteTimers.delete(key);
+    writeLayoutNumber(key, value);
+  }, 150);
+  layoutWriteTimers.set(key, timer);
+}

@@ -69,7 +69,7 @@ export default function CommandPalette({
     if (!open) return;
     restoreFocus.current = document.activeElement as HTMLElement | null;
     const background = document.querySelectorAll<HTMLElement>(
-      ".app-header, .workspace",
+      ".app-header, .page",
     );
     background.forEach((element) => {
       element.inert = true;
