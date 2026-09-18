@@ -2223,17 +2223,16 @@ kbd {
   user-select: none;
 }
 
-.src-title {
+.src-box {
+  color: var(--border-strong);
+}
+
+.src-title-name {
   color: var(--ink);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .src-title-kind {
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.src-note {
   color: var(--muted);
 }
 
@@ -2252,21 +2251,14 @@ kbd {
 
 .src-section {
   color: var(--border-strong);
-  font-weight: 500;
 }
 
 .src-section-title {
-  color: var(--ink-soft);
-  font-weight: 600;
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .src-section-quip {
-  color: var(--accent-dark);
-  font-style: italic;
-  font-weight: 400;
-}
-
-.src-signoff {
   color: var(--accent-dark);
   font-style: italic;
 }
@@ -2281,6 +2273,24 @@ kbd {
 
 .src-value {
   color: var(--ink);
+}
+
+/* Carbon code palette: numbers purple-70, switches green-60, files teal-70. */
+.src-num {
+  color: #6929c4;
+}
+
+.src-switch {
+  color: #198038;
+}
+
+.src-file {
+  color: #005d5d;
+}
+
+.src-note {
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* Carbon primary button: blue-60 fill, square, left-aligned label. */

@@ -878,11 +878,16 @@ def _annotate(lines: list[str]) -> list[str]:
     ]
 
 
-def _section(title: str) -> str:
-    """Section divider: `# ── title · quip ────…` padded to a fixed width."""
-    quip = _SECTION_QUIPS.get(title)
-    lead = f"# ── {title} · {quip} " if quip else f"# ── {title} "
-    return lead + "─" * max(4, SECTION_WIDTH - len(lead))
+def _section(title: str, quip: str | None = None) -> str:
+    """Divider with the title left and the quip right, rule in between:
+
+    `# ── dynamics ──────────────────── how long, how fine ──`
+    """
+    quip = _SECTION_QUIPS.get(title) if quip is None else quip
+    lead = f"# ── {title} "
+    tail = f" {quip} ──" if quip else ""
+    fill = "─" * max(4, SECTION_WIDTH - len(lead) - len(tail))
+    return lead + fill + tail
 
 
 def _span(steps: int | None, timestep_fs: float | None) -> str | None:
@@ -900,13 +905,12 @@ def _span(steps: int | None, timestep_fs: float | None) -> str | None:
 
 
 def sign_off(setup: SimulationSetup) -> list[str]:
-    """Closing lines: a divider and a seed-picked one-liner."""
-    line = _SIGN_OFFS[setup.random_seed % len(_SIGN_OFFS)]
-    return ["", _section("fin"), f"# {line}"]
+    """Closing divider carrying a seed-picked one-liner."""
+    return ["", _section("fin", _SIGN_OFFS[setup.random_seed % len(_SIGN_OFFS)])]
 
 
 def _header(setup: SimulationSetup) -> list[str]:
-    """Run card: the run name as title, then one fact per comment line."""
+    """Run card in a box: name and kind on the title row, then facts."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -933,9 +937,20 @@ def _header(setup: SimulationSetup) -> list[str]:
         ]
     )
     kind = "geometry optimization" if setup.ensemble == "OPT" else "molecular dynamics"
+    rows = [f"{label:<11} {value}" for label, value in facts]
+    inner = max(
+        SECTION_WIDTH - 6,
+        len(setup.file_prefix) + 2 + len(kind),
+        *(len(row) for row in rows),
+    )
+    title = f"{setup.file_prefix:<{inner - len(kind)}}{kind}"
+    rule = "─" * (inner + 2)
     return [
-        f"# {setup.file_prefix} · {kind}",
-        *(f"# {label:<11} {value}" for label, value in facts),
+        f"# ┌{rule}┐",
+        f"# │ {title} │",
+        f"# ├{rule}┤",
+        *(f"# │ {row:<{inner}} │" for row in rows),
+        f"# └{rule}┘",
     ]
 
 

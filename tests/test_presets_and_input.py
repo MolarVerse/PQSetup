@@ -30,13 +30,15 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "nstep = 1000;" in result.input_text
     assert "qm_prog = ase-xtb;" in result.input_text
     assert "xtb_method = gfn2-xtb;" in result.input_text
-    assert result.input_text.startswith(f"# {setup_from_preset('ambient-npt').file_prefix} · molecular dynamics\n")
-    assert "# ensemble    NPT" in result.input_text
-    assert f"# written by  PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
-    assert "# ── pressure coupling · squeeze, but politely ──" in result.input_text
-    assert "# span        " in result.input_text
-    assert "# ── fin ·" not in result.input_text
-    assert result.input_text.rstrip().rsplit("\n", 2)[-2].startswith("# ── fin ")
+    assert result.input_text.startswith("# ┌")
+    assert f"# │ {setup_from_preset('ambient-npt').file_prefix} " in result.input_text
+    assert "molecular dynamics │\n" in result.input_text
+    assert "# │ ensemble    NPT" in result.input_text
+    assert f"# │ written by  PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
+    assert "# ── pressure coupling ─" in result.input_text
+    assert " squeeze, but politely ──\n" in result.input_text
+    assert "# │ span        " in result.input_text
+    assert result.input_text.rstrip().rsplit("\n", 1)[-1].startswith("# ── fin ")
 
 
 def test_ase_dftbplus_defaults_slakos_3ob() -> None:
