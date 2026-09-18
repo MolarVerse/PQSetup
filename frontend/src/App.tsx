@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  CircleHelp,
   CircleDashed,
   Copy,
   FileCode2,
@@ -89,6 +88,7 @@ import {
   MIN_SAMPLING_RUNS,
   nextPlannedInputSelection,
   parseSamplingRunCountDraft,
+  samplingLabel,
   plannedInputOptionLabel,
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
@@ -354,20 +354,17 @@ function Field({
   label,
   unit,
   help,
-  info,
   controlId,
   children,
 }: {
   label: ReactNode;
   unit?: string;
   help?: string;
-  info?: string;
   controlId?: string;
   children: ReactElement<{ id?: string }>;
 }) {
   const generatedFieldId = useId();
   const fieldId = controlId ?? generatedFieldId;
-  const infoId = useId();
 
   return (
     <div className="field">
@@ -375,19 +372,6 @@ function Field({
         <label htmlFor={fieldId}>{label}</label>
         <span className="field-label-tools">
           {unit && <span className="unit">{unit}</span>}
-          {info && (
-            <button
-              type="button"
-              className="info-affordance"
-              aria-label={info}
-              aria-describedby={infoId}
-            >
-              <CircleHelp size={14} aria-hidden="true" />
-              <span className="info-tooltip" id={infoId} role="tooltip">
-                {info}
-              </span>
-            </button>
-          )}
         </span>
       </span>
       {cloneElement(children, { id: fieldId })}
@@ -581,7 +565,6 @@ function PressureCoupling({
         <Field
           label="Manostat"
           controlId={controlId}
-          info="Pressure coupling for the simulation cell."
         >
           <select
             value={value.manostat ?? "stochastic_rescaling"}
@@ -2928,7 +2911,11 @@ export default function App() {
                 <Field
                   label="Runs"
                   controlId="sampling-run-count"
-                  info="1 writes a single input · more chains restarts 01 → 02 → …"
+                  help={
+                    samplingRunCount > 1
+                      ? `chained 01 → ${samplingLabel(samplingRunCount)}`
+                      : "one input · more chain restarts"
+                  }
                 >
                   <input
                     type="number"
@@ -3026,7 +3013,7 @@ export default function App() {
                   label="Write every"
                   unit="steps"
                   controlId="output-freq"
-                  info="output_freq · trajectory, energy and restart write interval"
+                  help="trajectory · energy · restart"
                 >
                   <input
                     type="number"
