@@ -5,15 +5,6 @@
  * PQSetup-specific composition and overrides belong here.
  */
 
-/*
- * Design language: IBM Carbon (Gray 10 theme), mono variant.
- *   - IBM Plex Mono everywhere, 8px spacing grid
- *   - square corners, hairline dividers, no shadows
- *   - focus = 2px solid blue-60, inset (outline-offset: -2px)
- *   - selected = dark fill (gray-80) or 2px accent edge
- *   - fields = layer fill + 1px bottom border
- */
-
 /* Status glyphs: ● ok · ◐ pending · ○ missing */
 
 /* ---------------------------------------------------------------- shell */
