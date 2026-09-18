@@ -15,8 +15,6 @@ import {
   Gauge,
   LoaderCircle,
   Maximize2,
-  Minus,
-  Plus,
   Package as PackageIcon,
   Rotate3d,
   Search,
@@ -288,6 +286,10 @@ const INITIAL_EQUILIBRATION: EquilibrationStage = {
   nh_chain_length: 3,
   coupling_frequency_cm_inverse: 1000,
 };
+
+function formatCompact(value: number): string {
+  return Number(value.toPrecision(4)).toString();
+}
 
 function isMolecularMechanics(setup: SimulationSetup): boolean {
   return setup.job_type === "mm-md" || setup.job_type === "mm-opt";
@@ -778,64 +780,6 @@ function ConditionRow({
   );
 }
 
-/** `[−] n [+]` count control; the text field accepts a free draft. */
-function RunCountStepper({
-  id,
-  value,
-  draft,
-  onDraft,
-  onCommit,
-  onStep,
-}: {
-  id?: string;
-  value: number;
-  draft: string;
-  onDraft: (draft: string) => void;
-  onCommit: () => void;
-  onStep: (delta: number) => void;
-}) {
-  return (
-    <div className="stepper">
-      <button
-        type="button"
-        aria-label="Fewer runs"
-        disabled={value <= MIN_SAMPLING_RUNS}
-        onClick={() => onStep(-1)}
-      >
-        <Minus size={14} aria-hidden="true" />
-      </button>
-      <input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        pattern="[0-9]*"
-        value={draft}
-        onChange={(event) => onDraft(event.target.value)}
-        onBlur={onCommit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            onStep(1);
-          }
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            onStep(-1);
-          }
-        }}
-      />
-      <button
-        type="button"
-        aria-label="More runs"
-        disabled={value >= MAX_SAMPLING_RUNS}
-        onClick={() => onStep(1)}
-      >
-        <Plus size={14} aria-hidden="true" />
-      </button>
-    </div>
-  );
-}
-
 /** Chip that opens the calculator / force-field settings dialog. */
 function SettingsChip({
   summary,
@@ -939,6 +883,21 @@ export default function App() {
   const externalQM = bootstrap?.pq.external_qm ?? null;
   const thermalEnsemble =
     setup.ensemble === "NVT" || setup.ensemble === "NPT";
+  // "3 × 1000 × 0.5 fs = 1.5 ps" — total sampled time across chained runs.
+  const samplingSpan = useMemo(() => {
+    const steps = setup.steps;
+    const dt = setup.timestep_fs;
+    if (steps == null || dt == null || steps <= 0 || dt <= 0) return undefined;
+    const totalFs = samplingRunCount * steps * dt;
+    const total =
+      totalFs >= 1e6
+        ? `${formatCompact(totalFs / 1e6)} ns`
+        : totalFs >= 1e3
+          ? `${formatCompact(totalFs / 1e3)} ps`
+          : `${formatCompact(totalFs)} fs`;
+    const runs = samplingRunCount > 1 ? `${samplingRunCount} × ` : "";
+    return `${runs}${steps} × ${formatCompact(dt)} fs = ${total}`;
+  }, [samplingRunCount, setup.steps, setup.timestep_fs]);
   // A ramp is "on" when a start temperature is set; off clears the schedule.
   const rampEnabled = setup.start_temperature_k != null;
   const setRampEnabled = useCallback((on: boolean) => {
@@ -1551,7 +1510,7 @@ export default function App() {
         current: samplingRunCount === 1,
         run: () => {
           setRunCount(1);
-          goToControl("review", "sampling-run-count");
+          goToControl("conditions", "sampling-run-count");
         },
       },
       {
@@ -1570,7 +1529,7 @@ export default function App() {
         current: samplingRunCount > 1,
         run: () => {
           if (samplingRunCount === 1) setRunCount(DEFAULT_CONTINUED_SAMPLING_RUNS);
-          goToControl("review", "sampling-run-count");
+          goToControl("conditions", "sampling-run-count");
         },
       },
       ...THERMOSTATS.map(
@@ -2923,6 +2882,7 @@ export default function App() {
               <ConditionRow
                 icon={Timer}
                 title="Steps"
+                hint={samplingSpan}
                 toggle={{
                   label: "Equilibration",
                   checked: Boolean(equilibration),
@@ -2963,6 +2923,30 @@ export default function App() {
                           : null,
                       }))
                     }
+                  />
+                </Field>
+                <Field
+                  label="Runs"
+                  controlId="sampling-run-count"
+                  info="1 writes a single input · more chains restarts 01 → 02 → …"
+                >
+                  <input
+                    type="number"
+                    min={MIN_SAMPLING_RUNS}
+                    max={MAX_SAMPLING_RUNS}
+                    step="1"
+                    inputMode="numeric"
+                    value={samplingRunCountDraft}
+                    onChange={(event) => {
+                      const draft = event.target.value;
+                      setSamplingRunCountDraft(draft);
+                      const count = parseSamplingRunCountDraft(draft);
+                      if (count !== null) setSamplingRunCount(count);
+                    }}
+                    onBlur={commitSamplingRunCount}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
                   />
                 </Field>
                 {equilibration && (
@@ -3036,27 +3020,6 @@ export default function App() {
                         file_prefix: event.target.value,
                       }))
                     }
-                  />
-                </Field>
-                <Field
-                  label="Runs"
-                  controlId="sampling-run-count"
-                  info={
-                    samplingRunCount > 1
-                      ? "Chained inputs: each one starts from the previous restart file"
-                      : "1 writes a single input; more chains restarts 01 → 02 → …"
-                  }
-                >
-                  <RunCountStepper
-                    value={samplingRunCount}
-                    draft={samplingRunCountDraft}
-                    onDraft={(draft) => {
-                      setSamplingRunCountDraft(draft);
-                      const count = parseSamplingRunCountDraft(draft);
-                      if (count !== null) setSamplingRunCount(count);
-                    }}
-                    onCommit={commitSamplingRunCount}
-                    onStep={(delta) => setRunCount(samplingRunCount + delta)}
                   />
                 </Field>
                 <Field

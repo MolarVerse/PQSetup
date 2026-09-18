@@ -370,63 +370,13 @@ kbd {
 /* Output header row: Name | Runs | (Inputs) | Write every */
 .output-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px 168px;
+  grid-template-columns: minmax(0, 1fr) 168px;
   align-items: start;
   gap: 16px;
 }
 
 .output-grid .field-label {
   white-space: nowrap;
-}
-
-/* [−] n [+] stepper, same height as inputs. */
-.stepper {
-  display: grid;
-  grid-template-columns: var(--control) minmax(0, 1fr) var(--control);
-  height: var(--control);
-  border-bottom: 1px solid var(--border-strong);
-  background: var(--surface-subtle);
-}
-
-.stepper > button {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 0;
-  color: var(--ink-soft);
-  background: transparent;
-  cursor: pointer;
-}
-
-.stepper > button:hover:not(:disabled) {
-  color: var(--ink);
-  background: var(--border);
-}
-
-.stepper > button:disabled {
-  color: var(--border-strong);
-  cursor: default;
-}
-
-.stepper > button:focus-visible {
-  outline: 2px solid var(--focus-color);
-  outline-offset: -2px;
-}
-
-.field .stepper > input,
-.field .stepper > input:hover {
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.field .stepper > input:focus-visible {
-  outline: 2px solid var(--focus-color);
-  outline-offset: -2px;
 }
 
 /* Settings chip sits on the field baseline next to inputs. */
@@ -956,11 +906,38 @@ kbd {
 
 /* Segmented controls: QM/MM, sampling mode. */
 
-.interaction-model-options,
+.interaction-model-options {
+  max-width: 320px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
 
-.interaction-model-options > label,
+.interaction-model-options > label {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.93rem;
+  font-weight: 500;
+  transition:
+    color 120ms ease,
+    background 120ms ease;
+}
 
-.interaction-model-options > label + label,
+.interaction-model-options > label + label {
+  border-left: 1px solid var(--border);
+}
 
 .interaction-model-options > label:hover {
   background: var(--surface-subtle);
@@ -986,16 +963,20 @@ kbd {
   pointer-events: none;
 }
 
-.interaction-model-options > label:has(input:focus-visible),
+.interaction-model-options > label:has(input:focus-visible) {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+  z-index: 1;
+}
 
 .interaction-model-options > label {
   height: var(--control);
   gap: 8px;
 }
 
-.interaction-model-options strong,
-
-
+.interaction-model-options strong {
+  font-weight: inherit;
+}
 
 .interaction-model-fieldset,
 .mm-mode-fieldset,
@@ -1508,8 +1489,12 @@ kbd {
 }
 
 .condition-hint {
+  min-width: 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .condition-toggle {
@@ -2929,11 +2914,7 @@ kbd {
   }
 
   .output-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .output-grid > .field:first-child {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
   }
 
 
