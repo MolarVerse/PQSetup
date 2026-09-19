@@ -49,13 +49,16 @@ avoid opening a browser:
 Create the first package
 ------------------------
 
-#. Keep the water example, or import a structure.
-#. Choose molecular mechanics or one QM calculator.
-#. Set the sampling ensemble and duration. Add NVT equilibration if needed.
-#. Review optional coordinate preparation.
-#. Inspect every generated input, then create the package.
+#. **Structure** — keep the water example, or import a structure (or a whole
+   run folder).
+#. **Method** — choose QM with one calculator, or MM with a force-field mode
+   and its files.
+#. **Run** — pick NVE, NVT or NPT, set temperature, pressure, steps and the
+   number of chained runs; switch on equilibration if needed.
+#. **Output** — read the generated inputs, then press **Package**.
 
-Presets are editable starting points, not validated production protocols.
+The defaults are editable starting points, not validated production
+protocols.
 
 Check the environment
 ---------------------
