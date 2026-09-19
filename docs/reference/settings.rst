@@ -47,6 +47,14 @@ QM calculators
      - ``remove_net_force``, ``qm_loop_time_limit``
      - Net-force removal after each call; wall-time cap per QM call in seconds
        (≤ 0 = unlimited)
+   * - all (Constraints)
+     - ``shake``, ``shake-tolerance``, ``shake-iter``, ``rattle-tolerance``,
+       ``rattle-iter``, ``distance-constraints``
+     - SHAKE/RATTLE and distance constraints run in every PQ MD job. In a QM
+       run they freeze bonds (typically X–H) so the timestep can move past
+       0.5 fs. The bonds come from a topology file, so switching them on adds
+       a required *Topology* slot to the Files row below. M-SHAKE is not
+       offered for QM: its reference geometries refer to molecule types.
 
 Molecular mechanics
 -------------------
@@ -75,8 +83,8 @@ Molecular mechanics
      - ``shake``, ``shake-tolerance``, ``shake-iter``, ``rattle-tolerance``,
        ``rattle-iter``, ``mshake-tolerance``, ``mshake-iter``,
        ``distance-constraints``
-     - ``shake``: off, SHAKE + RATTLE (``on``), or M-SHAKE rigid bodies plus
-       SHAKE (``mshake``). Choosing M-SHAKE adds a required *M-SHAKE
+     - Same as for QM, plus M-SHAKE. ``shake``: off, SHAKE + RATTLE (``on``),
+       or M-SHAKE rigid bodies plus SHAKE (``mshake``). Choosing M-SHAKE adds a required *M-SHAKE
        geometries* file (``mshake_file``) to the Files row below, one
        reference geometry per molecule type. Bond and distance constraints
        themselves come from the topology file.
@@ -100,8 +108,9 @@ What validation checks
 * Combinations PQ's ``inputValidation.cpp`` rejects: custom Slater–Koster set
   without a path, Hubbard derivatives without third order, custom MACE model
   without a path (and a path without ``custom``), MACE-OFF with a MACE-MP-only
-  model, reaction field without ``rf_epsilon``, M-SHAKE without its file, a
-  cell list without a Coulomb cutoff or in a QM run.
+  model, reaction field without ``rf_epsilon``, constraints without a
+  topology file, M-SHAKE without its file (or in a QM run), a cell list
+  without a Coulomb cutoff or in a QM run.
 * Spelling: ``cell-list`` and ``cell_list`` are the same keyword to PQ, so
   setting both is refused; a keyword PQSetup writes itself is refused too.
 

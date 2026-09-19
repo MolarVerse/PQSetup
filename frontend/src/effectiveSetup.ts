@@ -1,6 +1,7 @@
 import {
   MACE_OFF_MODELS,
   pruneExtraSettings,
+  usesConstraints,
 } from "./calculatorSettings";
 import type { SetupFileRole, SimulationSetup } from "./types";
 
@@ -42,6 +43,11 @@ export function effectiveSetup(
     moldescriptor_file: moldescriptor,
     // The M-SHAKE file is read only for `shake = mshake`; keep its name only then.
     mshake_file: mm && extra.shake === "mshake" ? setup.mshake_file : null,
+    // A QM run names a topology only while constraints ask PQ to read one.
+    topology_file:
+      mm || usesConstraints({ ...setup, extra_settings: extra })
+        ? setup.topology_file
+        : null,
     runner: mm ? null : setup.runner,
     runner_script: mm ? null : setup.runner_script,
     density_g_cm3: mm && cellGenerated ? setup.density_g_cm3 : null,

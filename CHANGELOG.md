@@ -32,6 +32,8 @@ user-visible changes.
   and MACE paths, Hubbard derivatives without third order, reaction field
   without `rf_epsilon`, cell lists in QM runs, duplicate spellings); keywords
   that do not apply to the current job warn.
+- SHAKE/RATTLE and distance constraints for QM runs (to move the timestep
+  past 0.5 fs); switching them on adds the topology slot under Method › Files.
 - M-SHAKE constraints (`shake = mshake`, `mshake-tolerance`, `mshake-iter`)
   with the required `mshake_file` slot appearing under Method › Files.
 - `virial = molecular | atomic` in the MM advanced settings.

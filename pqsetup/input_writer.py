@@ -9,6 +9,7 @@ from .keywords import (
     KEY_PATTERN,
     extra_value,
     normalize_key,
+    uses_constraints,
     validate_extra_settings,
 )
 from .mm import (
@@ -210,6 +211,8 @@ def render_input(
             lines.append(
                 f"dftb_file = {setup.dftb_template_file or 'dftb_in.template'};"
             )
+        if uses_constraints(setup) and setup.topology_file:
+            lines.append(f"topology_file = {setup.topology_file};")
         if (
             setup.runner == "ase_xtb"
             and "xtb_method" not in setup.extra_settings

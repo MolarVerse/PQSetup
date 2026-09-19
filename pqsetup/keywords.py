@@ -118,9 +118,9 @@ class Keyword:
             return False
         if self.scope == "mm" and not mm:
             return False
-        if self.runners and setup.runner not in self.runners:
+        if self.runners and not mm and setup.runner not in self.runners:
             return False
-        if self.ff_modes and setup.mm_force_field not in self.ff_modes:
+        if self.ff_modes and mm and setup.mm_force_field not in self.ff_modes:
             return False
         return True
 
@@ -270,23 +270,24 @@ KEYWORDS: tuple[Keyword, ...] = (
         minimum=1,
         note="Cells per direction (cell-list = on).",
     ),
+    # --- constraints: any MD job, bonds come from a topology file ---------
     Keyword(
         "shake",
-        "mm",
+        "md",
         "choice",
         choices=SHAKE_MODES,
         ff_modes=TOPOLOGY_MODES,
-        note="Bond constraints from the topology; mshake adds rigid bodies.",
+        note="Bond constraints from the topology; mshake adds rigid bodies (MM).",
     ),
-    Keyword("shake-tolerance", "mm", "float", minimum=0.0, exclusive=True),
-    Keyword("shake-iter", "mm", "int", minimum=1),
-    Keyword("rattle-tolerance", "mm", "float", minimum=0.0, exclusive=True),
-    Keyword("rattle-iter", "mm", "int", minimum=1),
+    Keyword("shake-tolerance", "md", "float", minimum=0.0, exclusive=True),
+    Keyword("shake-iter", "md", "int", minimum=1),
+    Keyword("rattle-tolerance", "md", "float", minimum=0.0, exclusive=True),
+    Keyword("rattle-iter", "md", "int", minimum=1),
     Keyword("mshake-tolerance", "mm", "float", minimum=0.0, exclusive=True),
     Keyword("mshake-iter", "mm", "int", minimum=1),
     Keyword(
         "distance-constraints",
-        "mm",
+        "md",
         "bool",
         ff_modes=TOPOLOGY_MODES,
         note="Distance constraints defined in the topology.",
@@ -326,6 +327,18 @@ def extra_value(setup: SimulationSetup, key: str) -> object | None:
         if normalize_key(name) == wanted:
             return value
     return None
+
+
+def uses_constraints(setup: SimulationSetup) -> bool:
+    """True when SHAKE/RATTLE, M-SHAKE or distance constraints are switched on.
+
+    PQ then reads the topology file for every job type, QM included.
+    """
+    shake = extra_value(setup, "shake")
+    if shake is not None and normalize_value(shake) != "off":
+        return True
+    distance = extra_value(setup, "distance-constraints")
+    return distance is not None and is_on(distance)
 
 
 def is_off(value: object) -> bool:
@@ -548,6 +561,22 @@ def _combination_diagnostics(
                 )
             )
 
+    shake = normalize_value(extras.get("shake", "off"))
+    if not mm and shake == "mshake":
+        diagnostics.append(
+            _error(
+                "input.extra_value",
+                "M-SHAKE rigid bodies are offered for MM runs; use SHAKE + RATTLE.",
+            )
+        )
+    if not mm and uses_constraints(setup) and not (setup.topology_file or "").strip():
+        diagnostics.append(
+            _error(
+                "qm.topology_file",
+                "Bond constraints need a topology file with a shake section.",
+            )
+        )
+
     if mm:
         long_range = normalize_value(extras.get("long_range", "none"))
         if long_range == "reaction_field" and extras.get("rf_epsilon") is None:
@@ -557,9 +586,7 @@ def _combination_diagnostics(
                     "Reaction field needs a dielectric constant (rf_epsilon ≥ 1).",
                 )
             )
-        if normalize_value(extras.get("shake", "off")) == "mshake" and not (
-            setup.mshake_file or ""
-        ).strip():
+        if shake == "mshake" and not (setup.mshake_file or "").strip():
             diagnostics.append(
                 _error(
                     "mm.mshake_file",

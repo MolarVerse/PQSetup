@@ -157,6 +157,27 @@ export function usesMShake(setup: SimulationSetup): boolean {
   );
 }
 
+/**
+ * True when SHAKE/RATTLE or distance constraints are on. PQ then reads the
+ * bonds from a topology file for any job type — QM runs use this to move the
+ * timestep past 0.5 fs.
+ */
+export function usesConstraints(setup: SimulationSetup): boolean {
+  const shake = setup.extra_settings.shake;
+  if (typeof shake === "string" && shake !== "off") return true;
+  return extraBool(setup.extra_settings, "distance-constraints", false);
+}
+
+/** Constraint keys that apply to every MD job (M-SHAKE stays MM-only). */
+export const CONSTRAINT_KEYS = [
+  "shake",
+  "shake-tolerance",
+  "shake-iter",
+  "rattle-tolerance",
+  "rattle-iter",
+  "distance-constraints",
+] as const;
+
 /** Keys the settings dialog owns; anything else in extra_settings is kept. */
 export const QM_KEYS = [
   "xtb_method",
@@ -224,16 +245,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
       keys.add("noncoulomb");
     }
     if (usesTopology(setup.mm_force_field)) {
-      for (const key of [
-        "shake",
-        "shake-tolerance",
-        "shake-iter",
-        "rattle-tolerance",
-        "rattle-iter",
-        "distance-constraints",
-      ]) {
-        keys.add(key);
-      }
+      for (const key of CONSTRAINT_KEYS) keys.add(key);
       if (setup.extra_settings.shake === "mshake") {
         keys.add("mshake-tolerance");
         keys.add("mshake-iter");
@@ -243,6 +255,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
   }
   keys.add("qm_loop_time_limit");
   keys.add("remove_net_force");
+  for (const key of CONSTRAINT_KEYS) keys.add(key);
   const runner = setup.runner;
   if (usesExternalScript(runner)) keys.add("qm_script_full_path");
   if (runner === "ase_xtb") keys.add("xtb_method");
@@ -322,6 +335,10 @@ export function qmSettingsSummary(setup: SimulationSetup): string[] {
   if (extraBool(extra, "remove_net_force", false)) parts.push("net force removed");
   const limit = extraNumber(extra, "qm_loop_time_limit");
   if (limit != null) parts.push(limit <= 0 ? "no time limit" : `${limit} s limit`);
+  if (extra.shake && extra.shake !== MM_DEFAULTS.shake) parts.push("SHAKE");
+  if (extraBool(extra, "distance-constraints", false)) {
+    parts.push("distance constraints");
+  }
   return [...parts, ...resetSummary(extra)];
 }
 

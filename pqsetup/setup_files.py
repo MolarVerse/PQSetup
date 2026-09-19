@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .external_qm import selected_external_qm_script
+from .keywords import uses_constraints
 from .models import (
     Diagnostic,
     ExternalQMCapabilities,
@@ -15,12 +16,14 @@ from .models import (
 
 QM_FILE_FIELDS: dict[SetupFileRole, str] = {
     "moldescriptor": "moldescriptor_file",
+    "topology": "topology_file",
     "dftb_template": "dftb_template_file",
     "turbomole_define_template": "turbomole_define_template_file",
 }
 
 QM_FILE_LABELS: dict[SetupFileRole, str] = {
     "moldescriptor": "Molecule descriptor",
+    "topology": "Topology",
     "dftb_template": "DFTB+ template",
     "turbomole_define_template": "Turbomole define template",
 }
@@ -56,6 +59,10 @@ def required_qm_file_roles(
             for dependency in script.required_working_files
             if (role := _WORKING_FILE_ROLES.get(dependency)) is not None
         )
+    # SHAKE / distance constraints read their bonds from the topology file,
+    # for QM runs as much as for MM ones.
+    if uses_constraints(setup):
+        roles.append("topology")
     return tuple(dict.fromkeys(roles))
 
 

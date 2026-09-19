@@ -60,6 +60,7 @@ type SetupCommand = Command & { group: CommandGroup };
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
   settingsLines,
+  usesConstraints,
   usesMShake,
   usesTopology,
 } from "./calculatorSettings";
@@ -508,6 +509,7 @@ export default function App() {
     (atom) => atom.molecule_type > 0,
   );
   const mshake = usesMShake(setup);
+  const constrained = usesConstraints(setup);
   const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
@@ -517,8 +519,10 @@ export default function App() {
             setup.runner_script,
             externalQM,
             hasTypedMolecules,
+            constrained,
           ),
     [
+      constrained,
       externalQM,
       hasTypedMolecules,
       molecularMechanics,

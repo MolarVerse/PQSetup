@@ -186,16 +186,18 @@ export function setupFileSpecs(
 }
 
 /**
- * Files a QM run may need. Only what is above decides: the calculator and,
- * from the Structure section, whether atoms carry molecule types. PQ reads the
- * molecule descriptor exactly then, so the slot appears (and is required) only
- * for typed structures. Nothing in Run may change this list.
+ * Files a QM run may need. Only what is above decides: the calculator, its
+ * Advanced constraints, and, from the Structure section, whether atoms carry
+ * molecule types. PQ reads the molecule descriptor exactly then, so the slot
+ * appears (and is required) only for typed structures. Nothing in Run may
+ * change this list.
  */
 export function qmSetupFileSpecs(
   runner: string | null,
   runnerScript: string | null = null,
   externalQM: ExternalQMCapabilities | null = null,
   typedMolecules = false,
+  constrained = false,
 ): SetupFileSpec[] {
   const roles = new Set<SetupFileRole>();
   const script = selectedExternalQMScript(externalQM, runner, runnerScript);
@@ -208,6 +210,9 @@ export function qmSetupFileSpecs(
     if (role) roles.add(role);
   });
   if (typedMolecules) roles.add("moldescriptor");
+  // SHAKE / distance constraints (Advanced, above this list) read their bonds
+  // from a topology file, in QM runs as well.
+  if (constrained) roles.add("topology");
   return [...roles].map((role) => ({
     ...FILE_SPECS[role],
     optional: role === "dftb_template",

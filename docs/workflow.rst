@@ -71,9 +71,11 @@ reach the input.
 file* / *Added* state. MM always needs a molecule descriptor plus the GUFF,
 topology, or parameter files of its mode; choosing M-SHAKE under Advanced
 adds the geometry file it reads. For QM the row shows the template a
-program needs, and a molecule descriptor **only when the structure carries
-molecule types** in its ``.rst`` — PQ reads the descriptor exactly then, so
-the slot follows the structure, not the ensemble.
+program needs, a topology when Advanced switches on SHAKE or distance
+constraints (the usual way to run a QM timestep above 0.5 fs), and a molecule
+descriptor **only when the structure carries molecule types** in its ``.rst``
+— PQ reads the descriptor exactly then, so the slot follows the structure, not
+the ensemble.
 
 Run
 ---

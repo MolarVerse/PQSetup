@@ -137,7 +137,9 @@ def test_accepted_values_pass_in_either_spelling() -> None:
 
 def test_out_of_scope_keys_warn_and_unknown_keys_are_left_to_pq() -> None:
     result = validate_setup(
-        SimulationSetup(runner="ase_xtb", extra_settings={"shake": "on", "slakos": "3ob"})
+        SimulationSetup(
+            runner="ase_xtb", extra_settings={"noncoulomb": "lj", "slakos": "3ob"}
+        )
     )
     scope = [item for item in result if item.code == "input.extra_scope"]
     assert {item.severity for item in scope} == {"warning"}
@@ -147,6 +149,32 @@ def test_out_of_scope_keys_warn_and_unknown_keys_are_left_to_pq() -> None:
     unknown = validate_setup(SimulationSetup(extra_settings={"my_future_key": 1}))
     assert [item.code for item in unknown] == ["input.extra_unknown"]
     assert unknown[0].severity == "warning"
+
+
+def test_qm_runs_may_constrain_bonds_through_a_topology() -> None:
+    from pqsetup.setup_files import required_qm_file_roles, validate_qm_setup_files
+
+    shaken = SimulationSetup(runner="ase_xtb", extra_settings={"shake": "on"})
+    assert any(item.code == "qm.topology_file" for item in validate_setup(shaken))
+    assert "input.extra_scope" not in _codes(shaken)
+    assert required_qm_file_roles(shaken) == ("topology",)
+    assert required_qm_file_roles(SimulationSetup(runner="ase_xtb")) == ()
+
+    named = shaken.model_copy(update={"topology_file": "topology.dat"})
+    assert not [item for item in validate_setup(named) if item.severity == "error"]
+    text = render_input(named).input_text
+    assert "topology_file = topology.dat;" in text
+    assert "shake = on;" in text
+    missing = validate_qm_setup_files(named, [])
+    assert any(item.code == "qm.file_missing.topology" for item in missing)
+
+    distance = SimulationSetup(
+        runner="ase_xtb", extra_settings={"distance-constraints": "on"}
+    )
+    assert required_qm_file_roles(distance) == ("topology",)
+
+    mshake = SimulationSetup(runner="ase_xtb", extra_settings={"shake": "mshake"})
+    assert "MM runs" in _messages(mshake)
 
 
 def test_duplicate_spellings_are_refused() -> None:

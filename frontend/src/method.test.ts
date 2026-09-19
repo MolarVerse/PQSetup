@@ -144,6 +144,15 @@ describe("QM companion files", () => {
     expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
   });
 
+  it("requires a topology when the QM run constrains bonds", () => {
+    expect(
+      qmSetupFileSpecs("ase_xtb", null, null, false, true).map((file) => [
+        file.role,
+        file.optional,
+      ]),
+    ).toEqual([["topology", false]]);
+  });
+
   it("sorts a dropped folder into structure and companion files", () => {
     expect(isStructureFileName("water.rst")).toBe(true);
     expect(isStructureFileName("run-01.in")).toBe(false);

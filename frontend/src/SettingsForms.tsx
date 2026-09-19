@@ -159,6 +159,121 @@ function ResetsGroup({
   );
 }
 
+/**
+ * SHAKE / RATTLE and distance constraints. PQ applies them in every MD job and
+ * reads the bonds from a topology file; M-SHAKE rigid bodies are an MM extra
+ * because their reference geometries refer to molecule types.
+ */
+function ConstraintsGroup({
+  extra,
+  setExtra,
+  mshake,
+  info,
+}: {
+  extra: ExtraSettings;
+  setExtra: SetExtra;
+  mshake: boolean;
+  info: string;
+}) {
+  const shake = extraString(extra, "shake", MM_DEFAULTS.shake);
+  return (
+    <Group title="Constraints" info={info}>
+      <Choice
+        label="Bond constraints"
+        value={shake}
+        options={mshake ? SHAKE_MODES : SHAKE_MODES.slice(0, 2)}
+        info={
+          mshake
+            ? "M-SHAKE needs reference geometries · a file slot appears under Files"
+            : "Bonds come from a topology file · a slot appears under Files"
+        }
+        onChange={(value) => {
+          setExtra("shake", value === MM_DEFAULTS.shake ? null : value);
+          if (value === "off") {
+            for (const key of [
+              "shake-tolerance",
+              "shake-iter",
+              "rattle-tolerance",
+              "rattle-iter",
+            ]) {
+              setExtra(key, null);
+            }
+          }
+          if (value !== "mshake") {
+            setExtra("mshake-tolerance", null);
+            setExtra("mshake-iter", null);
+          }
+        }}
+      />
+      {shake !== "off" && (
+        <div className="form-grid">
+          <NumberRow
+            label="SHAKE tolerance"
+            keyName="shake-tolerance"
+            step="1e-9"
+            placeholder={String(MM_DEFAULTS["shake-tolerance"])}
+            extra={extra}
+            setExtra={setExtra}
+          />
+          <NumberRow
+            label="SHAKE iterations"
+            keyName="shake-iter"
+            min="1"
+            placeholder={String(MM_DEFAULTS["shake-iter"])}
+            extra={extra}
+            setExtra={setExtra}
+          />
+          <NumberRow
+            label="RATTLE tolerance"
+            keyName="rattle-tolerance"
+            unit="s⁻¹kg⁻¹"
+            step="1"
+            placeholder={String(MM_DEFAULTS["rattle-tolerance"])}
+            extra={extra}
+            setExtra={setExtra}
+          />
+          <NumberRow
+            label="RATTLE iterations"
+            keyName="rattle-iter"
+            min="1"
+            placeholder={String(MM_DEFAULTS["rattle-iter"])}
+            extra={extra}
+            setExtra={setExtra}
+          />
+          {shake === "mshake" && (
+            <>
+              <NumberRow
+                label="M-SHAKE tolerance"
+                keyName="mshake-tolerance"
+                step="1e-9"
+                placeholder={String(MM_DEFAULTS["mshake-tolerance"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+              <NumberRow
+                label="M-SHAKE iterations"
+                keyName="mshake-iter"
+                min="1"
+                placeholder={String(MM_DEFAULTS["mshake-iter"])}
+                extra={extra}
+                setExtra={setExtra}
+              />
+            </>
+          )}
+        </div>
+      )}
+      <Toggle
+        label="Distance constraints"
+        info="Pairs from the distance_constraints section of the topology"
+        checked={extraBool(extra, "distance-constraints", false)}
+        onChange={(value) =>
+          setExtra("distance-constraints", value ? "on" : null)
+        }
+      />
+    </Group>
+  );
+}
+
 /** Advanced keywords for the selected QM calculator. */
 export function QMSettingsForm({
   runner,
@@ -323,6 +438,13 @@ export function QMSettingsForm({
         />
       </Group>
 
+      <ConstraintsGroup
+        extra={extra}
+        setExtra={setExtra}
+        mshake={false}
+        info="Freeze bonds to move the timestep past 0.5 fs"
+      />
+
       <ResetsGroup extra={extra} setExtra={setExtra} />
     </div>
   );
@@ -339,7 +461,6 @@ export function MMSettingsForm({
   setExtra: SetExtra;
 }) {
   const longRange = extraString(extra, "long_range", MM_DEFAULTS.long_range);
-  const shake = extraString(extra, "shake", MM_DEFAULTS.shake);
   return (
     <div className="settings-form">
       <Group title="Potentials">
@@ -426,95 +547,12 @@ export function MMSettingsForm({
       </Group>
 
       {usesTopology(mode) && (
-        <Group title="Constraints" info="Definitions come from the topology file">
-          <Choice
-            label="Bond constraints"
-            value={shake}
-            options={SHAKE_MODES}
-            info="M-SHAKE needs reference geometries · a file slot appears under Files"
-            onChange={(value) => {
-              setExtra("shake", value === MM_DEFAULTS.shake ? null : value);
-              if (value === "off") {
-                for (const key of [
-                  "shake-tolerance",
-                  "shake-iter",
-                  "rattle-tolerance",
-                  "rattle-iter",
-                ]) {
-                  setExtra(key, null);
-                }
-              }
-              if (value !== "mshake") {
-                setExtra("mshake-tolerance", null);
-                setExtra("mshake-iter", null);
-              }
-            }}
-          />
-          {shake !== "off" && (
-            <div className="form-grid">
-              <NumberRow
-                label="SHAKE tolerance"
-                keyName="shake-tolerance"
-                step="1e-9"
-                placeholder={String(MM_DEFAULTS["shake-tolerance"])}
-                extra={extra}
-                setExtra={setExtra}
-              />
-              <NumberRow
-                label="SHAKE iterations"
-                keyName="shake-iter"
-                min="1"
-                placeholder={String(MM_DEFAULTS["shake-iter"])}
-                extra={extra}
-                setExtra={setExtra}
-              />
-              <NumberRow
-                label="RATTLE tolerance"
-                keyName="rattle-tolerance"
-                unit="s⁻¹kg⁻¹"
-                step="1"
-                placeholder={String(MM_DEFAULTS["rattle-tolerance"])}
-                extra={extra}
-                setExtra={setExtra}
-              />
-              <NumberRow
-                label="RATTLE iterations"
-                keyName="rattle-iter"
-                min="1"
-                placeholder={String(MM_DEFAULTS["rattle-iter"])}
-                extra={extra}
-                setExtra={setExtra}
-              />
-              {shake === "mshake" && (
-                <>
-                  <NumberRow
-                    label="M-SHAKE tolerance"
-                    keyName="mshake-tolerance"
-                    step="1e-9"
-                    placeholder={String(MM_DEFAULTS["mshake-tolerance"])}
-                    extra={extra}
-                    setExtra={setExtra}
-                  />
-                  <NumberRow
-                    label="M-SHAKE iterations"
-                    keyName="mshake-iter"
-                    min="1"
-                    placeholder={String(MM_DEFAULTS["mshake-iter"])}
-                    extra={extra}
-                    setExtra={setExtra}
-                  />
-                </>
-              )}
-            </div>
-          )}
-          <Toggle
-            label="Distance constraints"
-            checked={extraBool(extra, "distance-constraints", false)}
-            onChange={(value) =>
-              setExtra("distance-constraints", value ? "on" : null)
-            }
-          />
-        </Group>
+        <ConstraintsGroup
+          extra={extra}
+          setExtra={setExtra}
+          mshake
+          info="Definitions come from the topology file"
+        />
       )}
 
       <ResetsGroup extra={extra} setExtra={setExtra} />

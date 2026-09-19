@@ -88,6 +88,26 @@ describe("effectiveSetup", () => {
     expect(qm.density_g_cm3).toBeNull();
   });
 
+  it("keeps SHAKE for a QM run and names its topology only then", () => {
+    const shaken = {
+      ...base,
+      topology_file: "topology.dat",
+      extra_settings: { shake: "on", "shake-iter": 30 },
+    };
+    const qm = effectiveSetup(shaken, false);
+    expect(qm.extra_settings).toEqual({ shake: "on", "shake-iter": 30 });
+    expect(qm.topology_file).toBe("topology.dat");
+    expect(
+      effectiveSetup({ ...shaken, extra_settings: {} }, false).topology_file,
+    ).toBeNull();
+    expect(
+      effectiveSetup(
+        { ...shaken, extra_settings: { "distance-constraints": "on" } },
+        false,
+      ).topology_file,
+    ).toBe("topology.dat");
+  });
+
   it("names the M-SHAKE file only while shake = mshake is in force", () => {
     const mm = {
       ...base,
