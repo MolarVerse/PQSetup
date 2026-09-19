@@ -34,7 +34,7 @@ The interface is included in the Python package. Node.js is not required.
    :class: pq-workspace
    :align: center
 
-   Structure import, centered-cell handling, and preflight in one workspace.
+   Structure, Method and Run on one page; the generated inputs follow below.
 
 Documentation
 -------------
@@ -52,7 +52,7 @@ Documentation
       :link: workflow
       :link-type: doc
 
-      System, method, conditions, preparation, review, and shortcuts.
+      Structure, method, run conditions, output, and shortcuts.
 
    .. grid-item-card:: Validation
       :link: validation
@@ -78,6 +78,18 @@ Documentation
 
       PQ schema support, structure formats, cells, and platform notes.
 
+   .. grid-item-card:: Advanced settings
+      :link: reference/settings
+      :link-type: doc
+
+      The optional PQ keywords per calculator and force field.
+
+   .. grid-item-card:: Development
+      :link: development
+      :link-type: doc
+
+      Architecture, the shared design language, and how to contribute.
+
 .. toctree::
    :hidden:
    :maxdepth: 2
@@ -89,3 +101,5 @@ Documentation
    run-packages
    reference/cli
    reference/compatibility
+   reference/settings
+   development

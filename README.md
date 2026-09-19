@@ -64,8 +64,8 @@ stable PQ v0.7.0 release.
 
 - [Getting started](https://molarverse.github.io/PQSetup/getting-started.html) —
   install, environment checks, and the first run package
-- [Build a run](https://molarverse.github.io/PQSetup/workflow.html) — the five
-  setup steps and keyboard shortcuts
+- [Build a run](https://molarverse.github.io/PQSetup/workflow.html) —
+  Structure, Method, Run, Output, and keyboard shortcuts
 - [Validation](https://molarverse.github.io/PQSetup/validation.html) — local
   preflight, environment discovery, and PQ parser checks
 - [Run packages](https://molarverse.github.io/PQSetup/run-packages.html) —
@@ -74,6 +74,8 @@ stable PQ v0.7.0 release.
   `serve`, `doctor`, and `validate`
 - [Compatibility](https://molarverse.github.io/PQSetup/reference/compatibility.html)
   — supported structure formats, cells, and calculators
+- [Advanced settings](https://molarverse.github.io/PQSetup/reference/settings.html)
+  — the optional PQ keywords per calculator and force field
 
 ## Development
 
@@ -84,3 +86,8 @@ python -m pytest
 npm --prefix frontend test
 npm --prefix frontend run build
 ```
+
+The interface's theme lives in `frontend/packages/pq-design`
+(`@molarverse/pq-design`), a workspace package meant to be shared with
+PQViewer and PQEnalyzer. See the
+[development guide](https://molarverse.github.io/PQSetup/development.html).
