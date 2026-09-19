@@ -7,6 +7,8 @@ import {
   mmModeLabel,
   packagedSetupFileName,
   preferredRunner,
+  companionRoleForFileName,
+  isStructureFileName,
   qmSetupFileSpecs,
   recommendedRunnerScript,
   selectedExternalQMScript,
@@ -91,6 +93,18 @@ describe("molecular mechanics method", () => {
     ]);
   });
 
+  it("adds the required M-SHAKE file only when the shake keyword asks for it", () => {
+    const withMShake = setupFileSpecs("on", true);
+    expect(withMShake.find((file) => file.role === "mshake")?.optional).toBe(
+      false,
+    );
+    expect(setupFileSpecs("off", true).map((file) => file.role)).toEqual([
+      "moldescriptor",
+      "guff",
+    ]);
+    expect(companionRoleForFileName("water_mshake.dat")).toBe("mshake");
+  });
+
   it("keeps optional intramolecular data out of readiness", () => {
     expect(missingSetupFileRoles("on", files.slice(0, 1))).toEqual([
       "topology",
@@ -113,19 +127,50 @@ describe("molecular mechanics method", () => {
 });
 
 describe("QM companion files", () => {
-  it("requests only files required by the selected setup", () => {
-    expect(qmSetupFileSpecs("ase_xtb", "NVT")).toEqual([]);
-    expect(qmSetupFileSpecs("ase_xtb", "NPT").map((file) => file.role)).toEqual(
-      ["moldescriptor"],
+  it("lists the optional molecule descriptor plus what the calculator needs", () => {
+    expect(qmSetupFileSpecs("ase_xtb")).toEqual([]);
+    expect(
+      qmSetupFileSpecs("ase_xtb", null, null, true).map((file) => [
+        file.role,
+        file.optional,
+      ]),
+    ).toEqual([["moldescriptor", false]]);
+    expect(qmSetupFileSpecs("dftbplus").map((file) => file.role)).toEqual([
+      "dftb_template",
+    ]);
+    expect(qmSetupFileSpecs("dftbplus").every((file) => file.optional)).toBe(
+      true,
     );
-    expect(qmSetupFileSpecs("ase_xtb", "NPT")[0]?.optional).toBe(true);
-    expect(
-      qmSetupFileSpecs("dftbplus", "NPT").map((file) => file.role),
-    ).toEqual(["moldescriptor", "dftb_template"]);
-    expect(
-      qmSetupFileSpecs("dftbplus", "NVT").every((file) => file.optional),
-    ).toBe(true);
     expect(defaultSetupFileName("dftb_template")).toBe("dftb_in.template");
+  });
+
+  it("requires a topology when the QM run constrains bonds", () => {
+    expect(
+      qmSetupFileSpecs("ase_xtb", null, null, false, true).map((file) => [
+        file.role,
+        file.optional,
+      ]),
+    ).toEqual([["topology", false]]);
+  });
+
+  it("sorts a dropped folder into structure and companion files", () => {
+    expect(isStructureFileName("water.rst")).toBe(true);
+    expect(isStructureFileName("run-01.in")).toBe(false);
+    expect(companionRoleForFileName("moldescriptor.dat")).toBe("moldescriptor");
+    expect(companionRoleForFileName("water_moldescriptor.dat")).toBe(
+      "moldescriptor",
+    );
+    expect(companionRoleForFileName("guff.dat")).toBe("guff");
+    expect(companionRoleForFileName("topology.dat")).toBe("topology");
+    expect(companionRoleForFileName("parameter.dat")).toBe("parameter");
+    expect(companionRoleForFileName("intra-nonbonded.dat")).toBe(
+      "intra_nonbonded",
+    );
+    expect(companionRoleForFileName("dftb_in.template")).toBe("dftb_template");
+    expect(companionRoleForFileName("tm_define.template")).toBe(
+      "turbomole_define_template",
+    );
+    expect(companionRoleForFileName("notes.txt")).toBeNull();
   });
 
   it("requires an explicit PySCF method without installed capabilities", () => {
@@ -179,12 +224,9 @@ describe("QM companion files", () => {
     expect(recommendedRunnerScript(capabilities, "pyscf")).toBeNull();
     expect(selectedExternalQMScript(capabilities, "pyscf", null)).toBeNull();
     expect(
-      qmSetupFileSpecs(
-        "turbomole",
-        "NVT",
-        "turbomole_rimp2",
-        capabilities,
-      ).map((file) => file.role),
+      qmSetupFileSpecs("turbomole", "turbomole_rimp2", capabilities).map(
+        (file) => file.role,
+      ),
     ).toEqual(["turbomole_define_template"]);
     expect(defaultSetupFileName("turbomole_define_template")).toBe(
       "tm_define.template",

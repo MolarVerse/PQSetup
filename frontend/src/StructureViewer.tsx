@@ -1,5 +1,7 @@
 import {
   Box,
+  ChevronDown,
+  ChevronRight,
   Focus,
   Move3d,
   Rotate3d,
@@ -14,18 +16,71 @@ import {
 import ChemicalFormula from "./ChemicalFormula";
 import type { Atom, StructureAnalysis } from "./types";
 
+const SHOW_STRUCTURE_KEY = "pqsetup.showStructure";
+const VIEWER_HEIGHT_KEY = "pqsetup.viewerHeight";
+const VIEWER_HEIGHT_DEFAULT = 280;
+const VIEWER_HEIGHT_MIN = 140;
+const VIEWER_HEIGHT_MAX = 640;
+
+function readStoredShowStructure(): boolean {
+  try {
+    return window.localStorage.getItem(SHOW_STRUCTURE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredShowStructure(open: boolean) {
+  try {
+    window.localStorage.setItem(SHOW_STRUCTURE_KEY, open ? "1" : "0");
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
+function readStoredViewerHeight(): number {
+  try {
+    const raw = window.localStorage.getItem(VIEWER_HEIGHT_KEY);
+    if (raw == null) return VIEWER_HEIGHT_DEFAULT;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return VIEWER_HEIGHT_DEFAULT;
+    return Math.min(VIEWER_HEIGHT_MAX, Math.max(VIEWER_HEIGHT_MIN, value));
+  } catch {
+    return VIEWER_HEIGHT_DEFAULT;
+  }
+}
+
+function writeStoredViewerHeight(height: number) {
+  try {
+    window.localStorage.setItem(VIEWER_HEIGHT_KEY, String(Math.round(height)));
+  } catch {
+    /* private mode / blocked storage */
+  }
+}
+
 interface StructureViewerProps {
   analysis: StructureAnalysis;
-  example: boolean;
-  generatedCellTreatment: "padding" | "density";
-  densityGcm3: number | null;
+  /** Bump after a successful import to auto-expand once per session. */
+  importNonce?: number;
+  /** Initial open state override (tests). */
+  defaultOpen?: boolean;
+  variant?: "inline" | "stage";
+  /** Always-open inline canvas without its own heading (page embeds). */
+  chromeless?: boolean;
 }
 
 type Point3 = [number, number, number];
 type ViewPreset = "free" | "xy" | "xz" | "yz";
 
+const ATOM_RADIUS_MIN = 3;
+// viewBox units; small molecules fill the stage, so a tighter cap left
+// them as dots on long sticks.
+const ATOM_RADIUS_MAX = 34;
+const VIEW_FIT_PADDING = 1.12;
+const CELL_FIT_FRACTION = 0.44;
+
 const ELEMENT_COLORS: Record<string, string> = {
-  H: "#f7f7f4",
+  H: "#d8ddd9",
   C: "#4b5560",
   N: "#315fbc",
   O: "#d94a42",
@@ -57,6 +112,23 @@ function rotate(point: Point3, rotationX: number, rotationY: number): Point3 {
   const cosX = Math.cos(rotationX);
   const sinX = Math.sin(rotationX);
   return [x1, y * cosX - z1 * sinX, y * sinX + z1 * cosX];
+}
+
+/**
+ * The x/y/z gizmo, rotated exactly like the atoms so it always shows where
+ * the structure's axes point. Sorted back to front; `front` dims axes that
+ * point away from the viewer.
+ */
+function axisTriad(rotation: [number, number]) {
+  const length = 28;
+  return (["x", "y", "z"] as const)
+    .map((name, index) => {
+      const unit: Point3 = [0, 0, 0];
+      unit[index] = 1;
+      const [x, y, z] = rotate(unit, rotation[0], rotation[1]);
+      return { name, x: x * length, y: -y * length, z, front: z >= 0 };
+    })
+    .sort((left, right) => left.z - right.z);
 }
 
 function distance(left: Atom, right: Atom): number {
@@ -101,10 +173,20 @@ const CELL_EDGES: [number, number][] = [
 
 export default function StructureViewer({
   analysis,
-  example,
-  generatedCellTreatment,
-  densityGcm3,
+  importNonce = 0,
+  defaultOpen,
+  variant = "inline",
+  chromeless = false,
 }: StructureViewerProps) {
+  const isStage = variant === "stage";
+  const [open, setOpen] = useState(
+    () => defaultOpen ?? readStoredShowStructure(),
+  );
+  const showViewer = isStage || chromeless || open;
+  const [stageHeight, setStageHeight] = useState(readStoredViewerHeight);
+  const [optimizing, setOptimizing] = useState(false);
+  const stageHeightRef = useRef(stageHeight);
+  stageHeightRef.current = stageHeight;
   const [rotation, setRotation] = useState<[number, number]>([-0.42, 0.58]);
   const [zoom, setZoom] = useState(1);
   const [showGeneratedCell, setShowGeneratedCell] = useState(false);
@@ -112,8 +194,35 @@ export default function StructureViewer({
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(
     null,
   );
+  const heightDrag = useRef<{ startY: number; startHeight: number } | null>(
+    null,
+  );
+  const importNudged = useRef(false);
 
   useEffect(() => {
+    if (!open || isStage || chromeless) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable=true]")) {
+        return;
+      }
+      event.preventDefault();
+      setOpen(false);
+      writeStoredShowStructure(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, isStage, chromeless]);
+
+  useEffect(() => {
+    if (!importNonce || importNudged.current) return;
+    importNudged.current = true;
+    setOpen(true);
+  }, [importNonce]);
+
+  useEffect(() => {
+    if (!showViewer) return;
     const element = stage.current;
     if (!element) return;
     function handleWheel(event: WheelEvent) {
@@ -127,19 +236,37 @@ export default function StructureViewer({
     }
     element.addEventListener("wheel", handleWheel, { passive: false });
     return () => element.removeEventListener("wheel", handleWheel);
-  }, []);
+  }, [showViewer]);
 
   useEffect(() => {
     setShowGeneratedCell(false);
-  }, [analysis.structure, generatedCellTreatment]);
+  }, [analysis.structure]);
 
   const generatedCell = analysis.structure.cell_generated;
   const displayCell = Boolean(
     analysis.structure.cell && (!generatedCell || showGeneratedCell),
   );
-  const padding = analysis.structure.cell_padding_angstrom ?? 6;
 
   const scene = useMemo(() => {
+    if (!showViewer) {
+      return {
+        atoms: [] as {
+          atom: Atom;
+          index: number;
+          x: number;
+          y: number;
+          z: number;
+          baseRadius: number;
+        }[],
+        bonds: [] as { left: number; right: number }[],
+        positionMap: new Map<
+          number,
+          { x: number; y: number; z: number; baseRadius: number }
+        >(),
+        cell: [] as { x: number; y: number; z: number }[],
+        sampled: false,
+      };
+    }
     const allAtoms = analysis.structure.atoms;
     const stride = Math.max(1, Math.ceil(allAtoms.length / 1200));
     const atoms = allAtoms
@@ -165,12 +292,42 @@ export default function StructureViewer({
       (point) =>
         point.map((value, axis) => value - center[axis]) as Point3,
     );
-    const bounds = [...centeredPoints, ...centeredCorners];
-    const radius = Math.max(
-      1,
-      ...bounds.map((point) => Math.hypot(point[0], point[1], point[2])),
+    let fitRadius = 1;
+    if (centeredPoints.length > 0) {
+      const atomExtent = Math.max(
+        ...centeredPoints.map((point) =>
+          Math.hypot(point[0], point[1], point[2]),
+        ),
+        0.01,
+      );
+      fitRadius = atomExtent * VIEW_FIT_PADDING;
+      if (centeredCorners.length > 0) {
+        const cellExtent = Math.max(
+          ...centeredCorners.map((point) =>
+            Math.hypot(point[0], point[1], point[2]),
+          ),
+        );
+        fitRadius = Math.max(fitRadius, cellExtent * CELL_FIT_FRACTION);
+      }
+    } else if (centeredCorners.length > 0) {
+      fitRadius = Math.max(
+        ...centeredCorners.map((point) =>
+          Math.hypot(point[0], point[1], point[2]),
+        ),
+      );
+    }
+    fitRadius = Math.max(fitRadius, 0.75);
+    const scale = (155 / fitRadius) * zoom;
+    const maxElementDrawRadius = Math.max(
+      ...atoms.map(
+        ({ atom }) => (ELEMENT_RADII[atom.symbol] ?? 0.8) * scale,
+      ),
+      0.001,
     );
-    const scale = (155 / radius) * zoom;
+    const atomDrawScale =
+      maxElementDrawRadius > ATOM_RADIUS_MAX
+        ? ATOM_RADIUS_MAX / maxElementDrawRadius
+        : 1;
     const project = (point: Point3) => {
       const rotated = rotate(point, rotation[0], rotation[1]);
       return {
@@ -180,11 +337,17 @@ export default function StructureViewer({
       };
     };
     const projectedAtoms = atoms
-      .map(({ atom, index }, atomIndex) => ({
-        atom,
-        index,
-        ...project(centeredPoints[atomIndex]),
-      }))
+      .map(({ atom, index }, atomIndex) => {
+        const projected = project(centeredPoints[atomIndex]);
+        const baseRadius =
+          (ELEMENT_RADII[atom.symbol] ?? 0.8) * scale * atomDrawScale;
+        return {
+          atom,
+          index,
+          ...projected,
+          baseRadius: Math.max(ATOM_RADIUS_MIN, baseRadius),
+        };
+      })
       .sort((left, right) => left.z - right.z);
     const projectedCell = centeredCorners.map(project);
     const bonds: { left: number; right: number }[] = [];
@@ -212,7 +375,7 @@ export default function StructureViewer({
       cell: projectedCell,
       sampled: stride > 1,
     };
-  }, [analysis, displayCell, rotation, zoom]);
+  }, [showViewer, analysis, displayCell, rotation, zoom]);
 
   const collisionAtoms = useMemo(
     () =>
@@ -224,6 +387,46 @@ export default function StructureViewer({
       ),
     [analysis.collisions],
   );
+
+  function toggleOpen() {
+    setOpen((value) => {
+      const next = !value;
+      writeStoredShowStructure(next);
+      return next;
+    });
+  }
+
+  function onHeightPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    heightDrag.current = {
+      startY: event.clientY,
+      startHeight: stageHeight,
+    };
+  }
+
+  function onHeightPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!heightDrag.current) return;
+    const next = Math.min(
+      VIEWER_HEIGHT_MAX,
+      Math.max(
+        VIEWER_HEIGHT_MIN,
+        heightDrag.current.startHeight +
+          (event.clientY - heightDrag.current.startY),
+      ),
+    );
+    setStageHeight(next);
+  }
+
+  function onHeightPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (heightDrag.current) {
+      writeStoredViewerHeight(stageHeightRef.current);
+      heightDrag.current = null;
+    }
+  }
 
   function setPreset(preset: ViewPreset) {
     const rotations: Record<ViewPreset, [number, number]> = {
@@ -238,6 +441,7 @@ export default function StructureViewer({
 
   function onPointerDown(event: ReactPointerEvent<SVGSVGElement>) {
     event.currentTarget.setPointerCapture(event.pointerId);
+    setOptimizing(true);
     drag.current = {
       x: event.clientX,
       y: event.clientY,
@@ -259,25 +463,58 @@ export default function StructureViewer({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     drag.current = null;
+    setOptimizing(false);
   }
 
   return (
-    <section className="viewer" aria-labelledby="viewer-title">
+    <section
+      className={`viewer${showViewer ? "" : " viewer-collapsed"}${
+        isStage ? " viewer-stage-mode" : ""
+      }${chromeless ? " viewer-chromeless" : ""}`}
+      aria-labelledby={chromeless ? undefined : "viewer-title"}
+      aria-label={chromeless ? "Structure preview" : undefined}
+    >
+      {!chromeless && (
       <div className="viewer-heading">
-        <div>
-          <div className="eyebrow">
-            {example ? "Example" : analysis.structure.source_format ?? "Structure"}
-          </div>
+        <div className="viewer-heading-text">
           <h2 id="viewer-title">
-            {analysis.structure.source_name ?? "Untitled structure"}
+            <ChemicalFormula formula={analysis.summary.formula} fallback="Structure" />
+            {" · "}
+            {analysis.summary.atom_count}{" "}
+            {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
           </h2>
+          {analysis.structure.source_name && (
+            <small>{analysis.structure.source_name}</small>
+          )}
         </div>
-        <div className="viewer-count">
-          {analysis.summary.atom_count.toLocaleString()} atoms
-        </div>
+        {!isStage && (
+          <div className="viewer-heading-actions">
+            <button
+              type="button"
+              className="viewer-toggle"
+              aria-expanded={open}
+              aria-controls="viewer-stage"
+              onClick={toggleOpen}
+            >
+              {open ? (
+                <ChevronDown size={16} aria-hidden="true" />
+              ) : (
+                <ChevronRight size={16} aria-hidden="true" />
+              )}
+              {open ? "Hide structure" : "Show structure"}
+            </button>
+          </div>
+        )}
       </div>
+      )}
 
-      <div className="viewer-stage">
+      {showViewer && (
+      <>
+      <div
+        className={`viewer-stage${optimizing ? " optimize-speed" : ""}`}
+        id={isStage ? undefined : "viewer-stage"}
+        style={isStage ? undefined : { height: stageHeight }}
+      >
         <svg
           ref={stage}
           viewBox="0 0 600 420"
@@ -338,14 +575,9 @@ export default function StructureViewer({
               />
             );
           })}
-          {scene.atoms.map(({ atom, index, x, y, z }) => {
+          {scene.atoms.map(({ atom, index, x, y, z, baseRadius }) => {
             const depth = Math.max(0.72, Math.min(1.22, 1 + z * 0.012));
-            const radius =
-              Math.max(
-                8,
-                Math.min(18, (ELEMENT_RADII[atom.symbol] ?? 0.8) * 14),
-              ) *
-              depth;
+            const radius = baseRadius * depth;
             return (
               <g key={`atom-${index}`}>
                 {collisionAtoms.has(index) && (
@@ -366,24 +598,29 @@ export default function StructureViewer({
               </g>
             );
           })}
-          <g className="axis" transform="translate(42 368)">
-            <line x1="0" y1="0" x2="28" y2="0" className="axis-x" />
-            <line x1="0" y1="0" x2="0" y2="-28" className="axis-y" />
-            <line x1="0" y1="0" x2="16" y2="16" className="axis-z" />
-            <text x="33" y="4">x</text>
-            <text x="-4" y="-34">y</text>
-            <text x="19" y="25">z</text>
+          <g className="axis" transform="translate(42 368)" aria-hidden="true">
+            {axisTriad(rotation).map(({ name, x, y, front }) => (
+              <g key={name} className={front ? "" : "axis-back"}>
+                <line x1="0" y1="0" x2={x} y2={y} className={`axis-${name}`} />
+                <text x={x * 1.25} y={y * 1.25}>
+                  {name}
+                </text>
+              </g>
+            ))}
           </g>
         </svg>
-        <div className="viewer-help">
+        <div
+          className="viewer-help"
+          title="Drag to rotate · Scroll to zoom"
+          aria-label="Drag to rotate · Scroll to zoom"
+        >
           <Move3d size={14} aria-hidden="true" />
-          Drag to rotate · Scroll to zoom
         </div>
         {scene.sampled && (
-          <div className="sample-label">Preview sampled for speed</div>
+          <div className="sample-label">Sampled</div>
         )}
         {generatedCell && showGeneratedCell && (
-          <div className="generated-cell-label">Generated preview box</div>
+          <div className="generated-cell-label">Preview box</div>
         )}
       </div>
 
@@ -406,64 +643,36 @@ export default function StructureViewer({
           <Focus size={15} aria-hidden="true" />
           Fit
         </button>
-      </div>
-
-      {generatedCell && (
-        <div className="generated-cell-note">
-          <span>
-            <strong>No periodic cell in source</strong>
-            <small>
-              {generatedCellTreatment === "density"
-                ? densityGcm3
-                  ? `PQ derives the run cell from ${densityGcm3} g cm⁻³. The optional box is a ${padding} Å preview envelope.`
-                  : `PQ derives the run cell from density. The optional box is a ${padding} Å preview envelope.`
-                : `PQSetup adds a centered run cell with ${padding} Å padding. The uploaded file is unchanged.`}
-            </small>
-          </span>
+        {generatedCell && (
           <button
             type="button"
             aria-pressed={showGeneratedCell}
+            title="Preview box"
             onClick={() => setShowGeneratedCell((value) => !value)}
           >
             <Box size={14} aria-hidden="true" />
-            {showGeneratedCell ? "Hide box" : "Show box"}
+            box
           </button>
-        </div>
+        )}
+      </div>
+      {!isStage && (
+        <button
+          type="button"
+          className="viewer-resize"
+          aria-label="Resize structure view"
+          title="Drag to resize structure"
+          onPointerDown={onHeightPointerDown}
+          onPointerMove={onHeightPointerMove}
+          onPointerUp={onHeightPointerUp}
+          onPointerCancel={onHeightPointerUp}
+          onDoubleClick={() => {
+            setStageHeight(VIEWER_HEIGHT_DEFAULT);
+            writeStoredViewerHeight(VIEWER_HEIGHT_DEFAULT);
+          }}
+        />
       )}
-
-      <dl className="structure-facts">
-        <div>
-          <dt>Formula</dt>
-          <dd>
-            <ChemicalFormula formula={analysis.summary.formula} />
-          </dd>
-        </div>
-        <div>
-          <dt>Cell</dt>
-          <dd>
-            {analysis.structure.cell ? (
-              <>
-                <Box size={14} aria-hidden="true" />
-                {generatedCell
-                  ? generatedCellTreatment === "density"
-                    ? "Density-derived"
-                    : "Generated"
-                  : "Imported"}
-              </>
-            ) : (
-              "None"
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Min. distance</dt>
-          <dd>
-            {analysis.summary.minimum_distance_angstrom == null
-              ? "—"
-              : `${analysis.summary.minimum_distance_angstrom.toFixed(3)} Å`}
-          </dd>
-        </div>
-      </dl>
+      </>
+      )}
     </section>
   );
 }

@@ -8,6 +8,7 @@ export type SetupFileRole =
   | "topology"
   | "parameter"
   | "intra_nonbonded"
+  | "mshake"
   | "dftb_template"
   | "turbomole_define_template";
 export type PressureIsotropy =
@@ -185,6 +186,7 @@ export interface SimulationSetup {
   topology_file: string | null;
   parameter_file: string | null;
   intra_nonbonded_file: string | null;
+  mshake_file: string | null;
   dftb_template_file: string | null;
   turbomole_define_template_file: string | null;
   overwrite_output: boolean;
