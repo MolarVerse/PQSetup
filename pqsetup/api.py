@@ -29,6 +29,7 @@ from .mm import (
     validate_mm_structure,
 )
 from .models import (
+    Diagnostic,
     Bootstrap,
     ExportRequest,
     PlanRenderResult,
@@ -152,17 +153,6 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             external_qm=pq.external_qm,
         )
         if (
-            request.structure.cell_generated
-            and request.setup.ensemble == "NPT"
-            and request.setup.job_type != "mm-md"
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "NPT needs a physical periodic cell, not a generated vacuum cell."
-                ),
-            )
-        if (
             plan_requested(request.sampling_run_count, request.equilibration)
             or request.setup.job_type == "mm-md"
             or bool(request.setup_files)
@@ -188,9 +178,16 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
         if request.structure.cell_generated and request.setup.ensemble == "NPT":
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    "NPT needs a physical periodic cell, not a generated vacuum cell."
-                ),
+                detail=[
+                    Diagnostic(
+                        code="conditions.generated_cell_npt",
+                        severity="error",
+                        message=(
+                            "NPT needs a physical periodic cell, "
+                            "not a generated vacuum cell."
+                        ),
+                    ).model_dump()
+                ],
             )
         archive = io.BytesIO()
         project_name = _safe_name(request.project_name)
@@ -418,16 +415,6 @@ def _export_plan(
             status_code=422,
             detail=[item.model_dump() for item in mm_structure_diagnostics],
         )
-    if (
-        request.structure.cell_generated
-        and request.setup.ensemble == "NPT"
-        and request.setup.job_type != "mm-md"
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail="NPT needs a physical periodic cell, not a generated vacuum cell.",
-        )
-
     project_name = _safe_name(request.project_name)
     structure_name = Path(request.setup.start_file).name
     initializes_velocities = bool(
@@ -532,7 +519,10 @@ def _export_plan(
             ),
         }
     )
-    plan_manifest = plan_request.model_dump(mode="json", exclude={"structure"})
+    # Describe the setup the inputs were written from, not the raw request.
+    plan_manifest = plan_request.model_copy(
+        update={"setup": rendered.setup or plan_request.setup}
+    ).model_dump(mode="json", exclude={"structure"})
     for setup_file in plan_manifest["setup_files"]:
         setup_file.pop("content", None)
 

@@ -1,0 +1,399 @@
+/**
+ * Optional PQ keywords the UI exposes per calculator, written through
+ * `SimulationSetup.extra_settings`. Keys follow the PQ input reference; the
+ * writer already skips its own defaults when one of these is present.
+ */
+
+import type { ChoiceOption } from "@molarverse/pq-design";
+import type { MMForceFieldMode, SimulationSetup } from "./types";
+
+export type ExtraValue = string | number | boolean;
+export type ExtraSettings = Record<string, ExtraValue>;
+
+export const XTB_METHODS: ChoiceOption[] = [
+  { value: "gfn2-xtb", label: "GFN2-xTB" },
+  { value: "gfn1-xtb", label: "GFN1-xTB" },
+  { value: "ipea1-xtb", label: "IPEA1-xTB" },
+];
+
+export const SLAKOS_SETS: ChoiceOption[] = [
+  { value: "3ob", label: "3ob" },
+  { value: "matsci", label: "matsci" },
+  { value: "custom", label: "Custom path" },
+];
+
+export const MACE_MODELS: ChoiceOption[] = [
+  { value: "small", label: "small" },
+  { value: "medium", label: "medium" },
+  { value: "large", label: "large" },
+  { value: "small-0b", label: "small-0b" },
+  { value: "medium-0b", label: "medium-0b" },
+  { value: "small-0b2", label: "small-0b2" },
+  { value: "medium-0b2", label: "medium-0b2" },
+  { value: "large-0b2", label: "large-0b2" },
+  { value: "medium-0b3", label: "medium-0b3" },
+  { value: "medium-mpa-0", label: "medium-mpa-0" },
+  { value: "medium-omat-0", label: "medium-omat-0" },
+  { value: "custom", label: "Custom path" },
+];
+
+/** MACE-OFF ships only the three foundation sizes. */
+export const MACE_OFF_MODELS = MACE_MODELS.slice(0, 3);
+
+export const MACE_MODES: ChoiceOption[] = [
+  { value: "accurate", label: "accurate · e3nn reference" },
+  { value: "fast", label: "fast · cuequivariance kernels" },
+];
+
+export const NONCOULOMB_KINDS: ChoiceOption[] = [
+  { value: "guff", label: "GUFF" },
+  { value: "lj", label: "Lennard-Jones" },
+  { value: "buck", label: "Buckingham" },
+  { value: "morse", label: "Morse" },
+];
+
+export const LONG_RANGE_KINDS: ChoiceOption[] = [
+  { value: "none", label: "None · shifted potential" },
+  { value: "wolf", label: "Wolf summation" },
+  { value: "reaction-field", label: "Reaction field" },
+];
+
+export const VIRIAL_KINDS: ChoiceOption[] = [
+  { value: "molecular", label: "Molecular" },
+  { value: "atomic", label: "Atomic" },
+];
+
+/** `on` and `shake` are synonyms in PQ; `mshake` also needs an mshake_file. */
+export const SHAKE_MODES: ChoiceOption[] = [
+  { value: "off", label: "Off" },
+  { value: "on", label: "SHAKE + RATTLE" },
+  { value: "mshake", label: "M-SHAKE rigid bodies + SHAKE" },
+];
+
+/** Runners that PQ drives through an external script (qm_script_full_path). */
+export function usesExternalScript(runner: string | null): boolean {
+  return runner === "dftbplus" || runner === "pyscf" || runner === "turbomole";
+}
+
+/** Defaults PQ (or the writer) applies when a key is absent. */
+export const QM_DEFAULTS = {
+  xtb_method: "gfn2-xtb",
+  slakos: "3ob",
+  mace_model: "medium",
+  mace_mode: "accurate",
+  qm_loop_time_limit: 3600,
+} as const;
+
+export const MM_DEFAULTS = {
+  noncoulomb: "guff",
+  long_range: "none",
+  wolf_param: 0.25,
+  virial: "molecular",
+  shake: "off",
+  "shake-tolerance": 1e-8,
+  "shake-iter": 20,
+  "rattle-tolerance": 1e4,
+  "rattle-iter": 20,
+  "mshake-tolerance": 1e-8,
+  "mshake-iter": 20,
+  "cell-number": 7,
+} as const;
+
+export function extraString(
+  extra: ExtraSettings,
+  key: string,
+  fallback: string,
+): string {
+  const value = extra[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+export function extraNumber(
+  extra: ExtraSettings,
+  key: string,
+): number | null {
+  const value = extra[key];
+  return typeof value === "number" ? value : null;
+}
+
+export function extraBool(
+  extra: ExtraSettings,
+  key: string,
+  fallback: boolean,
+): boolean {
+  const value = extra[key];
+  if (typeof value === "boolean") return value;
+  if (value === "on" || value === "true") return true;
+  if (value === "off" || value === "false") return false;
+  return fallback;
+}
+
+/** Runner-specific dispersion default: the writer turns it on for ASE DFTB+. */
+export function dispersionDefault(runner: string | null): boolean {
+  return runner === "ase_dftbplus";
+}
+
+/** PQ applies D3 dispersion for ASE DFTB+ and MACE; xTB ignores the key. */
+export function supportsDispersion(runner: string | null): boolean {
+  return (
+    runner === "ase_dftbplus" || runner === "mace_mp" || runner === "mace_off"
+  );
+}
+
+export function usesGuff(mode: MMForceFieldMode): boolean {
+  return mode === "off" || mode === "bonded";
+}
+
+export function usesTopology(mode: MMForceFieldMode): boolean {
+  return mode === "on" || mode === "bonded";
+}
+
+/** True when the Advanced dialog asked for M-SHAKE (which needs a file). */
+export function usesMShake(setup: SimulationSetup): boolean {
+  return (
+    setup.job_type === "mm-md" &&
+    usesTopology(setup.mm_force_field) &&
+    setup.extra_settings.shake === "mshake"
+  );
+}
+
+/**
+ * True when SHAKE/RATTLE or distance constraints are on. PQ then reads the
+ * bonds from a topology file for any job type — QM runs use this to move the
+ * timestep past 0.5 fs.
+ */
+export function usesConstraints(setup: SimulationSetup): boolean {
+  const shake = setup.extra_settings.shake;
+  if (typeof shake === "string" && shake !== "off") return true;
+  return extraBool(setup.extra_settings, "distance-constraints", false);
+}
+
+/** Constraint keys that apply to every MD job (M-SHAKE stays MM-only). */
+export const CONSTRAINT_KEYS = [
+  "shake",
+  "shake-tolerance",
+  "shake-iter",
+  "rattle-tolerance",
+  "rattle-iter",
+  "distance-constraints",
+] as const;
+
+/** Keys the settings dialog owns; anything else in extra_settings is kept. */
+export const QM_KEYS = [
+  "xtb_method",
+  "slakos",
+  "slakos_path",
+  "third_order",
+  "hubbard_derivs",
+  "dispersion",
+  "remove_net_force",
+  "mace_model",
+  "mace_model_path",
+  "mace_mode",
+  "qm_loop_time_limit",
+  "qm_script_full_path",
+] as const;
+
+export const MM_KEYS = [
+  "noncoulomb",
+  "long_range",
+  "wolf_param",
+  "rf_epsilon",
+  "cell-list",
+  "cell-number",
+  "shake",
+  "shake-tolerance",
+  "shake-iter",
+  "rattle-tolerance",
+  "rattle-iter",
+  "mshake-tolerance",
+  "mshake-iter",
+  "distance-constraints",
+  "virial",
+] as const;
+
+/**
+ * Kinetic resets live in PQ's MD engine, so they apply to every MD run
+ * whatever the calculator. They are edited under Run › Steps, not with the
+ * method. Temperature rescaling needs a target temperature (NVT / NPT).
+ */
+export const TEMPERATURE_RESET_KEYS = ["nscale", "fscale"] as const;
+export const MOMENTUM_RESET_KEYS = [
+  "nreset",
+  "freset",
+  "nreset_angular",
+  "freset_angular",
+  "freset_forces",
+] as const;
+export const RESET_KEYS = [
+  ...TEMPERATURE_RESET_KEYS,
+  ...MOMENTUM_RESET_KEYS,
+] as const;
+
+export function isThermalEnsemble(setup: SimulationSetup): boolean {
+  return setup.ensemble === "NVT" || setup.ensemble === "NPT";
+}
+
+/** Reset keys the Run section may write for this ensemble. */
+export function applicableResetKeys(setup: SimulationSetup): Set<string> {
+  const keys = new Set<string>();
+  if (setup.ensemble === "OPT") return keys;
+  for (const key of MOMENTUM_RESET_KEYS) keys.add(key);
+  if (isThermalEnsemble(setup)) {
+    for (const key of TEMPERATURE_RESET_KEYS) keys.add(key);
+  }
+  return keys;
+}
+
+/**
+ * Keys that make sense for the current method/runner. Anything owned by the
+ * settings dialogs but not in this set is stale (e.g. `shake` after switching
+ * to QM) and must be dropped before rendering.
+ */
+export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
+  const keys = new Set<string>();
+  if (setup.job_type === "mm-md") {
+    for (const key of [
+      "long_range",
+      "wolf_param",
+      "rf_epsilon",
+      "virial",
+      "cell-list",
+      "cell-number",
+    ]) {
+      keys.add(key);
+    }
+    if (usesGuff(setup.mm_force_field)) {
+      keys.add("noncoulomb");
+    }
+    if (usesTopology(setup.mm_force_field)) {
+      for (const key of CONSTRAINT_KEYS) keys.add(key);
+      if (setup.extra_settings.shake === "mshake") {
+        keys.add("mshake-tolerance");
+        keys.add("mshake-iter");
+      }
+    }
+    return keys;
+  }
+  keys.add("qm_loop_time_limit");
+  keys.add("remove_net_force");
+  for (const key of CONSTRAINT_KEYS) keys.add(key);
+  const runner = setup.runner;
+  if (usesExternalScript(runner)) keys.add("qm_script_full_path");
+  if (runner === "ase_xtb") keys.add("xtb_method");
+  if (runner === "ase_dftbplus") {
+    keys.add("slakos");
+    keys.add("slakos_path");
+    keys.add("third_order");
+    keys.add("hubbard_derivs");
+  }
+  if (runner === "mace_mp" || runner === "mace_off") {
+    keys.add("mace_model");
+    keys.add("mace_model_path");
+    keys.add("mace_mode");
+  }
+  if (supportsDispersion(runner)) keys.add("dispersion");
+  return keys;
+}
+
+/** Drop dialog-owned keys that no longer apply; returns the same object if clean. */
+export function pruneExtraSettings(setup: SimulationSetup): ExtraSettings {
+  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS, ...RESET_KEYS]);
+  const allowed = new Set([
+    ...applicableSettingKeys(setup),
+    ...applicableResetKeys(setup),
+  ]);
+  const stale = Object.keys(setup.extra_settings).filter(
+    (key) => owned.has(key) && !allowed.has(key),
+  );
+  if (stale.length === 0) return setup.extra_settings;
+  const next = { ...setup.extra_settings };
+  for (const key of stale) delete next[key];
+  return next;
+}
+
+/**
+ * The advanced keywords in force, in input-file form (`key = value;`), so the
+ * line under "Advanced" reads exactly like the file it produces.
+ */
+export function settingsLines(setup: SimulationSetup): string[] {
+  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS]);
+  const allowed = applicableSettingKeys(setup);
+  return Object.keys(setup.extra_settings)
+    .filter((key) => owned.has(key) && allowed.has(key))
+    .sort()
+    .map((key) => {
+      const value = setup.extra_settings[key];
+      const text =
+        typeof value === "boolean" ? (value ? "true" : "false") : String(value);
+      return `${key} = ${text};`;
+    });
+}
+
+/** The reset keywords in force, in input-file form, for the Steps row. */
+export function runSettingsLines(setup: SimulationSetup): string[] {
+  const allowed = applicableResetKeys(setup);
+  return Object.keys(setup.extra_settings)
+    .filter((key) => allowed.has(key))
+    .sort()
+    .map((key) => `${key} = ${String(setup.extra_settings[key])};`);
+}
+
+function label(options: ChoiceOption[], value: string): string {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+/** Short "what differs from defaults" line for the settings chip. */
+export function qmSettingsSummary(setup: SimulationSetup): string[] {
+  const extra = setup.extra_settings;
+  const parts: string[] = [];
+  const runner = setup.runner;
+  if (runner === "ase_xtb" && extra.xtb_method) {
+    parts.push(label(XTB_METHODS, String(extra.xtb_method)));
+  }
+  if (runner === "ase_dftbplus") {
+    if (extra.slakos) parts.push(`slakos ${String(extra.slakos)}`);
+    if (extraBool(extra, "third_order", false)) parts.push("3rd order");
+  }
+  if ((runner === "mace_mp" || runner === "mace_off") && extra.mace_model) {
+    parts.push(`MACE ${String(extra.mace_model)}`);
+  }
+  if (extra.mace_mode === "fast") parts.push("fast kernels");
+  if (supportsDispersion(runner) && "dispersion" in extra) {
+    parts.push(
+      extraBool(extra, "dispersion", dispersionDefault(runner))
+        ? "dispersion on"
+        : "dispersion off",
+    );
+  }
+  if (extraBool(extra, "remove_net_force", false)) parts.push("net force removed");
+  const limit = extraNumber(extra, "qm_loop_time_limit");
+  if (limit != null) parts.push(limit <= 0 ? "no time limit" : `${limit} s limit`);
+  if (extra.shake && extra.shake !== MM_DEFAULTS.shake) parts.push("SHAKE");
+  if (extraBool(extra, "distance-constraints", false)) {
+    parts.push("distance constraints");
+  }
+  return parts;
+}
+
+export function mmSettingsSummary(setup: SimulationSetup): string[] {
+  const extra = setup.extra_settings;
+  const parts: string[] = [];
+  if (extra.noncoulomb && extra.noncoulomb !== MM_DEFAULTS.noncoulomb) {
+    parts.push(label(NONCOULOMB_KINDS, String(extra.noncoulomb)));
+  }
+  if (extra.long_range && extra.long_range !== MM_DEFAULTS.long_range) {
+    parts.push(label(LONG_RANGE_KINDS, String(extra.long_range)));
+  }
+  if (extra.virial && extra.virial !== MM_DEFAULTS.virial) {
+    parts.push("atomic virial");
+  }
+  if (extraBool(extra, "cell-list", false)) parts.push("cell list");
+  if (extra.shake && extra.shake !== MM_DEFAULTS.shake) {
+    parts.push(extra.shake === "mshake" ? "M-SHAKE" : label(SHAKE_MODES, String(extra.shake)));
+  }
+  if (extraBool(extra, "distance-constraints", false)) {
+    parts.push("distance constraints");
+  }
+  return parts;
+}

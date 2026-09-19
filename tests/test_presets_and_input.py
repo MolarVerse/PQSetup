@@ -30,9 +30,15 @@ def test_ambient_npt_is_exact_and_reproducible() -> None:
     assert "nstep = 1000;" in result.input_text
     assert "qm_prog = ase-xtb;" in result.input_text
     assert "xtb_method = gfn2-xtb;" in result.input_text
-    assert result.input_text.startswith("# ╭─ PQSetup · simulation input")
-    assert f"Written by PQSetup · target {TARGET_PQ_RELEASE}" in result.input_text
-    assert "# ── Pressure coupling" in result.input_text
+    assert result.input_text.startswith("# ┌")
+    assert f"| _ \\/ _ \\   {setup_from_preset('ambient-npt').file_prefix}" in result.input_text
+    assert f"molecular dynamics · PQ {TARGET_PQ_RELEASE}" in result.input_text
+    assert "# │ ensemble    NPT" in result.input_text
+    assert "written by PQSetup" in result.input_text
+    assert "# ── P pressure coupling ─" in result.input_text
+    assert " squeeze, but politely ──\n" in result.input_text
+    assert "# │ span        " in result.input_text
+    assert result.input_text.rstrip().rsplit("\n", 1)[-1].startswith("# ── ∎ fin ")
 
 
 def test_ase_dftbplus_defaults_slakos_3ob() -> None:
@@ -254,3 +260,27 @@ def test_native_external_runner_uses_only_advertised_scripts() -> None:
     assert render_input(configured).valid
     assert "qm_script = pyscf_mp2.py;" in render_input(configured).input_text
     assert not render_input(arbitrary).valid
+
+
+def test_setting_combinations_pq_rejects_are_flagged() -> None:
+    hubbard = SimulationSetup(
+        runner="ase_dftbplus",
+        extra_settings={"third_order": False, "hubbard_derivs": "O: -0.14"},
+    )
+    codes = [item.code for item in validate_setup(hubbard)]
+    assert "input.extra_value" in codes
+
+    reaction_field = SimulationSetup(
+        job_type="mm-md",
+        mm_force_field="off",
+        extra_settings={"long_range": "reaction-field"},
+    )
+    messages = [item.message for item in validate_setup(reaction_field)]
+    assert any("rf_epsilon" in message for message in messages)
+
+    with_epsilon = reaction_field.model_copy(
+        update={"extra_settings": {"long_range": "reaction-field", "rf_epsilon": 78.5}}
+    )
+    assert not any(
+        "rf_epsilon" in item.message for item in validate_setup(with_epsilon)
+    )

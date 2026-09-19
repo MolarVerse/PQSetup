@@ -23,6 +23,7 @@ MM_FILE_FIELDS: dict[SetupFileRole, str] = {
     "topology": "topology_file",
     "parameter": "parameter_file",
     "intra_nonbonded": "intra_nonbonded_file",
+    "mshake": "mshake_file",
 }
 
 MM_MODE_LABELS: dict[MMForceFieldMode, str] = {
@@ -43,6 +44,7 @@ _ROLE_LABELS: dict[SetupFileRole, str] = {
     "topology": "Topology",
     "parameter": "Force-field parameters",
     "intra_nonbonded": "Intramolecular nonbonded pairs",
+    "mshake": "M-SHAKE reference geometries",
 }
 
 
@@ -50,8 +52,23 @@ def mm_method_label(mode: MMForceFieldMode) -> str:
     return MM_MODE_LABELS[mode]
 
 
-def required_mm_file_roles(mode: MMForceFieldMode) -> tuple[SetupFileRole, ...]:
-    return _REQUIRED_ROLES[mode]
+def uses_mshake(setup: SimulationSetup) -> bool:
+    """True when the advanced ``shake`` keyword asks for M-SHAKE."""
+    for key, value in setup.extra_settings.items():
+        if key.replace("-", "_").lower() == "shake":
+            return str(value).strip().lower() == "mshake"
+    return False
+
+
+def required_mm_file_roles(
+    mode: MMForceFieldMode,
+    setup: SimulationSetup | None = None,
+) -> tuple[SetupFileRole, ...]:
+    """Files PQ must find for this mode; M-SHAKE adds its geometry file."""
+    roles = _REQUIRED_ROLES[mode]
+    if setup is not None and mode in {"on", "bonded"} and uses_mshake(setup):
+        roles = (*roles, "mshake")
+    return roles
 
 
 def validate_mm_setup_files(
@@ -108,7 +125,7 @@ def validate_mm_setup_files(
                 )
             )
 
-    required_roles = set(required_mm_file_roles(setup.mm_force_field))
+    required_roles = set(required_mm_file_roles(setup.mm_force_field, setup))
     active_roles = set(required_roles)
     if setup.mm_force_field in {"bonded", "on"}:
         active_roles.add("intra_nonbonded")
