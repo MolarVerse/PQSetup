@@ -1,26 +1,33 @@
 import {
-  ArrowRight,
+  Atom,
   BookOpen,
-  Check,
+  Boxes,
   CheckCircle2,
-  ChevronDown,
-  ChevronLeft,
   ChevronRight,
   CircleAlert,
-  CircleHelp,
-  CircleDashed,
-  Download,
+  Copy,
   FileCode2,
-  Keyboard,
-  Link2,
+  FolderOpen,
+  Flame,
+  Gauge,
   LoaderCircle,
+  Maximize2,
+  Package as PackageIcon,
+  Rotate3d,
   Search,
   Sparkles,
+  Terminal,
+  Thermometer,
+  RotateCcw,
+  Timer,
   Upload,
+  X,
+  Zap,
 } from "lucide-react";
 import {
-  cloneElement,
+  startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useId,
   useMemo,
@@ -28,8 +35,6 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
-  type ReactElement,
-  type ReactNode,
 } from "react";
 import {
   analyzeFile,
@@ -38,14 +43,42 @@ import {
   perturbFile,
   renderPlan,
 } from "./api";
-import CommandPalette, { type Command } from "./CommandPalette";
+import {
+  CommandPalette,
+  ConditionRow,
+  Field,
+  Modal,
+  type Command,
+} from "@molarverse/pq-design";
+import { COMMAND_GROUP_ORDER, type CommandGroup } from "./commandGroups";
+import { PressureCoupling, TemperatureCoupling } from "./components/Coupling";
+import InputNavigator from "./components/InputNavigator";
+import { SettingsLine } from "./components/SettingsLine";
+import SetupFileList from "./components/SetupFileList";
+
+/** A palette command whose group is one of the setup page's groups. */
+type SetupCommand = Command & { group: CommandGroup };
+import {
+  MMSettingsForm,
+  QMSettingsForm,
+  RunSettingsForm,
+} from "./SettingsForms";
+import {
+  isThermalEnsemble,
+  runSettingsLines,
+  settingsLines,
+  usesConstraints,
+  usesMShake,
+  usesTopology,
+} from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
+import InputSource from "./InputSource";
 import {
   MANOSTATS,
-  PRESSURE_ISOTROPIES,
   THERMOSTATS,
 } from "./conditionOptions";
-import { diagnosticStep } from "./diagnosticNavigation";
+import { diagnosticStep, diagnosticControl } from "./diagnosticNavigation";
+import { effectiveSetup } from "./effectiveSetup";
 import {
   activeFilesForSpecs,
   defaultSetupFileName,
@@ -53,33 +86,29 @@ import {
   externalQMProgram,
   missingFilesForSpecs,
   MM_MODES,
-  mmModeLabel,
   packagedSetupFileName,
   preferredRunner,
   qmSetupFileSpecs,
+  companionRoleForFileName,
+  isStructureFileName,
   recommendedRunnerScript,
   selectedExternalQMScript,
   setupFileSpecs,
 } from "./method";
 import {
-  commitContinuedSamplingRunCountDraft,
-  compactRunFileNames,
+  clampSamplingRunCount,
+  commitSamplingRunCountDraft,
   DEFAULT_CONTINUED_SAMPLING_RUNS,
   MAX_SAMPLING_RUNS,
+  MIN_SAMPLING_RUNS,
   nextPlannedInputSelection,
-  parseContinuedSamplingRunCountDraft,
-  plannedInputOptionLabel,
+  parseSamplingRunCountDraft,
   samplingLabel,
-  samplingOutputMode,
-  samplingRunCountForMode,
-  samplingRunSummary,
-  type SamplingOutputMode,
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
-  Diagnostic,
   Ensemble,
   EquilibrationStage,
   MMForceFieldMode,
@@ -91,17 +120,82 @@ import type {
   StructureAnalysis,
 } from "./types";
 
+/** Above this many generated inputs, tabs give way to the compact navigator. */
+const MAX_INPUT_TABS = 8;
+
 const DOCUMENTATION_URL = "https://molarverse.github.io/PQSetup/";
 
-const STEPS = [
-  { id: "system", label: "System", hint: "Structure" },
-  { id: "method", label: "Method", hint: "Interaction" },
-  { id: "conditions", label: "Conditions", hint: "Run plan" },
-  { id: "prepare", label: "Prepare", hint: "Coordinates" },
-  { id: "review", label: "Review", hint: "Inputs" },
+const RUNNER_GROUPS: { label: string; ids: string[] }[] = [
+  { label: "Tight-binding", ids: ["dftbplus", "ase_dftbplus"] },
+  { label: "Semi-empirical", ids: ["ase_xtb"] },
+  { label: "Ab initio", ids: ["pyscf", "turbomole"] },
+  { label: "ML", ids: ["mace_mp", "mace_off"] },
+];
+
+function runnerAvailability(
+  runner: {
+    available_in_pq?: boolean | null;
+    ready?: boolean;
+    installed?: boolean;
+  },
+): "ready" | "incomplete" | "missing" | "unavailable" {
+  if (runner.available_in_pq === false) return "unavailable";
+  if (runner.ready) return "ready";
+  if (runner.installed) return "incomplete";
+  return "missing";
+}
+
+function runnerAvailabilityLabel(
+  state: ReturnType<typeof runnerAvailability>,
+): string {
+  switch (state) {
+    case "unavailable":
+      return "not in this PQ build";
+    case "incomplete":
+      return "setup incomplete";
+    case "missing":
+      return "not detected";
+    default:
+      return "";
+  }
+}
+
+// Scroll targets on the single setup page. "review" points at the generated
+// input preview in the output pane.
+const SECTIONS = [
+  {
+    id: "system",
+    label: "Structure",
+    anchor: "section-structure",
+    keywords: "structure atoms cell jitter coordinates perturb symmetry import",
+  },
+  {
+    id: "method",
+    label: "Method",
+    anchor: "section-method",
+    keywords: "calculator engine force field qm mm",
+  },
+  {
+    id: "conditions",
+    label: "Run",
+    anchor: "section-run",
+    keywords: "protocol ensemble sampling thermostat manostat options",
+  },
+  {
+    id: "review",
+    label: "Inputs",
+    anchor: "generated-input-preview",
+    keywords: "inputs files preview package output",
+  },
 ] as const;
 
-type StepId = (typeof STEPS)[number]["id"];
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+interface BlockingIssue {
+  message: string;
+  section: SectionId;
+  controlId?: string;
+}
 
 const EXAMPLE: StructureAnalysis = {
   structure: {
@@ -154,7 +248,7 @@ const EXAMPLE: StructureAnalysis = {
 };
 
 const INITIAL_SETUP: SimulationSetup = {
-  preset_id: "ambient-nvt",
+  preset_id: null,
   job_type: "qm-md",
   ensemble: "NVT",
   start_file: "water-example.rst",
@@ -188,6 +282,7 @@ const INITIAL_SETUP: SimulationSetup = {
   topology_file: null,
   parameter_file: null,
   intra_nonbonded_file: null,
+  mshake_file: null,
   dftb_template_file: null,
   turbomole_define_template_file: null,
   overwrite_output: false,
@@ -208,6 +303,10 @@ const INITIAL_EQUILIBRATION: EquilibrationStage = {
   nh_chain_length: 3,
   coupling_frequency_cm_inverse: 1000,
 };
+
+function formatCompact(value: number): string {
+  return Number(value.toPrecision(4)).toString();
+}
 
 function isMolecularMechanics(setup: SimulationSetup): boolean {
   return setup.job_type === "mm-md" || setup.job_type === "mm-opt";
@@ -251,25 +350,49 @@ function withSetupFileName(
   if (role === "intra_nonbonded") {
     return { ...setup, intra_nonbonded_file: name };
   }
+  if (role === "mshake") return { ...setup, mshake_file: name };
   if (role === "dftb_template") {
     return { ...setup, dftb_template_file: name };
   }
   return { ...setup, turbomole_define_template_file: name };
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : "Something went wrong.";
+/** Flatten a drop into files; dropped folders are read one level deep. */
+async function filesFromDrop(transfer: DataTransfer): Promise<File[]> {
+  const items = Array.from(transfer.items ?? []);
+  const entries = items
+    .map((item) =>
+      "webkitGetAsEntry" in item ? item.webkitGetAsEntry() : null,
+    )
+    .filter((entry): entry is FileSystemEntry => entry != null);
+  if (entries.length === 0 || !entries.some((entry) => entry.isDirectory)) {
+    return Array.from(transfer.files);
+  }
+  const files: File[] = [];
+  const readEntry = (entry: FileSystemEntry, depth: number): Promise<void> =>
+    new Promise((resolve) => {
+      if (entry.isFile) {
+        (entry as FileSystemFileEntry).file((file) => {
+          files.push(file);
+          resolve();
+        }, () => resolve());
+      } else if (entry.isDirectory && depth < 2) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        reader.readEntries((children) => {
+          void Promise.all(
+            children.map((child) => readEntry(child, depth + 1)),
+          ).then(() => resolve());
+        }, () => resolve());
+      } else {
+        resolve();
+      }
+    });
+  await Promise.all(entries.map((entry) => readEntry(entry, 0)));
+  return files;
 }
 
-function durationLabel(steps: number | null, timestep: number | null): string {
-  if (!steps || !timestep) return "Duration incomplete";
-  const femtoseconds = steps * timestep;
-  if (femtoseconds >= 1000) {
-    return `${(femtoseconds / 1000).toLocaleString(undefined, {
-      maximumFractionDigits: 3,
-    })} ps`;
-  }
-  return `${femtoseconds.toLocaleString()} fs`;
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : "Something went wrong.";
 }
 
 function thermostatDescription(value: string | null): string {
@@ -279,386 +402,12 @@ function thermostatDescription(value: string | null): string {
   );
 }
 
-function manostatDescription(value: string | null): string {
-  return (
-    MANOSTATS.find((option) => option.value === value)?.description ??
-    "Choose how pressure is coupled."
-  );
-}
-
-function Field({
-  label,
-  unit,
-  help,
-  info,
-  controlId,
-  children,
-}: {
-  label: ReactNode;
-  unit?: string;
-  help?: string;
-  info?: string;
-  controlId?: string;
-  children: ReactElement<{ id?: string }>;
-}) {
-  const generatedFieldId = useId();
-  const fieldId = controlId ?? generatedFieldId;
-  const infoId = useId();
-
-  return (
-    <div className="field">
-      <span className="field-label">
-        <label htmlFor={fieldId}>{label}</label>
-        <span className="field-label-tools">
-          {unit && <span className="unit">{unit}</span>}
-          {info && (
-            <button
-              type="button"
-              className="info-affordance"
-              aria-label={info}
-              aria-describedby={infoId}
-            >
-              <CircleHelp size={14} aria-hidden="true" />
-              <span className="info-tooltip" id={infoId} role="tooltip">
-                {info}
-              </span>
-            </button>
-          )}
-        </span>
-      </span>
-      {cloneElement(children, { id: fieldId })}
-      {help && <span className="field-help">{help}</span>}
-    </div>
-  );
-}
-
-type ThermostatSettings = Pick<
-  SimulationSetup,
-  | "thermostat"
-  | "thermostat_relaxation_ps"
-  | "thermostat_friction_ps_inverse"
-  | "nh_chain_length"
-  | "coupling_frequency_cm_inverse"
->;
-
-type TemperatureScheduleSettings = Pick<
-  SimulationSetup,
-  | "start_temperature_k"
-  | "temperature_ramp_steps"
-  | "temperature_ramp_frequency"
->;
-
-function TemperatureCoupling({
-  value,
-  onChange,
-  controlId,
-}: {
-  value: ThermostatSettings;
-  onChange: (patch: Partial<ThermostatSettings>) => void;
-  controlId?: string;
-}) {
-  return (
-    <section className="coupling-section" aria-label="Temperature coupling">
-      <div className="section-rule-heading">
-        <strong>Temperature coupling</strong>
-        <span>Thermostat</span>
-      </div>
-      <div className="form-grid coupling-grid">
-        <Field label="Thermostat" controlId={controlId}>
-          <select
-            value={value.thermostat ?? "velocity_rescaling"}
-            onChange={(event) => onChange({ thermostat: event.target.value })}
-          >
-            {THERMOSTATS.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {(value.thermostat === "berendsen" ||
-          value.thermostat === "velocity_rescaling") && (
-          <Field
-            label="Relaxation time"
-            unit="ps"
-            help="PQ default: 0.1 ps."
-          >
-            <input
-              type="number"
-              min="0.000001"
-              step="0.01"
-              value={value.thermostat_relaxation_ps ?? ""}
-              onChange={(event) =>
-                onChange({
-                  thermostat_relaxation_ps: event.target.value
-                    ? Number(event.target.value)
-                    : null,
-                })
-              }
-            />
-          </Field>
-        )}
-        {value.thermostat === "langevin" && (
-          <Field label="Friction" unit="ps⁻¹" help="PQ default: 0.1 ps⁻¹.">
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={value.thermostat_friction_ps_inverse}
-              onChange={(event) =>
-                onChange({
-                  thermostat_friction_ps_inverse: Number(event.target.value),
-                })
-              }
-            />
-          </Field>
-        )}
-        {value.thermostat === "nh-chain" && (
-          <>
-            <Field label="Chain length" help="PQ default: 3.">
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={value.nh_chain_length}
-                onChange={(event) =>
-                  onChange({ nh_chain_length: Number(event.target.value) })
-                }
-              />
-            </Field>
-            <Field
-              label="Coupling frequency"
-              unit="cm⁻¹"
-              help="PQ default: 1000 cm⁻¹."
-            >
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={value.coupling_frequency_cm_inverse}
-                onChange={(event) =>
-                  onChange({
-                    coupling_frequency_cm_inverse: Number(event.target.value),
-                  })
-                }
-              />
-            </Field>
-          </>
-        )}
-      </div>
-      <p className="coupling-description">
-        {thermostatDescription(value.thermostat)}
-      </p>
-    </section>
-  );
-}
-
-function TemperatureSchedule({
-  value,
-  onChange,
-}: {
-  value: TemperatureScheduleSettings;
-  onChange: (patch: Partial<TemperatureScheduleSettings>) => void;
-}) {
-  return (
-    <details className="schedule-settings">
-      <summary>
-        <span>
-          <strong>Temperature schedule</strong>
-          <small>
-            {value.start_temperature_k == null
-              ? "Constant target temperature"
-              : `${value.start_temperature_k} K → target`}
-          </small>
-        </span>
-        <ChevronDown size={16} aria-hidden="true" />
-      </summary>
-      <div className="form-grid schedule-grid">
-        <Field
-          label="Start temperature"
-          unit="K"
-          help="Leave blank to start at the target temperature."
-        >
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={value.start_temperature_k ?? ""}
-            onChange={(event) =>
-              onChange({
-                start_temperature_k: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field label="Ramp steps" help="0 uses the full stage.">
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={value.temperature_ramp_steps ?? ""}
-            onChange={(event) =>
-              onChange({
-                temperature_ramp_steps: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field label="Ramp frequency" unit="steps">
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={value.temperature_ramp_frequency}
-            onChange={(event) =>
-              onChange({
-                temperature_ramp_frequency: Number(event.target.value),
-              })
-            }
-          />
-        </Field>
-      </div>
-    </details>
-  );
-}
-
-type ManostatSettings = Pick<
-  SimulationSetup,
-  | "manostat"
-  | "manostat_relaxation_ps"
-  | "compressibility_bar_inverse"
-  | "pressure_isotropy"
->;
-
-function PressureCoupling({
-  value,
-  onChange,
-  controlId,
-}: {
-  value: ManostatSettings;
-  onChange: (patch: Partial<ManostatSettings>) => void;
-  controlId?: string;
-}) {
-  return (
-    <section className="coupling-section" aria-label="Pressure coupling">
-      <div className="section-rule-heading">
-        <strong>Pressure coupling</strong>
-        <span>Manostat</span>
-      </div>
-      <div className="form-grid coupling-grid pressure-grid">
-        <Field
-          label="Manostat"
-          controlId={controlId}
-          info="PQ calls this a manostat. It is essentially a barostat: the pressure-coupling method that adjusts the simulation cell."
-        >
-          <select
-            value={value.manostat ?? "stochastic_rescaling"}
-            onChange={(event) => onChange({ manostat: event.target.value })}
-          >
-            {MANOSTATS.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field
-          label="Relaxation time"
-          unit="ps"
-          help="PQ default: 1 ps."
-        >
-          <input
-            type="number"
-            min="0.000001"
-            step="0.01"
-            value={value.manostat_relaxation_ps ?? ""}
-            onChange={(event) =>
-              onChange({
-                manostat_relaxation_ps: event.target.value
-                  ? Number(event.target.value)
-                  : null,
-              })
-            }
-          />
-        </Field>
-        <Field
-          label="Compressibility"
-          unit="bar⁻¹"
-          help="PQ water default: 4.591 × 10⁻⁵ bar⁻¹; adjust for the material."
-        >
-          <input
-            type="number"
-            min="0"
-            step="0.000001"
-            value={value.compressibility_bar_inverse}
-            onChange={(event) =>
-              onChange({
-                compressibility_bar_inverse: Number(event.target.value),
-              })
-            }
-          />
-        </Field>
-        <Field label="Cell response" help="PQ default: isotropic.">
-          <select
-            value={value.pressure_isotropy}
-            onChange={(event) =>
-              onChange({
-                pressure_isotropy:
-                  event.target.value as SimulationSetup["pressure_isotropy"],
-              })
-            }
-          >
-            {PRESSURE_ISOTROPIES.map((option) => (
-              <option value={option.value} key={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <p className="coupling-description">
-        {manostatDescription(value.manostat)}
-      </p>
-    </section>
-  );
-}
-
-function StepHeading({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <header className="step-heading">
-      <span className="eyebrow">{eyebrow}</span>
-      <h1>{title}</h1>
-      <p>{description}</p>
-    </header>
-  );
-}
-
-function StatusDot({ status }: { status: "ok" | "warn" | "idle" }) {
-  if (status === "ok") return <CheckCircle2 aria-hidden="true" />;
-  if (status === "warn") return <CircleAlert aria-hidden="true" />;
-  return <CircleDashed aria-hidden="true" />;
-}
-
 export default function App() {
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<StepId>("system");
   const [analysis, setAnalysis] = useState<StructureAnalysis>(EXAMPLE);
   const [originalAnalysis, setOriginalAnalysis] =
     useState<StructureAnalysis>(EXAMPLE);
-  const [isExample, setIsExample] = useState(true);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [baseStartFile, setBaseStartFile] = useState("water-example.rst");
   const [preparation, setPreparation] =
@@ -678,6 +427,11 @@ export default function App() {
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [modal, setModal] = useState<
+    "structure" | "input" | "calculator" | "run" | null
+  >(null);
+  const generatedInputSelectId = useId();
+  const modalInputSelectId = useId();
   const searchShortcut =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform)
@@ -688,22 +442,56 @@ export default function App() {
     kind: "error" | "success" | "info";
     message: string;
   } | null>(null);
-  const generatedInputSelectId = useId();
   const fileInput = useRef<HTMLInputElement>(null);
-  const workflowNav = useRef<HTMLElement>(null);
-  const workflowStepButtons = useRef<
-    Partial<Record<StepId, HTMLButtonElement | null>>
-  >({});
-  const setupMain = useRef<HTMLElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
   const firstGeneratedFileName = useRef<string | null>(null);
-  const lastContinuedSamplingRunCount = useRef(
-    DEFAULT_CONTINUED_SAMPLING_RUNS,
-  );
+  const derivedRunName = useRef(INITIAL_SETUP.file_prefix);
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
+  const thermalEnsemble =
+    setup.ensemble === "NVT" || setup.ensemble === "NPT";
+  // "3 × 1000 × 0.5 fs = 1.5 ps" — total sampled time across chained runs.
+  const samplingSpan = useMemo(() => {
+    const steps = setup.steps;
+    const dt = setup.timestep_fs;
+    if (steps == null || dt == null || steps <= 0 || dt <= 0) return undefined;
+    const totalFs = samplingRunCount * steps * dt;
+    const total =
+      totalFs >= 1e6
+        ? `${formatCompact(totalFs / 1e6)} ns`
+        : totalFs >= 1e3
+          ? `${formatCompact(totalFs / 1e3)} ps`
+          : `${formatCompact(totalFs)} fs`;
+    const runs = samplingRunCount > 1 ? `${samplingRunCount} × ` : "";
+    return `${runs}${steps} × ${formatCompact(dt)} fs = ${total}`;
+  }, [samplingRunCount, setup.steps, setup.timestep_fs]);
+  // Editing σ / seed never touches the structure above; Apply is the only
+  // action that does, so until then the applied line just reports drift.
+  const preparationStale =
+    preparation != null &&
+    (preparation.sigma_angstrom !== sigma ||
+      preparation.seed !== setup.random_seed);
+  // Hydrogen moves fast: above 0.5 fs its bonds need constraints.
+  const hasHydrogen = analysis.structure.atoms.some(
+    (atom) => atom.symbol.toUpperCase() === "H",
+  );
+  const constrainedBonds =
+    molecularMechanics &&
+    usesTopology(setup.mm_force_field) &&
+    setup.extra_settings.shake === "on";
+  const timestepWarning =
+    hasHydrogen &&
+    !constrainedBonds &&
+    setup.timestep_fs != null &&
+    setup.timestep_fs > 0.5
+      ? molecularMechanics && usesTopology(setup.mm_force_field)
+        ? "H present: use ≤ 0.5 fs or turn on SHAKE in Advanced"
+        : "H present: use ≤ 0.5 fs"
+      : undefined;
+
   const electronicMethods = useMemo(
     () => electronicMethodOptions(externalQM, setup.runner),
     [externalQM, setup.runner],
@@ -712,6 +500,9 @@ export default function App() {
     () => externalQMProgram(externalQM, setup.runner),
     [externalQM, setup.runner],
   );
+  // A script given by full path replaces the bundled method (PQ treats
+  // qm_script and qm_script_full_path as mutually exclusive).
+  const scriptFullPath = Boolean(setup.extra_settings.qm_script_full_path);
   const selectedElectronicMethod = useMemo(
     () =>
       selectedExternalQMScript(
@@ -721,62 +512,68 @@ export default function App() {
       ),
     [externalQM, setup.runner, setup.runner_script],
   );
+  const hasTypedMolecules = analysis.structure.atoms.some(
+    (atom) => atom.molecule_type > 0,
+  );
+  const mshake = usesMShake(setup);
+  const constrained = usesConstraints(setup);
   const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
-        ? setupFileSpecs(setup.mm_force_field)
+        ? setupFileSpecs(setup.mm_force_field, mshake)
         : qmSetupFileSpecs(
             setup.runner,
-            setup.ensemble,
             setup.runner_script,
             externalQM,
+            hasTypedMolecules,
+            constrained,
           ),
     [
+      constrained,
       externalQM,
+      hasTypedMolecules,
       molecularMechanics,
-      setup.ensemble,
+      mshake,
       setup.mm_force_field,
       setup.runner,
       setup.runner_script,
     ],
   );
+  const methodFilesHint = useMemo(() => {
+    const required = methodFileSpecs.filter((spec) => !spec.optional);
+    const added = required.filter((spec) =>
+      setupFiles.some((file) => file.role === spec.role),
+    ).length;
+    const optional = methodFileSpecs.length - required.length;
+    const parts: string[] = [];
+    if (required.length > 0) parts.push(`${added} of ${required.length} added`);
+    if (optional > 0) parts.push(`${optional} optional`);
+    return parts.join(" · ");
+  }, [methodFileSpecs, setupFiles]);
   const methodSetupFiles = useMemo(
     () => activeFilesForSpecs(methodFileSpecs, setupFiles),
     [methodFileSpecs, setupFiles],
   );
+  const activeSetupFiles = methodSetupFiles; // everything the package ships
+  // The form remembers every choice; only what is visible reaches the input.
+  const effective = useMemo(
+    () =>
+      effectiveSetup(
+        setup,
+        analysis.structure.cell_generated,
+        new Set(methodSetupFiles.map((file) => file.role)),
+      ),
+    [analysis.structure.cell_generated, methodSetupFiles, setup],
+  );
   const setupFileReferences = useMemo(
     () =>
-      methodSetupFiles.map(({ role, name, content }) => ({
+      activeSetupFiles.map(({ role, name, content }) => ({
         role,
         name,
         content: role === "moldescriptor" ? content : null,
       })),
-    [methodSetupFiles],
+    [activeSetupFiles],
   );
-
-  useEffect(() => {
-    setupMain.current?.scrollTo({ top: 0, left: 0 });
-  }, [activeStep]);
-
-  useEffect(() => {
-    function revealActiveStep() {
-      if (!window.matchMedia("(max-width: 720px)").matches) return;
-      window.requestAnimationFrame(() => {
-        const navigation = workflowNav.current;
-        const button = workflowStepButtons.current[activeStep];
-        if (!navigation || !button) return;
-        const left =
-          button.offsetLeft +
-          button.offsetWidth / 2 -
-          navigation.clientWidth / 2;
-        navigation.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
-      });
-    }
-
-    revealActiveStep();
-    window.addEventListener("resize", revealActiveStep);
-    return () => window.removeEventListener("resize", revealActiveStep);
-  }, [activeStep]);
 
   useEffect(() => {
     let current = true;
@@ -822,38 +619,42 @@ export default function App() {
     setRendering(true);
     const timeout = window.setTimeout(() => {
       renderPlan(
-        setup,
+        effective,
         equilibration,
         samplingRunCount,
         setupFileReferences,
         analysis.structure,
-        )
+      )
         .then((result) => {
           if (sequence !== renderSequence.current) return;
           const previousFirstName = firstGeneratedFileName.current;
           firstGeneratedFileName.current = result.files[0]?.name ?? null;
-          setRendered(result);
-          setSelectedFileKey((current) =>
-            nextPlannedInputSelection(
-              current,
-              previousFirstName,
-              result.files,
-            ),
-          );
+          startTransition(() => {
+            setRendered(result);
+            setSelectedFileKey((current) =>
+              nextPlannedInputSelection(
+                current,
+                previousFirstName,
+                result.files,
+              ),
+            );
+          });
         })
         .catch((error) => {
           if (sequence === renderSequence.current) {
-            setRendered({
-              files: [],
-              valid: false,
-              diagnostics: [
-                {
-                  code: "api.render",
-                  severity: "error",
-                  message: formatError(error),
-                  atom_indices: [],
-                },
-              ],
+            startTransition(() => {
+              setRendered({
+                files: [],
+                valid: false,
+                diagnostics: [
+                  {
+                    code: "api.render",
+                    severity: "error",
+                    message: formatError(error),
+                    atom_indices: [],
+                  },
+                ],
+              });
             });
           }
         })
@@ -864,9 +665,9 @@ export default function App() {
     return () => window.clearTimeout(timeout);
   }, [
     analysis.structure,
+    effective,
     equilibration,
     samplingRunCount,
-    setup,
     setupFileReferences,
   ]);
 
@@ -884,6 +685,17 @@ export default function App() {
   );
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
+  const stageInputText =
+    selectedFile?.input_text ||
+    rendered?.diagnostics[0]?.message ||
+    "…";
+  const deferredStageInputText = useDeferredValue(stageInputText);
+  useEffect(() => {
+    document
+      .querySelector('.input-tab-list [role="tab"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedFile?.name]);
+
   const equilibrationFiles = useMemo(
     () =>
       rendered?.files.filter((file) => file.stage_id === "equilibration") ?? [],
@@ -893,74 +705,26 @@ export default function App() {
     () => rendered?.files.filter((file) => file.stage_id === "sampling") ?? [],
     [rendered],
   );
-  const selectedCalculatorLabel =
-    selectedRunnerStatus?.label ?? setup.runner ?? "Not selected";
-  const selectedMethodLabel = molecularMechanics
-    ? `Molecular mechanics · ${mmModeLabel(setup.mm_force_field)}`
-    : selectedElectronicMethod
-      ? `${selectedCalculatorLabel} · ${selectedElectronicMethod.label}`
-      : selectedCalculatorLabel;
   const missingMethodFiles = useMemo(
     () => missingFilesForSpecs(methodFileSpecs, methodSetupFiles),
     [methodFileSpecs, methodSetupFiles],
   );
-  const hasTypedMolecules = analysis.structure.atoms.some(
-    (atom) => atom.molecule_type > 0,
-  );
   const mmDensityReady =
     !analysis.structure.cell_generated ||
     Boolean(setup.density_g_cm3 && setup.density_g_cm3 > 0);
-  const calculatorMissing = Boolean(
-    !molecularMechanics &&
-      bootstrap &&
-      setup.runner &&
-      !selectedRunnerStatus?.ready,
-  );
-  const pqMethodUnavailable = Boolean(
-    !molecularMechanics && selectedRunnerStatus?.available_in_pq === false,
-  );
-  const portableValidationAvailable = Boolean(
-    bootstrap?.pq.validation_scopes.includes("portable"),
-  );
   const methodReady = molecularMechanics
     ? hasTypedMolecules && mmDensityReady && missingMethodFiles.length === 0
     : Boolean(setup.runner) &&
-      (!electronicProgram || Boolean(selectedElectronicMethod)) &&
+      (!electronicProgram ||
+        Boolean(selectedElectronicMethod) ||
+        scriptFullPath) &&
       missingMethodFiles.length === 0;
-  const samplingTotalSteps =
-    setup.steps == null ? null : setup.steps * samplingRunCount;
-  const samplingMode = samplingOutputMode(samplingRunCount);
-  const runFileNames = useMemo(
-    () => compactRunFileNames(Boolean(equilibration), samplingRunCount),
-    [equilibration, samplingRunCount],
-  );
 
-  const generatedCellNpt =
-    !molecularMechanics &&
-    analysis.structure.cell_generated &&
-    setup.ensemble === "NPT";
-
+  // The NPT / generated-cell rule is checked by the plan renderer, so it
+  // arrives with the other diagnostics instead of being duplicated here.
   const diagnostics = useMemo(
-    () => [
-      ...analysis.diagnostics,
-      ...(rendered?.diagnostics ?? []),
-      ...(generatedCellNpt
-        ? [
-            {
-              code: "conditions.generated_cell_npt",
-              severity: "error" as const,
-              message:
-                "NPT needs a physical periodic cell, not a generated vacuum cell.",
-              atom_indices: [],
-            },
-          ]
-        : []),
-    ],
-    [
-      analysis.diagnostics,
-      generatedCellNpt,
-      rendered?.diagnostics,
-    ],
+    () => [...analysis.diagnostics, ...(rendered?.diagnostics ?? [])],
+    [analysis.diagnostics, rendered?.diagnostics],
   );
   const displayedDiagnostics = useMemo(
     () =>
@@ -973,61 +737,147 @@ export default function App() {
   ).length;
   const ready = Boolean(
     analysis.valid &&
-      !generatedCellNpt &&
       rendered?.valid &&
       methodReady &&
       errorCount === 0,
   );
 
-  const stepState = useMemo<Record<StepId, "ok" | "warn" | "idle">>(
-    () => ({
-      system: analysis.valid ? "ok" : "warn",
-      method:
-        !methodReady || pqMethodUnavailable
-          ? "warn"
-          : "ok",
-      conditions: diagnostics.some(
-        (item) =>
-          item.severity === "error" &&
-          (item.code.startsWith("conditions.") ||
-            item.code.startsWith("run.") ||
-            item.code.startsWith("plan.")),
-      )
-        ? "warn"
-        : rendered
-          ? "ok"
-          : "idle",
-      prepare: analysis.collisions.length ? "warn" : "ok",
-      review: ready ? "ok" : rendered ? "warn" : "idle",
-    }),
-    [
-      analysis,
-      diagnostics,
-      methodReady,
-      pqMethodUnavailable,
-      ready,
-      rendered,
-    ],
-  );
+  // Ordered list of what still blocks packaging; the first entry drives the
+  // footer status and the "not ready" Package click.
+  const blockingIssues = useMemo<BlockingIssue[]>(() => {
+    const issues: BlockingIssue[] = [];
+    if (!analysis.valid) {
+      issues.push({ message: "Structure needs review", section: "system" });
+    }
+    if (!methodReady) {
+      if (!molecularMechanics && !setup.runner) {
+        issues.push({ message: "Choose a calculator", section: "method" });
+      } else if (
+        !molecularMechanics &&
+        electronicProgram &&
+        !selectedElectronicMethod &&
+        !scriptFullPath
+      ) {
+        issues.push({
+          message: "Choose an electronic method",
+          section: "method",
+        });
+      } else if (molecularMechanics && !hasTypedMolecules) {
+        issues.push({
+          message: "Structure needs molecule type IDs",
+          section: "method",
+        });
+      } else if (molecularMechanics && !mmDensityReady) {
+        issues.push({
+          message: "Set the system density",
+          section: "method",
+          controlId: "mm-density",
+        });
+      } else if (missingMethodFiles.length > 0) {
+        const missingLabel = methodFileSpecs.find(
+          (spec) => spec.role === missingMethodFiles[0],
+        )?.label;
+        issues.push({
+          message:
+            missingMethodFiles.length === 1 && missingLabel
+              ? `Add ${missingLabel} file`
+              : `Add ${missingMethodFiles.length} method files`,
+          section: "method",
+        });
+      } else {
+        issues.push({ message: "Review method", section: "method" });
+      }
+    }
+    for (const item of diagnostics) {
+      if (item.severity !== "error") continue;
+      if (issues.some((issue) => issue.message === item.message)) continue;
+      issues.push({
+        message: item.message,
+        section: diagnosticStep(item.code),
+        controlId: diagnosticControl(item.code),
+      });
+    }
+    if (issues.length === 0 && rendered && !rendered.valid) {
+      issues.push({ message: "Review generated inputs", section: "review" });
+    }
+    return issues;
+  }, [
+    analysis.valid,
+    diagnostics,
+    electronicProgram,
+    hasTypedMolecules,
+    methodFileSpecs,
+    methodReady,
+    missingMethodFiles,
+    mmDensityReady,
+    molecularMechanics,
+    rendered,
+    scriptFullPath,
+    selectedElectronicMethod,
+    setup.runner,
+  ]);
+  const firstBlockingIssue = blockingIssues[0] ?? null;
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
 
+  // Optional PQ keywords live in extra_settings; null removes the key.
+  const setExtra = useCallback(
+    (key: string, value: string | number | boolean | null) => {
+      setSetup((existing) => {
+        const next = { ...existing.extra_settings };
+        if (value === null) delete next[key];
+        else next[key] = value;
+        return { ...existing, preset_id: null, extra_settings: next };
+      });
+    },
+    [],
+  );
+
+  // Scroll the page to a section and, when given, focus a specific control.
+  const goToControl = useCallback(
+    (section: SectionId, controlId?: string) => {
+      const anchor =
+        SECTIONS.find((item) => item.id === section)?.anchor ?? section;
+      window.requestAnimationFrame(() => {
+        const control = controlId
+          ? document.getElementById(controlId)
+          : null;
+        const target = control ?? document.getElementById(anchor);
+        target?.scrollIntoView({
+          block: control ? "center" : "start",
+          behavior: "smooth",
+        });
+        if (
+          control instanceof HTMLInputElement ||
+          control instanceof HTMLSelectElement ||
+          control instanceof HTMLButtonElement ||
+          control instanceof HTMLTextAreaElement
+        ) {
+          control.focus({ preventScroll: true });
+        }
+      });
+    },
+    [],
+  );
+
   const createRun = useCallback(async () => {
-    if (!ready || exporting) {
-      setActiveStep("review");
+    if (!ready || exporting || rendering) {
+      if (firstBlockingIssue) {
+        goToControl(firstBlockingIssue.section, firstBlockingIssue.controlId);
+      }
       return;
     }
     setExporting(true);
     setNotice(null);
     try {
       const blob = await exportProject(
-        setup,
+        effective,
         analysis.structure,
         setup.file_prefix,
         preparation,
         equilibration,
         samplingRunCount,
-        methodSetupFiles,
+        activeSetupFiles,
       );
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
@@ -1045,20 +895,21 @@ export default function App() {
       setExporting(false);
     }
   }, [
+    activeSetupFiles,
     analysis.structure,
+    effective,
     equilibration,
     exporting,
-    methodSetupFiles,
+    firstBlockingIssue,
+    goToControl,
     preparation,
     ready,
+    rendering,
     samplingRunCount,
-    setup,
+    setup.file_prefix,
   ]);
 
-  const commands = useMemo<Command[]>(() => {
-    const activeIndex = STEPS.findIndex((step) => step.id === activeStep);
-    const nextStep =
-      activeIndex < STEPS.length - 1 ? STEPS[activeIndex + 1] : null;
+  const commands = useMemo<SetupCommand[]>(() => {
     const seenDiagnostics = new Set<string>();
     const problemCommands = displayedDiagnostics
       .filter((item) => item.severity !== "info")
@@ -1069,7 +920,7 @@ export default function App() {
         return true;
       })
       .map(
-        (item, index): Command => ({
+        (item, index): SetupCommand => ({
           id: `problem-${item.code}-${index}`,
           group: "Problems",
           label: item.severity === "error" ? "Fix input error" : "Review warning",
@@ -1081,40 +932,16 @@ export default function App() {
       );
 
     return [
-      ...(nextStep
-        ? [
-            {
-              id: "continue",
-              group: "Suggested" as const,
-              label: `Continue to ${nextStep.label}`,
-              detail: nextStep.hint,
-              keywords: ["next", "continue", "workflow"],
-              featured: true,
-              run: () => goToControl(nextStep.id),
-            },
-          ]
-        : []),
       ...problemCommands,
-      ...STEPS.map(
-        (step, index): Command => ({
-          id: `step-${step.id}`,
+      ...SECTIONS.map(
+        (section, index): SetupCommand => ({
+          id: `section-${section.id}`,
           group: "Workflow",
-          label: step.label,
-          detail: step.hint,
+          label: `Go to ${section.label}`,
+          detail: section.label,
           hint: `Alt ${index + 1}`,
-          keywords: [
-            "go",
-            "open",
-            step.id === "system" ? "structure atoms cell" : "",
-            step.id === "method" ? "calculator engine force field" : "",
-            step.id === "conditions"
-              ? "protocol ensemble sampling thermostat manostat"
-              : "",
-            step.id === "prepare" ? "coordinates jitter perturb symmetry" : "",
-            step.id === "review" ? "inputs files preview package" : "",
-          ],
-          current: activeStep === step.id,
-          run: () => goToControl(step.id),
+          keywords: ["go", "open", "jump", "scroll", section.keywords],
+          run: () => goToControl(section.id),
         }),
       ),
       {
@@ -1127,7 +954,6 @@ export default function App() {
         run: () => {
           chooseInteractionModel("qm");
           goToControl("method");
-          setNotice({ kind: "success", message: "Quantum mechanics selected." });
         },
       },
       {
@@ -1140,16 +966,12 @@ export default function App() {
         run: () => {
           chooseInteractionModel("mm");
           goToControl("method");
-          setNotice({
-            kind: "success",
-            message: "Molecular mechanics selected.",
-          });
         },
       },
       ...(bootstrap?.runners ?? [])
         .filter((runner) => runner.supported)
         .map(
-          (runner): Command => ({
+          (runner): SetupCommand => ({
             id: `calculator-${runner.id}`,
             group: "Scientific setup",
             label: runner.label,
@@ -1170,23 +992,11 @@ export default function App() {
             run: () => {
               chooseCalculator(runner.id);
               goToControl("method");
-              setNotice({
-                kind:
-                  runner.ready && runner.available_in_pq !== false
-                    ? "success"
-                    : "info",
-                message:
-                  runner.available_in_pq === false
-                    ? `${runner.label} selected. Use a PQ build that includes it when running.`
-                    : runner.ready
-                      ? `${runner.label} selected.`
-                      : `${runner.label} selected; not detected here. Export still works.`,
-              });
             },
           }),
         ),
       ...electronicMethods.map(
-        (method): Command => ({
+        (method): SetupCommand => ({
           id: `electronic-method-${method.name}`,
           group: "Scientific setup",
           label: method.label,
@@ -1198,19 +1008,15 @@ export default function App() {
             method.name,
             method.label,
           ],
-          current: setup.runner_script === method.name,
+          current: !molecularMechanics && setup.runner_script === method.name,
           run: () => {
             chooseElectronicMethod(method.name);
             goToControl("method");
-            setNotice({
-              kind: "success",
-              message: `${method.label} selected.`,
-            });
           },
         }),
       ),
       ...MM_MODES.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `mm-mode-${option.value}`,
           group: "Scientific setup",
           label: option.label,
@@ -1221,15 +1027,11 @@ export default function App() {
           run: () => {
             chooseMMMode(option.value);
             goToControl("method");
-            setNotice({
-              kind: "success",
-              message: `${option.label} selected.`,
-            });
           },
         }),
       ),
       ...(["NVE", "NVT", "NPT"] as const).map(
-        (ensemble): Command => ({
+        (ensemble): SetupCommand => ({
           id: `ensemble-${ensemble.toLowerCase()}`,
           group: "Scientific setup",
           label: `Use ${ensemble} sampling`,
@@ -1261,10 +1063,6 @@ export default function App() {
           run: () => {
             chooseSamplingEnsemble(ensemble);
             goToControl("conditions");
-            setNotice({
-              kind: "success",
-              message: `Sampling ensemble set to ${ensemble}.`,
-            });
           },
         }),
       ),
@@ -1278,7 +1076,6 @@ export default function App() {
         run: () => {
           chooseProtocol(true);
           goToControl("conditions");
-          setNotice({ kind: "success", message: "Equilibration included." });
         },
       },
       {
@@ -1291,7 +1088,6 @@ export default function App() {
         run: () => {
           chooseProtocol(false);
           goToControl("conditions");
-          setNotice({ kind: "success", message: "Equilibration skipped." });
         },
       },
       {
@@ -1300,11 +1096,10 @@ export default function App() {
         label: "Use one sampling input",
         detail: "Write a single run-01.in",
         keywords: ["single", "one file", "sampling output"],
-        current: samplingMode === "single",
+        current: samplingRunCount === 1,
         run: () => {
-          chooseSamplingOutputMode("single");
-          goToControl("conditions", "sampling-steps");
-          setNotice({ kind: "success", message: "One sampling input selected." });
+          setRunCount(1);
+          goToControl("conditions", "sampling-run-count");
         },
       },
       {
@@ -1320,18 +1115,14 @@ export default function App() {
           "segments",
           "number of inputs",
         ],
-        current: samplingMode === "continued",
+        current: samplingRunCount > 1,
         run: () => {
-          chooseSamplingOutputMode("continued");
+          if (samplingRunCount === 1) setRunCount(DEFAULT_CONTINUED_SAMPLING_RUNS);
           goToControl("conditions", "sampling-run-count");
-          setNotice({
-            kind: "success",
-            message: "Continued sampling inputs selected.",
-          });
         },
       },
       ...THERMOSTATS.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `thermostat-${option.value}`,
           group: "Scientific setup",
           label: option.label,
@@ -1350,15 +1141,11 @@ export default function App() {
           run: () => {
             chooseThermostat(option.value);
             goToControl("conditions", "sampling-thermostat");
-            setNotice({
-              kind: "success",
-              message: `${option.label} thermostat selected.`,
-            });
           },
         }),
       ),
       ...MANOSTATS.map(
-        (option): Command => ({
+        (option): SetupCommand => ({
           id: `manostat-${option.value}`,
           group: "Scientific setup",
           label: `${option.label} manostat`,
@@ -1378,10 +1165,6 @@ export default function App() {
           run: () => {
             chooseManostat(option.value);
             goToControl("conditions", "sampling-manostat");
-            setNotice({
-              kind: "success",
-              message: `${option.label} manostat selected.`,
-            });
           },
         }),
       ),
@@ -1419,12 +1202,12 @@ export default function App() {
       {
         id: "parameter-steps",
         group: "Parameters",
-        label: samplingMode === "single" ? "Sampling steps" : "Steps per input",
+        label: samplingRunCount === 1 ? "Sampling steps" : "Steps per input",
         detail: `${setup.steps?.toLocaleString() ?? "Not set"} steps`,
         keywords: ["length", "duration", "sampling", "steps per input"],
         run: () => goToControl("conditions", "sampling-steps"),
       },
-      ...(samplingMode === "continued"
+      ...(samplingRunCount > 1
         ? [
             {
               id: "parameter-input-count",
@@ -1509,11 +1292,11 @@ export default function App() {
           : undefined,
         run: () => {
           setJitter(true);
-          goToControl("prepare", "position-sigma");
+          goToControl("system", "position-sigma");
         },
       },
       ...(rendered?.files ?? []).map(
-        (file): Command => ({
+        (file): SetupCommand => ({
           id: `input-${file.name}`,
           group: "Inputs",
           label: file.name,
@@ -1528,10 +1311,50 @@ export default function App() {
           ],
           run: () => {
             setSelectedFileKey(file.name);
-            goToControl("review", "generated-input-preview");
+            goToControl("review");
           },
         }),
       ),
+      {
+        id: "structure-3d",
+        group: "Actions",
+        label: "View structure in 3D",
+        detail: `${analysis.summary.formula} · ${analysis.summary.atom_count} atoms`,
+        keywords: ["3d", "viewer", "model", "rotate", "structure", "show"],
+        run: () => setModal("structure"),
+      },
+      {
+        id: "input-full",
+        group: "Actions",
+        label: "Show full input",
+        detail: selectedFile?.name ?? "Generated input",
+        keywords: ["input", "preview", "large", "expand", "full"],
+        run: () => setModal("input"),
+      },
+      {
+        id: "calculator-settings",
+        group: "Actions",
+        label: "Advanced settings",
+        detail: molecularMechanics
+          ? "Potentials, neighbour search, constraints"
+          : "Calculator, QM run, constraints",
+        keywords: ["settings", "advanced", "options", "extra", "keywords"],
+        disabledReason:
+          !molecularMechanics && !setup.runner
+            ? "Choose a calculator first."
+            : undefined,
+        run: () => setModal("calculator"),
+      },
+      {
+        id: "run-settings",
+        group: "Actions",
+        label: "Kinetic resets",
+        detail: "Temperature rescaling, drift removal (Run › Steps)",
+        keywords: ["reset", "rescale", "momentum", "drift", "nscale", "nreset"],
+        disabledReason:
+          setup.ensemble === "OPT" ? "Not used by an optimisation." : undefined,
+        run: () => setModal("run"),
+      },
       {
         id: "import",
         group: "Actions",
@@ -1583,21 +1406,23 @@ export default function App() {
       },
     ];
   }, [
-    activeStep,
     analysis.structure.cell_generated,
+    analysis.summary.atom_count,
+    analysis.summary.formula,
     bootstrap,
     createRun,
     displayedDiagnostics,
     electronicMethods,
     equilibration,
+    goToControl,
     molecularMechanics,
     openFilePicker,
     ready,
     rendered?.files,
     rendering,
     runShortcut,
-    samplingMode,
     samplingRunCount,
+    selectedFile?.name,
     selectedRunnerStatus,
     setup,
     sourceFile,
@@ -1623,9 +1448,9 @@ export default function App() {
         void createRun();
         return;
       }
-      if (event.altKey && /^[1-5]$/.test(event.key)) {
+      if (event.altKey && /^[1-4]$/.test(event.key)) {
         event.preventDefault();
-        setActiveStep(STEPS[Number(event.key) - 1].id);
+        goToControl(SECTIONS[Number(event.key) - 1].id);
         return;
       }
       if (!editing && event.key === "/") {
@@ -1635,7 +1460,7 @@ export default function App() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createRun, paletteOpen]);
+  }, [createRun, goToControl, paletteOpen]);
 
   async function useFile(file: File) {
     const sequence = ++uploadSequence.current;
@@ -1648,16 +1473,23 @@ export default function App() {
       setAnalysis(result);
       setOriginalAnalysis(result);
       setSourceFile(file);
-      setIsExample(false);
       setJitter(false);
       setPreparation(null);
       const stem = file.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "-");
       const restartName = `${stem || "structure"}.rst`;
+      const runName = `${stem || "pq"}-run`;
+      // Read before setSetup: the updater runs later, after the ref moved on.
+      const previousDerived = derivedRunName.current;
+      derivedRunName.current = runName;
       setBaseStartFile(restartName);
       setSetup((existing) => ({
         ...existing,
         start_file: restartName,
-        file_prefix: `${stem || "pq"}-run`,
+        // A name the user typed in Output stays; only the derived one follows.
+        file_prefix:
+          existing.file_prefix === previousDerived
+            ? runName
+            : existing.file_prefix,
         density_g_cm3:
           isMolecularMechanics(existing) && result.structure.cell_generated
             ? existing.density_g_cm3 ?? 1
@@ -1665,9 +1497,7 @@ export default function App() {
       }));
       setNotice({
         kind: result.valid ? "success" : "info",
-        message: result.valid
-          ? `${file.name} passed the structure checks.`
-          : `${file.name} needs attention.`,
+        message: result.valid ? file.name : `${file.name} needs review`,
       });
     } catch (error) {
       if (sequence === uploadSequence.current) {
@@ -1679,9 +1509,66 @@ export default function App() {
   }
 
   function onFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
-    if (file) void useFile(file);
+    if (files.length > 0) void importFiles(files);
+  }
+
+  async function addSetupFile(role: SetupFileRole, file: File) {
+    const content = await file.text();
+    const packageName = packagedSetupFileName(role, file.name);
+    setSetupFiles((existing) => [
+      ...existing.filter((item) => item.role !== role),
+      { role, name: packageName, content },
+    ]);
+    setSetup((existing) => withSetupFileName(existing, role, packageName));
+  }
+
+  /**
+   * Import a structure together with whatever companion files sit next to
+   * it: a multi-select, a dropped folder, or a folder picked with "Folder".
+   * Companions are sorted by name; the structure (an .rst wins) is analysed.
+   */
+  async function importFiles(files: File[]) {
+    const structures = files.filter((file) => isStructureFileName(file.name));
+    const structure =
+      structures.find((file) => file.name.toLowerCase().endsWith(".rst")) ??
+      structures[0] ??
+      null;
+    const companions = new Map<SetupFileRole, File>();
+    for (const file of files) {
+      if (file === structure) continue;
+      const role = companionRoleForFileName(file.name);
+      if (role && !companions.has(role)) companions.set(role, file);
+    }
+    try {
+      await Promise.all(
+        [...companions].map(([role, file]) => addSetupFile(role, file)),
+      );
+    } catch (error) {
+      setNotice({ kind: "error", message: formatError(error) });
+      return;
+    }
+    if (structure) {
+      await useFile(structure);
+    }
+    if (companions.size > 0) {
+      const roles = [...companions.keys()]
+        .map((role) => defaultSetupFileName(role).split(".")[0])
+        .join(", ");
+      setNotice({
+        kind: "success",
+        message: structure
+          ? `${structure.name} · ${roles}`
+          : `Added ${roles}`,
+      });
+    } else if (!structure) {
+      const names = files.map((file) => file.name).slice(0, 3).join(", ");
+      setNotice({
+        kind: "error",
+        message: `${names}: not a structure (.rst, .xyz, .cif, .pdb, .mol, .sdf, .traj) or a companion file.`,
+      });
+    }
   }
 
   async function applyJitter() {
@@ -1746,12 +1633,7 @@ export default function App() {
       const runnerScript = keepsSelection
         ? existing.runner_script
         : recommendedRunnerScript(externalQM, runnerId);
-      const required = qmSetupFileSpecs(
-        runnerId,
-        existing.ensemble,
-        runnerScript,
-        externalQM,
-      );
+      const required = qmSetupFileSpecs(runnerId, runnerScript, externalQM);
       const roles = new Set(required.map((file) => file.role));
       return {
         ...existing,
@@ -1759,9 +1641,6 @@ export default function App() {
         job_type: "qm-md",
         runner: runnerId,
         runner_script: runnerScript,
-        moldescriptor_file: roles.has("moldescriptor")
-          ? existing.moldescriptor_file ?? defaultSetupFileName("moldescriptor")
-          : existing.moldescriptor_file,
         dftb_template_file: roles.has("dftb_template")
           ? existing.dftb_template_file ??
             defaultSetupFileName("dftb_template")
@@ -1782,12 +1661,7 @@ export default function App() {
       if (!allowed.some((script) => script.name === scriptName)) {
         return existing;
       }
-      const required = qmSetupFileSpecs(
-        existing.runner,
-        existing.ensemble,
-        scriptName,
-        externalQM,
-      );
+      const required = qmSetupFileSpecs(existing.runner, scriptName, externalQM);
       const roles = new Set(required.map((file) => file.role));
       return {
         ...existing,
@@ -1813,7 +1687,6 @@ export default function App() {
         ...withMMFileNames(existing, existing.mm_force_field),
         preset_id: null,
         job_type: "mm-md",
-        runner: null,
         density_g_cm3:
           analysis.structure.cell_generated
             ? existing.density_g_cm3 ?? 1
@@ -1836,7 +1709,6 @@ export default function App() {
       ...withMMFileNames(existing, mode),
       preset_id: null,
       job_type: "mm-md",
-      runner: null,
     }));
   }
 
@@ -1849,39 +1721,22 @@ export default function App() {
     if (!file) return;
 
     try {
-      const content = await file.text();
-      const packageName = packagedSetupFileName(role, file.name);
-      setSetupFiles((existing) => [
-        ...existing.filter((item) => item.role !== role),
-        { role, name: packageName, content },
-      ]);
-      setSetup((existing) => withSetupFileName(existing, role, packageName));
+      await addSetupFile(role, file);
     } catch (error) {
       setNotice({ kind: "error", message: formatError(error) });
     }
   }
 
-  function commitSamplingRunCount() {
-    const count = commitContinuedSamplingRunCountDraft(
-      samplingRunCountDraft,
-      samplingRunCount,
-    );
-    lastContinuedSamplingRunCount.current = count;
-    setSamplingRunCount(count);
-    setSamplingRunCountDraft(String(count));
+  function setRunCount(count: number) {
+    const clamped = clampSamplingRunCount(count);
+    setSamplingRunCount(clamped);
+    setSamplingRunCountDraft(String(clamped));
   }
 
-  function chooseSamplingOutputMode(mode: SamplingOutputMode) {
-    if (mode === samplingMode) return;
-    if (samplingRunCount > 1) {
-      lastContinuedSamplingRunCount.current = samplingRunCount;
-    }
-    const count = samplingRunCountForMode(
-      mode,
-      lastContinuedSamplingRunCount.current,
+  function commitSamplingRunCount() {
+    setRunCount(
+      commitSamplingRunCountDraft(samplingRunCountDraft, samplingRunCount),
     );
-    setSamplingRunCount(count);
-    setSamplingRunCountDraft(String(count));
   }
 
   function chooseProtocol(withEquilibration: boolean) {
@@ -1904,25 +1759,15 @@ export default function App() {
   }
 
   function chooseSamplingEnsemble(ensemble: Exclude<Ensemble, "OPT">) {
+    // Only fill gaps; a thermostat or pressure chosen earlier survives a
+    // detour through NVE / NVT and comes back unchanged.
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
       ensemble,
-      thermostat:
-        ensemble === "NVE"
-          ? null
-          : existing.thermostat ?? "velocity_rescaling",
-      manostat:
-        ensemble === "NPT"
-          ? existing.manostat ?? "stochastic_rescaling"
-          : null,
-      pressure_bar:
-        ensemble === "NPT" ? existing.pressure_bar ?? 1.01325 : null,
-      moldescriptor_file:
-        ensemble === "NPT"
-          ? existing.moldescriptor_file ??
-            defaultSetupFileName("moldescriptor")
-          : existing.moldescriptor_file,
+      thermostat: existing.thermostat ?? "velocity_rescaling",
+      manostat: existing.manostat ?? "stochastic_rescaling",
+      pressure_bar: existing.pressure_bar ?? 1.01325,
     }));
   }
 
@@ -1948,49 +1793,27 @@ export default function App() {
     }));
   }
 
-  function goToControl(step: StepId, controlId?: string) {
-    setActiveStep(step);
-    if (!controlId) return;
-    window.setTimeout(() => {
-      window.requestAnimationFrame(() => {
-        const control = document.getElementById(controlId);
-        const details = control?.closest("details");
-        if (details instanceof HTMLDetailsElement) details.open = true;
-        control?.scrollIntoView({ block: "center", behavior: "smooth" });
-        if (
-          control instanceof HTMLInputElement ||
-          control instanceof HTMLSelectElement ||
-          control instanceof HTMLButtonElement ||
-          control instanceof HTMLTextAreaElement
-        ) {
-          control.focus({ preventScroll: true });
-        }
-      });
-    }, 0);
-  }
-
   const runLauncher = packageRunLauncher(bootstrap?.pq ?? null);
 
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">
-          <img src="/pq-logo.png" alt="PQ" />
-          <div>
-            <strong>PQSetup</strong>
-            <span>Simulation input</span>
-          </div>
+        <div className="brand" title="PQSetup">
+          <img src="/pq-logo.png" alt="PQSetup" />
+          <strong>PQSetup</strong>
         </div>
-        <button
-          type="button"
-          className="command-trigger"
-          aria-label={`Search setup, ${searchShortcut}`}
-          onClick={() => setPaletteOpen(true)}
-        >
-          <Search size={16} aria-hidden="true" />
-          <span>Search setup</span>
-          <kbd>{searchShortcut}</kbd>
-        </button>
+        <div className="header-center">
+          <button
+            type="button"
+            className="command-search"
+            aria-label={`Search setup, ${searchShortcut}`}
+            onClick={() => setPaletteOpen(true)}
+          >
+            <Search size={16} aria-hidden="true" />
+            <span>Search setup…</span>
+            <kbd>{searchShortcut}</kbd>
+          </button>
+        </div>
         <div className="header-status">
           <a
             className="header-docs-link"
@@ -1998,201 +1821,246 @@ export default function App() {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Open PQSetup documentation"
-            title="Open documentation"
+            title="Docs"
           >
             <BookOpen size={15} aria-hidden="true" />
-            <span>Docs</span>
           </a>
           {bootstrap ? (
-            <>
-              <span
-                className={
-                  bootstrap.pq.found ? "status-ready" : "status-missing"
-                }
-                aria-label={`PQ ${
-                  bootstrap.pq.found
-                    ? bootstrap.pq.version ?? "detected"
-                    : "not found"
-                }`}
-                title={`PQ ${
-                  bootstrap.pq.found
-                    ? bootstrap.pq.version ?? "detected"
-                    : "not found"
-                }`}
-              >
-                <span className="status-dot" aria-hidden="true" />
-                <span className="status-text">
-                  PQ{" "}
-                  {bootstrap.pq.found
-                    ? bootstrap.pq.version ?? "detected"
-                    : "not found"}
-                </span>
-              </span>
-              <span className="version">
-                Input target {bootstrap.target_pq_release}
-              </span>
-            </>
-          ) : bootstrapError ? (
             <span
-              className="status-missing"
-              aria-label="Backend unavailable"
-              title="Backend unavailable"
+              className={`pq-tag ${bootstrap.pq.found ? "ok" : "missing"}`}
+              title={
+                bootstrap.pq.found
+                  ? `PQ ${bootstrap.pq.version ?? "detected"}`
+                  : "PQ not found"
+              }
             >
-              <span className="status-dot" aria-hidden="true" />
-              <span className="status-text">Backend unavailable</span>
+              <span className="pq-tag-label">PQ</span>
+              <span className="pq-tag-value">
+                {bootstrap.pq.found
+                  ? (bootstrap.pq.version ?? "PQ").split("-")[0]
+                  : "no PQ"}
+              </span>
+            </span>
+          ) : bootstrapError ? (
+            <span className="pq-tag missing" title="Backend unavailable">
+              <span className="pq-tag-label">PQ</span>
+              <span className="pq-tag-value">offline</span>
             </span>
           ) : (
-            <span
-              className="loading-label"
-              aria-label="Checking system"
-              title="Checking system"
-            >
-              <LoaderCircle size={15} className="spin" />
-              <span className="status-text">Checking system</span>
+            <span className="pq-tag pending" title="Checking system">
+              <LoaderCircle size={13} className="spin" aria-hidden="true" />
+              <span className="pq-tag-value">checking</span>
             </span>
           )}
         </div>
       </header>
 
-      <div className="workspace">
-        <nav
-          ref={workflowNav}
-          className="workflow"
-          aria-label="Setup workflow"
-        >
-          <div className="workflow-title">
-            <span>Workflow</span>
-            <Keyboard size={16} aria-label="Keyboard accessible" />
-          </div>
-          <ol>
-            {STEPS.map((step, index) => (
-              <li key={step.id}>
-                <button
-                  ref={(node) => {
-                    workflowStepButtons.current[step.id] = node;
-                  }}
-                  type="button"
-                  className={activeStep === step.id ? "active" : ""}
-                  aria-current={activeStep === step.id ? "step" : undefined}
-                  onClick={() => setActiveStep(step.id)}
-                >
-                  <span className={`step-marker ${stepState[step.id]}`}>
-                    {stepState[step.id] === "ok" ? <Check size={13} /> : index + 1}
-                  </span>
-                  <span className="step-copy">
-                    <strong>{step.label}</strong>
-                    <small>{step.hint}</small>
-                  </span>
-                  <ChevronRight size={15} aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-          </ol>
-          <div className="workflow-tip">
-            <span>Alt 1–5</span>
-            Jump between steps
-          </div>
-        </nav>
-
-        <main className="setup-main" ref={setupMain}>
-          {notice && (
-            <div className={`notice ${notice.kind}`} role="status">
-              {notice.kind === "error" ? (
-                <CircleAlert size={17} />
-              ) : (
-                <CheckCircle2 size={17} />
-              )}
+      <main className="page">
+          {notice && notice.kind === "error" && (
+            <div className="notice error" role="status">
+              <CircleAlert size={15} />
               <span>{notice.message}</span>
-              <button type="button" onClick={() => setNotice(null)}>
-                Dismiss
+              <button
+                type="button"
+                aria-label="Dismiss"
+                title="Dismiss"
+                onClick={() => setNotice(null)}
+              >
+                <X size={16} aria-hidden="true" />
               </button>
             </div>
           )}
 
-          {activeStep === "system" && (
-            <section className="step-panel">
-              <StepHeading
-                eyebrow="01 · System"
-                title="Choose the structure"
-                description="PQSetup checks coordinates, the periodic cell, elements, and close contacts before a run is created."
-              />
+          <div className="setup-page">
+            <section
+              className="setup-section"
+              id="section-structure"
+              aria-labelledby="section-structure-title"
+            >
+              <h2 className="section-title" id="section-structure-title">
+                Structure
+              </h2>
               <input
                 ref={fileInput}
                 className="visually-hidden"
                 type="file"
-                accept=".rst,.xyz,.cif,.pdb,.mol,.sdf,.traj,.extxyz"
+                multiple
+                accept=".rst,.xyz,.cif,.pdb,.mol,.sdf,.traj,.extxyz,.dat,.template,.hsd"
                 onChange={onFileChange}
               />
-              <button
-                type="button"
-                className="drop-zone"
-                onClick={openFilePicker}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event: DragEvent<HTMLButtonElement>) => {
-                  event.preventDefault();
-                  const file = event.dataTransfer.files[0];
-                  if (file) void useFile(file);
-                }}
-              >
-                {uploading ? (
-                  <LoaderCircle className="spin" size={25} />
-                ) : (
-                  <Upload size={25} />
+              <input
+                ref={folderInput}
+                className="visually-hidden"
+                type="file"
+                multiple
+                onChange={onFileChange}
+                {...{ webkitdirectory: "" }}
+              />
+              <div className="structure-card">
+                <div
+                  className="structure-summary"
+                  aria-label="Current structure. Drop a file or a run folder here."
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event: DragEvent<HTMLDivElement>) => {
+                    event.preventDefault();
+                    void filesFromDrop(event.dataTransfer).then((files) => {
+                      if (files.length > 0) void importFiles(files);
+                    });
+                  }}
+                >
+                  <div className="file-icon">
+                    {uploading ? (
+                      <LoaderCircle className="spin" size={18} aria-hidden="true" />
+                    ) : (
+                      <FileCode2 size={18} aria-hidden="true" />
+                    )}
+                  </div>
+                  <div>
+                    <strong>{analysis.structure.source_name}</strong>
+                    <small>
+                      <ChemicalFormula formula={analysis.summary.formula} />
+                      {" · "}
+                      {analysis.summary.atom_count}{" "}
+                      {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
+                    </small>
+                  </div>
+                  {!analysis.valid && (
+                    <span
+                      className="file-invalid"
+                      title="Needs review"
+                      aria-label="Needs review"
+                    >
+                      <CircleAlert size={16} aria-hidden="true" />
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="structure-replace"
+                    aria-haspopup="dialog"
+                    title="View in 3D"
+                    onClick={() => setModal("structure")}
+                  >
+                    <Rotate3d size={14} aria-hidden="true" />
+                    3D
+                  </button>
+                  <button
+                    type="button"
+                    className="structure-replace"
+                    aria-label="Import structure"
+                    title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · select companion files along, or drop them here"
+                    onClick={openFilePicker}
+                  >
+                    <Upload size={14} aria-hidden="true" />
+                    Import
+                  </button>
+                  <button
+                    type="button"
+                    className="structure-replace"
+                    aria-label="Import a run folder"
+                    title="Pick a folder: the structure and companion files (moldescriptor, guff, topology, …) are sorted by name"
+                    onClick={() => folderInput.current?.click()}
+                  >
+                    <FolderOpen size={14} aria-hidden="true" />
+                    Folder
+                  </button>
+                </div>
+
+                <div className="structure-meta band-row">
+                  <div
+                    className={`prepare-option ${jitter ? "enabled" : ""}`}
+                    title={
+                      sourceFile
+                        ? "Nudge atoms to break symmetry"
+                        : "Import a structure first"
+                    }
+                  >
+                    <label className="switch-row">
+                      <span className="prepare-icon">
+                        <Sparkles size={16} aria-hidden="true" />
+                      </span>
+                      <span>
+                        <strong>Jitter</strong>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={jitter}
+                        disabled={!sourceFile}
+                        onChange={(event) => {
+                          setJitter(event.target.checked);
+                          if (!event.target.checked) clearAppliedPreparation();
+                        }}
+                      />
+                      <span className="switch" aria-hidden="true" />
+                    </label>
+                  </div>
+                </div>
+
+                {jitter && (
+                  <div className="prepare-fields band-row">
+                    <Field label="σ" unit="Å" controlId="position-sigma">
+                      <input
+                        type="number"
+                        min="0"
+                        max="0.2"
+                        step="0.001"
+                        value={sigma}
+                        onChange={(event) => setSigma(Number(event.target.value))}
+                      />
+                    </Field>
+                    <Field label="Seed" controlId="position-seed">
+                      <input
+                        type="number"
+                        min="0"
+                        max="4294967295"
+                        step="1"
+                        value={setup.random_seed}
+                        onChange={(event) =>
+                          setSetup((existing) => ({
+                            ...existing,
+                            random_seed: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </Field>
+                    <button
+                      type="button"
+                      className="secondary-action"
+                      disabled={perturbing || !sourceFile}
+                      onClick={() => void applyJitter()}
+                    >
+                      {perturbing ? (
+                        <LoaderCircle className="spin" size={16} />
+                      ) : (
+                        <Sparkles size={16} />
+                      )}
+                      Apply
+                    </button>
+                  </div>
                 )}
-                <span>
-                  <strong>
-                    {uploading ? "Checking structure…" : "Drop a structure here"}
-                  </strong>
-                  <small>or choose RST, CIF, XYZ, PDB, MOL, or trajectory</small>
-                </span>
-                <span className="choose-file">Choose file</span>
-              </button>
-              <div className="current-file">
-                <div className="file-icon">
-                  <FileCode2 size={20} />
-                </div>
-                <div>
-                  <span className="eyebrow">{isExample ? "Example" : "Current"}</span>
-                  <strong>{analysis.structure.source_name}</strong>
-                  <small>
-                    <ChemicalFormula formula={analysis.summary.formula} /> ·{" "}
-                    {analysis.summary.atom_count.toLocaleString()} atoms
-                  </small>
-                </div>
-                <span className={analysis.valid ? "file-valid" : "file-invalid"}>
-                  {analysis.valid ? "Valid" : "Review"}
-                </span>
-              </div>
-              <div className="inline-note">
-                <strong>PQ cell convention</strong>
-                <p>
-                  Periodic coordinates are wrapped around the cell center, from
-                  −L/2 to +L/2. The original file remains unchanged.
-                </p>
+                {preparation && (
+                  <div className="preparation-applied">
+                    <CheckCircle2 size={15} />
+                    σ {preparation.sigma_angstrom} Å · seed {preparation.seed}
+                    {preparationStale && (
+                      <span className="preparation-stale">
+                        {" "}· settings changed, apply again
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
-          )}
 
-          {activeStep === "method" && (
-            <section className="step-panel">
-              <StepHeading
-                eyebrow="02 · Method"
-                title="Choose the interaction model"
-                description="Use one electronic-structure calculator or one molecular-mechanics model for the run sequence."
-              />
-              {bootstrap && (
-                <div className="compatibility-line" aria-label="PQ compatibility">
-                  <span>
-                    Installed <strong>{bootstrap.pq.version ?? "unknown"}</strong>
-                  </span>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    Input target <strong>{bootstrap.target_pq_release}</strong>
-                  </span>
-                </div>
-              )}
+            <section
+              className="setup-section"
+              id="section-method"
+              aria-labelledby="section-method-title"
+            >
+              <h2 className="section-title" id="section-method-title">
+                Method
+              </h2>
               <fieldset className="interaction-model-fieldset">
-                <legend>Interaction model</legend>
+                <legend className="visually-hidden">Interaction model</legend>
                 <div className="interaction-model-options">
                   <label className={!molecularMechanics ? "selected" : ""}>
                     <input
@@ -2201,9 +2069,9 @@ export default function App() {
                       checked={!molecularMechanics}
                       onChange={() => chooseInteractionModel("qm")}
                     />
-                    <span>
-                      <strong>Quantum mechanics</strong>
-                      <small>External electronic-structure calculator</small>
+                    <Atom size={16} aria-hidden="true" />
+                    <span className="interaction-model-label">
+                      <strong>QM</strong>
                     </span>
                   </label>
                   <label className={molecularMechanics ? "selected" : ""}>
@@ -2213,244 +2081,141 @@ export default function App() {
                       checked={molecularMechanics}
                       onChange={() => chooseInteractionModel("mm")}
                     />
-                    <span>
-                      <strong>Molecular mechanics</strong>
-                      <small>GUFF or a classical force field</small>
+                    <Boxes size={16} aria-hidden="true" />
+                    <span className="interaction-model-label">
+                      <strong>MM</strong>
                     </span>
                   </label>
                 </div>
               </fieldset>
 
-              {!molecularMechanics ? (
-                <div className="method-content">
-                  <div className="method-principle">
-                    <strong>Calculator</strong>
-                    <span>
-                      Select the calculator required by the study. Missing local
-                      software is reported but does not prevent setup.
-                    </span>
-                  </div>
-                  <div
-                    className="calculator-list"
-                    role="radiogroup"
-                    aria-label="Calculator"
+              <div className="run-band">
+                {!molecularMechanics ? (
+                  <ConditionRow
+                    icon={Atom}
+                    title="Calculator"
+                    hint={
+                      selectedRunnerStatus &&
+                      runnerAvailability(selectedRunnerStatus) !== "ready" ? (
+                        <span className="hint-warn">
+                          {runnerAvailabilityLabel(
+                            runnerAvailability(selectedRunnerStatus),
+                          )}
+                        </span>
+                      ) : undefined
+                    }
+                    className="method-fields"
                   >
-                    {(bootstrap?.runners ?? [])
-                      .filter((runner) => runner.supported)
-                      .map((runner) => {
-                        const selected = setup.runner === runner.id;
-                        const runnerState =
-                          runner.available_in_pq === false
-                            ? "incomplete"
-                            : runner.ready
-                              ? "ready"
-                              : runner.installed
-                                ? "incomplete"
-                                : "missing";
-                        return (
-                          <div
-                            className={`calculator-option ${
-                              selected ? "selected" : ""
-                            }`}
-                            key={runner.id}
-                          >
-                            <label>
-                              <input
-                                type="radio"
-                                name="calculator"
-                                checked={selected}
-                                onChange={() => chooseCalculator(runner.id)}
-                              />
-                              <span
-                                className="calculator-radio"
-                                aria-hidden="true"
-                              >
-                                {selected && <span />}
-                              </span>
-                              <span className="runner-name">
-                                <strong>{runner.label}</strong>
-                                <small>
-                                  {runner.version
-                                    ? `Version ${runner.version}`
-                                    : runner.detail}
-                                </small>
-                              </span>
-                              <span
-                                className={`runner-state ${runnerState}`}
-                              >
-                                {runner.available_in_pq === false
-                                  ? "PQ build mismatch"
-                                  : runner.ready
-                                    ? "Ready"
-                                    : runner.installed
-                                      ? "Setup incomplete"
-                                      : "Not detected"}
-                              </span>
-                            </label>
-                            {selected &&
-                              (!runner.ready ||
-                                runner.available_in_pq === false) && (
-                                <div
-                                  className="calculator-warning"
-                                  role="status"
-                                >
-                                  <CircleAlert size={14} aria-hidden="true" />
-                                  <span>
-                                    {runner.available_in_pq === false
-                                      ? `Selected PQ build does not include ${runner.label}. `
-                                      : `${runner.detail} `}
-                                    Inputs can still be created.
-                                  </span>
-                                </div>
-                              )}
-                          </div>
-                        );
-                      })}
-                    {!bootstrap && (
-                      <div className="runner-loading">
-                        <LoaderCircle className="spin" size={18} />
-                        Detecting calculators
-                      </div>
-                    )}
-                  </div>
-                  {!setup.runner && (
-                    <div className="inline-warning" role="alert">
-                      <CircleAlert size={15} aria-hidden="true" />
-                      Select a calculator.
-                    </div>
-                  )}
-                  {electronicMethods.length > 0 &&
-                    (electronicMethods.length > 1 ||
-                      !electronicProgram?.recommended_script) && (
-                      <fieldset className="electronic-method-fieldset">
-                        <legend>Electronic method</legend>
-                        <div
-                          className="electronic-method-options"
-                          role="radiogroup"
-                          aria-label="Electronic method"
-                        >
-                          {electronicMethods.map((method) => (
-                            <label
-                              className={
-                                setup.runner_script === method.name
-                                  ? "selected"
-                                  : ""
-                              }
-                              key={method.name}
-                            >
-                              <input
-                                type="radio"
-                                name="electronic-method"
-                                checked={setup.runner_script === method.name}
-                                onChange={() =>
-                                  chooseElectronicMethod(method.name)
-                                }
-                              />
-                              <span>{method.label}</span>
-                            </label>
-                          ))}
-                        </div>
-                        <p>Used for equilibration and sampling.</p>
-                        {!selectedElectronicMethod && (
-                          <div className="inline-warning" role="alert">
-                            <CircleAlert size={15} aria-hidden="true" />
-                            Choose an electronic method.
-                          </div>
-                        )}
-                      </fieldset>
-                    )}
-                  {methodFileSpecs.length > 0 && (
-                    <section
-                      className="setup-files"
-                      aria-labelledby="qm-setup-files-title"
-                    >
-                      <div className="section-rule-heading">
-                        <strong id="qm-setup-files-title">
-                          Required files
-                        </strong>
-                        <span>Included in the package</span>
-                      </div>
-                      <div className="setup-file-list">
-                        {methodFileSpecs.map((spec) => {
-                          const selected = setupFiles.find(
-                            (file) => file.role === spec.role,
+                    <Field label="Program" controlId="calculator">
+                      <select
+                        value={setup.runner ?? ""}
+                        disabled={!bootstrap}
+                        aria-invalid={!setup.runner || undefined}
+                        onChange={(event) => {
+                          if (event.target.value) {
+                            chooseCalculator(event.target.value);
+                          }
+                        }}
+                      >
+                        <option value="" disabled>
+                          {bootstrap ? "Select calculator" : "Loading…"}
+                        </option>
+                        {RUNNER_GROUPS.map((group) => {
+                          const runners = (bootstrap?.runners ?? []).filter(
+                            (runner) =>
+                              runner.supported && group.ids.includes(runner.id),
                           );
+                          if (runners.length === 0) return null;
                           return (
-                            <label
-                              className={selected ? "selected" : ""}
-                              key={spec.role}
-                            >
-                              <input
-                                className="setup-file-input"
-                                type="file"
-                                onChange={(event) =>
-                                  void chooseSetupFile(spec.role, event)
-                                }
-                              />
-                              <Upload size={16} aria-hidden="true" />
-                              <span>
-                                <strong>{spec.label}</strong>
-                                <small>
-                                  {selected?.name ?? spec.defaultName}
-                                </small>
-                              </span>
-                              <span
-                                className={
-                                  selected ? "file-added" : "file-required"
-                                }
-                              >
-                                {selected ? "Added" : "Required"}
-                              </span>
-                            </label>
+                            <optgroup label={group.label} key={group.label}>
+                              {runners.map((runner) => {
+                                const state = runnerAvailability(runner);
+                                const suffix = runnerAvailabilityLabel(state);
+                                return (
+                                  <option value={runner.id} key={runner.id}>
+                                    {runner.label}
+                                    {suffix ? ` · ${suffix}` : ""}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
                           );
                         })}
-                      </div>
-                    </section>
-                  )}
-                </div>
-              ) : (
-                <div className="method-content">
-                  <div className="method-principle">
-                    <strong>Force-field model</strong>
-                    <span>
-                      PQSetup packages supplied parameters unchanged. It does
-                      not infer a force field from coordinates.
-                    </span>
-                  </div>
-                  <fieldset className="mm-mode-fieldset">
-                    <legend>Interaction terms</legend>
-                    <div className="mm-mode-list">
-                      {MM_MODES.map((option) => (
-                        <label
-                          className={
-                            setup.mm_force_field === option.value
-                              ? "selected"
-                              : ""
-                          }
-                          key={option.value}
-                        >
-                          <input
-                            type="radio"
-                            name="mm-force-field"
-                            checked={setup.mm_force_field === option.value}
-                            onChange={() => chooseMMMode(option.value)}
-                          />
-                          <span>
+                      </select>
+                    </Field>
+                    {electronicMethods.length > 0 &&
+                      (electronicMethods.length > 1 ||
+                        !electronicProgram?.recommended_script ||
+                        !selectedElectronicMethod) && (
+                        <Field label="Method" controlId="electronic-method">
+                          <select
+                            value={selectedElectronicMethod ? setup.runner_script ?? "" : ""}
+                            aria-invalid={!selectedElectronicMethod || undefined}
+                            onChange={(event) => {
+                              if (event.target.value) {
+                                chooseElectronicMethod(event.target.value);
+                              }
+                            }}
+                          >
+                            <option value="" disabled>
+                              Choose method
+                            </option>
+                            {electronicMethods.map((method) => (
+                              <option value={method.name} key={method.name}>
+                                {method.label}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      )}
+                    {setup.runner && (
+                      <SettingsLine
+                        parts={settingsLines(effective)}
+                        onOpen={() => setModal("calculator")}
+                      />
+                    )}
+                  </ConditionRow>
+                ) : (
+                  <ConditionRow
+                    icon={Boxes}
+                    title="Force field"
+                    info={
+                      MM_MODES.find(
+                        (option) => option.value === setup.mm_force_field,
+                      )?.description
+                    }
+                    className="method-fields"
+                  >
+                    <fieldset className="mm-mode-fieldset condition-full">
+                      <legend className="visually-hidden">
+                        Interaction terms
+                      </legend>
+                      <div className="interaction-model-options mm-mode-options">
+                        {MM_MODES.map((option) => (
+                          <label
+                            className={
+                              setup.mm_force_field === option.value
+                                ? "selected"
+                                : ""
+                            }
+                            key={option.value}
+                          >
+                            <input
+                              type="radio"
+                              name="mm-force-field"
+                              checked={setup.mm_force_field === option.value}
+                              onChange={() => chooseMMMode(option.value)}
+                            />
                             <strong>{option.label}</strong>
-                            <small>{option.description}</small>
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-
-                  <div className="form-grid mm-settings">
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
                     {analysis.structure.cell_generated && (
                       <Field
-                        label="System density"
+                        label="Density"
                         unit="g cm⁻³"
                         controlId="mm-density"
-                        help="Required because the imported structure has no physical periodic cell. PQ uses the equivalent kg L⁻¹ value."
                       >
                         <input
                           type="number"
@@ -2468,16 +2233,7 @@ export default function App() {
                         />
                       </Field>
                     )}
-                    <Field
-                      label="Coulomb cutoff"
-                      unit="Å"
-                      controlId="mm-cutoff"
-                      help={
-                        analysis.structure.cell_generated
-                          ? "Must be below half the box length derived from the density."
-                          : "Must fit inside half the shortest periodic box length."
-                      }
-                    >
+                    <Field label="Coulomb cutoff" unit="Å" controlId="mm-cutoff">
                       <input
                         type="number"
                         min="0"
@@ -2491,1055 +2247,756 @@ export default function App() {
                         }
                       />
                     </Field>
-                  </div>
-
-                  {!hasTypedMolecules && (
-                    <div className="inline-warning" role="alert">
-                      <CircleAlert size={15} aria-hidden="true" />
-                      Import a PQ restart with molecule type IDs for molecular
-                      mechanics.
-                    </div>
-                  )}
-
-                  <section
-                    className="setup-files"
-                    aria-labelledby="setup-files-title"
-                  >
-                    <div className="section-rule-heading">
-                      <strong id="setup-files-title">Force-field files</strong>
-                      <span>Included in the package</span>
-                    </div>
-                    <div className="setup-file-list">
-                      {methodFileSpecs.map((spec) => {
-                        const selected = setupFiles.find(
-                          (file) => file.role === spec.role,
-                        );
-                        return (
-                          <label
-                            className={selected ? "selected" : ""}
-                            key={spec.role}
-                          >
-                            <input
-                              className="setup-file-input"
-                              type="file"
-                              onChange={(event) =>
-                                void chooseSetupFile(spec.role, event)
-                              }
-                            />
-                            <Upload size={16} aria-hidden="true" />
-                            <span>
-                              <strong>{spec.label}</strong>
-                              <small>
-                                {selected?.name ?? spec.defaultName}
-                              </small>
-                            </span>
-                            <span
-                              className={
-                                selected
-                                  ? "file-added"
-                                  : spec.optional
-                                    ? "file-optional"
-                                    : "file-required"
-                              }
-                            >
-                              {selected
-                                ? "Added"
-                                : spec.optional
-                                  ? "Optional"
-                                  : "Required"}
-                            </span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </section>
-                </div>
-              )}
-            </section>
-          )}
-
-          {activeStep === "conditions" && (
-            <section className="step-panel">
-              <StepHeading
-                eyebrow="03 · Conditions"
-                title="Build the run protocol"
-                description="Optionally equilibrate, then create one or more linked sampling files."
-              />
-              <div className="stage-timeline">
-                <section
-                  className={`optional-stage ${
-                    equilibration ? "enabled" : ""
-                  }`}
-                  aria-label="Equilibration"
-                >
-                  <header className="optional-stage-heading">
-                    <span className="stage-number stage-code">eq</span>
-                    <span className="stage-summary">
-                      <strong>Equilibration</strong>
-                      <small>Optional NVT preparation</small>
-                    </span>
-                    <label className="stage-toggle">
-                      <span>{equilibration ? "Included" : "Skip"}</span>
-                        <input
-                          type="checkbox"
-                          aria-label="Include equilibration stage"
-                          checked={Boolean(equilibration)}
-                        onChange={(event) => chooseProtocol(event.target.checked)}
-                      />
-                      <span className="stage-toggle-track" aria-hidden="true">
-                        <span />
-                      </span>
-                    </label>
-                  </header>
-                  {equilibration && (
-                    <details className="stage-settings">
-                      <summary>
-                        <span>
-                          <strong>Equilibration settings</strong>
-                          <small>NVT · fixed cell</small>
-                        </span>
-                        <span className="stage-duration">
-                          {durationLabel(
-                            equilibration.steps,
-                            equilibration.timestep_fs,
-                          )}
-                        </span>
-                        <ChevronDown size={17} aria-hidden="true" />
-                      </summary>
-                      <div className="stage-body">
-                        <div className="form-grid stage-primary-grid">
-                          <Field label="Target temperature" unit="K">
-                            <input
-                              type="number"
-                              min="0.000001"
-                              step="0.01"
-                              value={equilibration.temperature_k}
-                              onChange={(event) =>
-                                updateEquilibration({
-                                  temperature_k: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Timestep" unit="fs">
-                            <input
-                              type="number"
-                              min="0.000001"
-                              step="0.1"
-                              value={equilibration.timestep_fs}
-                              onChange={(event) =>
-                                updateEquilibration({
-                                  timestep_fs: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                          <Field label="Steps">
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={equilibration.steps}
-                              onChange={(event) =>
-                                updateEquilibration({
-                                  steps: Number(event.target.value),
-                                })
-                              }
-                            />
-                          </Field>
-                        </div>
-                        <TemperatureCoupling
-                          value={equilibration}
-                          onChange={(patch) =>
-                            updateEquilibration({
-                              ...patch,
-                              thermostat:
-                                patch.thermostat ??
-                                equilibration.thermostat,
-                              thermostat_relaxation_ps:
-                                patch.thermostat_relaxation_ps ??
-                                equilibration.thermostat_relaxation_ps,
-                            })
-                          }
-                        />
-                        <TemperatureSchedule
-                          value={equilibration}
-                          onChange={updateEquilibration}
-                        />
-                      </div>
-                    </details>
-                  )}
-                </section>
-                {equilibration && (
-                  <>
-                    <div className="stage-connection">
-                      <Link2 size={14} aria-hidden="true" />
-                      eq restart continues into sampling 01
-                    </div>
-                  </>
+                    <SettingsLine
+                      parts={settingsLines(effective)}
+                      onOpen={() => setModal("calculator")}
+                    />
+                  </ConditionRow>
                 )}
 
-                <section className="protocol-stage sampling-stage">
-                  <header className="sampling-heading">
-                    <span
-                      className={`stage-number ${
-                        samplingRunCount > 1 ? "stage-range" : ""
-                      }`}
-                    >
-                      {samplingRunCount > 1
-                        ? `01–${samplingLabel(samplingRunCount)}`
-                        : "01"}
-                    </span>
-                    <span className="stage-summary">
-                      <strong>Sampling</strong>
-                      <small>
-                        {samplingRunSummary(
-                          samplingRunCount,
-                          Boolean(equilibration),
-                        )}{" "}
-                        · {setup.ensemble}
-                      </small>
-                    </span>
-                    <span className="stage-duration">
-                      {durationLabel(samplingTotalSteps, setup.timestep_fs)}
-                    </span>
-                  </header>
-                  <div className="stage-body">
-                    <section
-                      className="sampling-plan"
-                      aria-labelledby="sampling-files-title"
-                    >
-                      <div className="section-rule-heading">
-                        <strong id="sampling-files-title">
-                          Sampling files
-                        </strong>
-                        <span>Run layout</span>
-                      </div>
-                      <fieldset className="sampling-output-fieldset">
-                        <legend>Write sampling as</legend>
-                        <div className="sampling-output-modes">
-                          <label
-                            className={
-                              samplingMode === "single" ? "selected" : ""
-                            }
-                          >
-                            <input
-                              type="radio"
-                              name="sampling-output-mode"
-                              value="single"
-                              checked={samplingMode === "single"}
-                              onChange={() =>
-                                chooseSamplingOutputMode("single")
-                              }
-                            />
-                            <span>
-                              <strong>Single input</strong>
-                              <small>One run-01.in</small>
-                            </span>
-                          </label>
-                          <label
-                            className={
-                              samplingMode === "continued" ? "selected" : ""
-                            }
-                          >
-                            <input
-                              type="radio"
-                              name="sampling-output-mode"
-                              value="continued"
-                              checked={samplingMode === "continued"}
-                              onChange={() =>
-                                chooseSamplingOutputMode("continued")
-                              }
-                            />
-                            <span>
-                              <strong>Split into continued inputs</strong>
-                              <small>Numbered 01, 02, 03…</small>
-                            </span>
-                          </label>
+                {methodFileSpecs.length > 0 && (
+                  <ConditionRow
+                    icon={Upload}
+                    title="Files"
+                    hint={methodFilesHint}
+                    info={
+                      molecularMechanics
+                        ? "Force-field files PQ reads next to the input. Drop a run folder on the structure to add them all at once."
+                        : "Optional files are packed only when added."
+                    }
+                  >
+                    <div className="condition-full">
+                      {molecularMechanics && !hasTypedMolecules && (
+                        <div className="inline-warning" role="alert">
+                          <CircleAlert size={15} aria-hidden="true" />
+                          Needs molecule type IDs — import a PQ restart (.rst)
                         </div>
-                      </fieldset>
-                      <p
-                        className="sampling-output-description"
-                        aria-live="polite"
-                      >
-                        {samplingMode === "single"
-                          ? "Create one sampling input."
-                          : `Create ${samplingRunCount} linked inputs. Each later input reads the previous restart.`}
-                      </p>
-
-                      <div
-                        className={`form-grid sampling-length-grid ${samplingMode}`}
-                      >
-                        <Field
-                          label={
-                            samplingMode === "single"
-                              ? "Steps"
-                              : "Steps per input"
-                          }
-                          controlId="sampling-steps"
-                        >
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={setup.steps ?? ""}
-                            onChange={(event) =>
-                              setSetup((existing) => ({
-                                ...existing,
-                                steps: event.target.value
-                                  ? Number(event.target.value)
-                                  : null,
-                              }))
-                            }
-                          />
-                        </Field>
-                        {samplingMode === "continued" && (
-                          <Field
-                            label="Number of inputs"
-                            controlId="sampling-run-count"
-                            help={`Linked inputs are numbered automatically. Maximum ${MAX_SAMPLING_RUNS}.`}
-                          >
-                            <input
-                              type="number"
-                              min="2"
-                              max={MAX_SAMPLING_RUNS}
-                              step="1"
-                              inputMode="numeric"
-                              value={samplingRunCountDraft}
-                              onChange={(event) => {
-                                const draft = event.target.value;
-                                setSamplingRunCountDraft(draft);
-                                const count =
-                                  parseContinuedSamplingRunCountDraft(draft);
-                                if (count !== null) {
-                                  lastContinuedSamplingRunCount.current = count;
-                                  setSamplingRunCount(count);
-                                }
-                              }}
-                              onBlur={commitSamplingRunCount}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.currentTarget.blur();
-                                }
-                              }}
-                            />
-                          </Field>
-                        )}
-                      </div>
-
-                      <div className="sampling-total" aria-live="polite">
-                        <span>
-                          <strong>{samplingRunCount}</strong>
-                          {samplingRunCount === 1
-                            ? "input file"
-                            : "input files"}
-                        </span>
-                        <span>
-                          <strong>
-                            {setup.steps?.toLocaleString() ?? "—"}
-                          </strong>
-                          {samplingMode === "single"
-                            ? "steps"
-                            : "steps per input"}
-                        </span>
-                        <span>
-                          <strong>
-                            {durationLabel(
-                              samplingTotalSteps,
-                              setup.timestep_fs,
-                            )}
-                          </strong>
-                          total sampling time
-                        </span>
-                      </div>
-
-                      <div
-                        className="filename-chain"
-                        aria-label={`Run order: ${runFileNames.join(" then ")}`}
-                      >
-                        <span>Run order</span>
-                        <div>
-                          {runFileNames.map((name, index) => (
-                            <span key={`${name}-${index}`}>
-                              {index > 0 && (
-                                <ArrowRight size={12} aria-hidden="true" />
-                              )}
-                              {name === "…" ? (
-                                <b>…</b>
-                              ) : (
-                                <code>{name}</code>
-                              )}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </section>
-
-                    <fieldset className="ensemble-fieldset">
-                      <legend>Sampling ensemble</legend>
-                      <div role="radiogroup" aria-label="Sampling ensemble">
-                        {(
-                          [
-                            ["NVE", "Energy"],
-                            ["NVT", "Temperature"],
-                            ["NPT", "Temperature + pressure"],
-                          ] as const
-                        ).map(([ensemble, controlled]) => (
-                          <button
-                            type="button"
-                            role="radio"
-                            aria-checked={setup.ensemble === ensemble}
-                            className={
-                              setup.ensemble === ensemble ? "selected" : ""
-                            }
-                            key={ensemble}
-                            onClick={() => chooseSamplingEnsemble(ensemble)}
-                          >
-                            <strong>{ensemble}</strong>
-                            <small>{controlled}</small>
-                          </button>
-                        ))}
-                      </div>
-                      <p>
-                        {setup.ensemble === "NVE"
-                          ? "Fixed particle number, volume, and total energy."
-                          : setup.ensemble === "NVT"
-                            ? "Fixed particle number and volume with temperature coupling."
-                            : "Fixed particle number with temperature and pressure coupling."}
-                      </p>
-                    </fieldset>
-
-                    <div className="form-grid sampling-condition-grid">
-                      <Field
-                        label={
-                          setup.ensemble === "NVE"
-                            ? "Initial temperature"
-                            : "Target temperature"
-                        }
-                        unit="K"
-                        controlId="sampling-temperature"
-                      >
-                        <input
-                          type="number"
-                          min="0.000001"
-                          step="0.01"
-                          value={setup.temperature_k ?? ""}
-                          onChange={(event) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              temperature_k: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            }))
-                          }
-                        />
-                      </Field>
-                      {setup.ensemble === "NPT" && (
-                        <Field
-                          label="Target pressure"
-                          unit="bar"
-                          controlId="sampling-pressure"
-                          help="1 atm = 1.01325 bar; negative values model tension."
-                        >
-                          <input
-                            type="number"
-                            step="0.00001"
-                            value={setup.pressure_bar ?? ""}
-                            onChange={(event) =>
-                              setSetup((existing) => ({
-                                ...existing,
-                                pressure_bar: event.target.value
-                                  ? Number(event.target.value)
-                                  : null,
-                              }))
-                            }
-                          />
-                        </Field>
                       )}
-                      <Field
-                        label="Timestep"
-                        unit="fs"
-                        controlId="sampling-timestep"
-                      >
-                        <input
-                          type="number"
-                          min="0.000001"
-                          step="0.1"
-                          value={setup.timestep_fs ?? ""}
-                          onChange={(event) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              timestep_fs: event.target.value
-                                ? Number(event.target.value)
-                                : null,
-                            }))
-                          }
-                        />
-                      </Field>
-                    </div>
-
-                    {(setup.ensemble === "NVT" ||
-                      setup.ensemble === "NPT") && (
-                      <>
-                        <TemperatureCoupling
-                          value={setup}
-                          controlId="sampling-thermostat"
-                          onChange={(patch) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              preset_id: null,
-                              ...patch,
-                            }))
-                          }
-                        />
-                        <TemperatureSchedule
-                          value={setup}
-                          onChange={(patch) =>
-                            setSetup((existing) => ({
-                              ...existing,
-                              preset_id: null,
-                              ...patch,
-                            }))
-                          }
-                        />
-                      </>
-                    )}
-                    {setup.ensemble === "NPT" && (
-                      <PressureCoupling
-                        value={setup}
-                        controlId="sampling-manostat"
-                        onChange={(patch) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            preset_id: null,
-                            ...patch,
-                          }))
-                        }
+                      <SetupFileList
+                        specs={methodFileSpecs}
+                        files={setupFiles}
+                        onChoose={chooseSetupFile}
                       />
-                    )}
-                  </div>
-                </section>
+                    </div>
+                  </ConditionRow>
+                )}
               </div>
             </section>
-          )}
 
-          {activeStep === "prepare" && (
-            <section className="step-panel">
-              <StepHeading
-                eyebrow="04 · Prepare"
-                title="Prepare the coordinates"
-                description="Optional perturbation can break perfect crystal symmetry. Every prepared structure is revalidated."
-              />
-              <div className="prepare-row locked">
-                <div className="prepare-icon">
-                  <Check size={18} />
-                </div>
-                <div>
-                  <strong>Wrap into the centered cell</strong>
-                  <p>Periodic atoms use PQ’s −L/2 to +L/2 convention.</p>
-                </div>
-                <span>Applied</span>
-              </div>
-              <div className={`prepare-option ${jitter ? "enabled" : ""}`}>
-                <label className="switch-row">
-                  <span className="prepare-icon">
-                    <Sparkles size={18} />
-                  </span>
-                  <span>
-                    <strong>Break perfect symmetry</strong>
-                    <small>Add a small seeded Gaussian position offset.</small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={jitter}
-                    disabled={!sourceFile}
-                    onChange={(event) => {
-                      setJitter(event.target.checked);
-                      if (!event.target.checked) clearAppliedPreparation();
-                    }}
-                  />
-                  <span className="switch" aria-hidden="true" />
-                </label>
-                {jitter && (
-                  <div className="prepare-fields">
-                    <Field
-                      label="Position σ"
-                      unit="Å"
-                      controlId="position-sigma"
-                      help="0.01 Å is a conservative starting point."
-                    >
-                      <input
-                        type="number"
-                        min="0"
-                        max="0.2"
-                        step="0.001"
-                        value={sigma}
-                        onChange={(event) => {
-                          clearAppliedPreparation();
-                          setSigma(Number(event.target.value));
-                        }}
-                      />
-                    </Field>
-                    <Field
-                      label="Random seed"
-                      controlId="position-seed"
-                      help="The same seed reproduces the same coordinates."
-                    >
-                      <input
-                        type="number"
-                        min="0"
-                        max="4294967295"
-                        step="1"
-                        value={setup.random_seed}
-                        onChange={(event) => {
-                          clearAppliedPreparation();
-                          setSetup((existing) => ({
-                            ...existing,
-                            random_seed: Number(event.target.value),
-                          }));
-                        }}
-                      />
-                    </Field>
+            <section
+              className="setup-section"
+              id="section-run"
+              aria-labelledby="section-run-title"
+            >
+              <h2 className="section-title" id="section-run-title">
+                Run
+              </h2>
+              <div className="run-band">
+              <fieldset className="ensemble-fieldset">
+                <legend className="visually-hidden">Ensemble</legend>
+                <div role="radiogroup" aria-label="Sampling ensemble">
+                  {(
+                    [
+                      {
+                        id: "NVE" as const,
+                        icon: Zap,
+                        caption: "Energy",
+                      },
+                      {
+                        id: "NVT" as const,
+                        icon: Thermometer,
+                        caption: "Temperature",
+                      },
+                      {
+                        id: "NPT" as const,
+                        icon: Gauge,
+                        caption: "Temp + pressure",
+                      },
+                    ] as const
+                  ).map(({ id, icon: EnsembleIcon, caption }) => (
                     <button
                       type="button"
-                      className="secondary-action"
-                      disabled={perturbing || !sourceFile}
-                      onClick={() => void applyJitter()}
+                      role="radio"
+                      aria-checked={setup.ensemble === id}
+                      className={setup.ensemble === id ? "selected" : ""}
+                      key={id}
+                      title={caption}
+                      onClick={() => chooseSamplingEnsemble(id)}
                     >
-                      {perturbing ? (
-                        <LoaderCircle className="spin" size={16} />
-                      ) : (
-                        <Sparkles size={16} />
-                      )}
-                      Apply to original
+                      <EnsembleIcon size={16} aria-hidden="true" />
+                      <strong>{id}</strong>
+                      <small>{caption}</small>
                     </button>
-                  </div>
-                )}
-                {preparation && (
-                  <div className="preparation-applied">
-                    <CheckCircle2 size={15} />
-                    Applied · σ {preparation.sigma_angstrom} Å · seed{" "}
-                    {preparation.seed}
-                  </div>
-                )}
-                {!sourceFile && (
-                  <p className="example-limit">
-                    Import a structure to enable reproducible preparation.
-                  </p>
-                )}
-              </div>
-              <div className="velocity-note">
-                <div>
-                  <strong>Velocities are generated by PQ</strong>
-                  <p>
-                    PQ samples the mass-dependent Maxwell–Boltzmann distribution
-                    at {setup.temperature_k ?? "the target"} K and removes net
-                    motion. PQSetup writes the temperature and seed.
-                  </p>
+                  ))}
                 </div>
-                <span>Recommended</span>
+              </fieldset>
+
+              {/* Each condition is its own row: value + the coupling that
+                  controls it. Nothing here depends on another row. */}
+              <ConditionRow
+                icon={Thermometer}
+                title="Temperature"
+                info={
+                  thermalEnsemble
+                    ? undefined
+                    : "NVE has no thermostat: this temperature only seeds the initial velocities."
+                }
+              >
+                <Field
+                  label="Target"
+                  unit="K"
+                  controlId="sampling-temperature"
+                >
+                  <input
+                    type="number"
+                    min="0.000001"
+                    step="0.01"
+                    value={setup.temperature_k ?? ""}
+                    onChange={(event) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        temperature_k: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      }))
+                    }
+                  />
+                </Field>
+                {thermalEnsemble && (
+                  <TemperatureCoupling
+                    value={setup}
+                    controlId="sampling-thermostat"
+                    onChange={(patch) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        preset_id: null,
+                        ...patch,
+                      }))
+                    }
+                  />
+                )}
+                {thermalEnsemble && (
+                  <Field
+                    label="Start"
+                    unit="K"
+                    controlId="sampling-start-temperature"
+                    info="Optional. A different start temperature ramps linearly to the target over the ramp steps (or the whole run)."
+                  >
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="= target"
+                      value={setup.start_temperature_k ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value
+                          ? Number(event.target.value)
+                          : null;
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          start_temperature_k: value,
+                          temperature_ramp_steps:
+                            value == null ? null : existing.temperature_ramp_steps,
+                        }));
+                      }}
+                    />
+                  </Field>
+                )}
+                {thermalEnsemble && (
+                  <Field label="Ramp" unit="steps" controlId="sampling-ramp-steps">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      disabled={setup.start_temperature_k == null}
+                      placeholder={
+                        setup.start_temperature_k == null ? "—" : "whole run"
+                      }
+                      value={setup.temperature_ramp_steps ?? ""}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          preset_id: null,
+                          temperature_ramp_steps: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        }))
+                      }
+                    />
+                  </Field>
+                )}
+              </ConditionRow>
+
+              {setup.ensemble === "NPT" && (
+                <ConditionRow icon={Gauge} title="Pressure">
+                  <Field
+                    label="Target"
+                    unit="bar"
+                    controlId="sampling-pressure"
+                  >
+                    <input
+                      type="number"
+                      step="0.00001"
+                      value={setup.pressure_bar ?? ""}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          pressure_bar: event.target.value
+                            ? Number(event.target.value)
+                            : null,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <PressureCoupling
+                    value={setup}
+                    controlId="sampling-manostat"
+                    onChange={(patch) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        preset_id: null,
+                        ...patch,
+                      }))
+                    }
+                  />
+                </ConditionRow>
+              )}
+
+              <ConditionRow
+                icon={Timer}
+                title="Steps"
+                hint={
+                  timestepWarning ? (
+                    <span className="hint-warn">{timestepWarning}</span>
+                  ) : (
+                    samplingSpan
+                  )
+                }
+              >
+                <Field label="Sampling" unit="steps" controlId="sampling-steps">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={setup.steps ?? ""}
+                    onChange={(event) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        steps: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Timestep"
+                  unit="fs"
+                  controlId="sampling-timestep"
+                >
+                  <input
+                    type="number"
+                    min="0.000001"
+                    step="0.1"
+                    value={setup.timestep_fs ?? ""}
+                    onChange={(event) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        timestep_fs: event.target.value
+                          ? Number(event.target.value)
+                          : null,
+                      }))
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Runs"
+                  controlId="sampling-run-count"
+                  info="One input file per run. With more than one, each run continues from the previous run's restart file (run-01 → run-02 → …)."
+                >
+                  <input
+                    type="number"
+                    min={MIN_SAMPLING_RUNS}
+                    max={MAX_SAMPLING_RUNS}
+                    step="1"
+                    inputMode="numeric"
+                    value={samplingRunCountDraft}
+                    onChange={(event) => {
+                      const draft = event.target.value;
+                      setSamplingRunCountDraft(draft);
+                      const count = parseSamplingRunCountDraft(draft);
+                      if (count !== null) setSamplingRunCount(count);
+                    }}
+                    onBlur={commitSamplingRunCount}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                  />
+                </Field>
+                {setup.ensemble !== "OPT" && (
+                  <SettingsLine
+                    label="Resets"
+                    icon={RotateCcw}
+                    title="Kinetic resets"
+                    parts={runSettingsLines(effective)}
+                    onOpen={() => setModal("run")}
+                  />
+                )}
+              </ConditionRow>
+
+              {/* A separate NVT stage written as run-eq.in; sampling run 01
+                  continues from its restart file. */}
+              <ConditionRow
+                icon={Flame}
+                title="Equilibration"
+                info="An NVT stage that runs before sampling, written as run-eq.in. Sampling run 01 starts from its restart file, velocities included."
+                hint={
+                  equilibration ? (
+                    "NVT · runs first"
+                  ) : setup.ensemble === "NPT" ? (
+                    <span className="hint-warn">
+                      recommended before pressure coupling
+                    </span>
+                  ) : (
+                    "off"
+                  )
+                }
+                toggle={{
+                  checked: Boolean(equilibration),
+                  onChange: chooseProtocol,
+                }}
+              >
+                {equilibration && (
+                  <>
+                    <Field label="Steps" controlId="equilibration-steps">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={equilibration.steps}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            steps: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Timestep" unit="fs">
+                      <input
+                        type="number"
+                        min="0.000001"
+                        step="0.1"
+                        value={equilibration.timestep_fs}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            timestep_fs: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Temperature" unit="K">
+                      <input
+                        type="number"
+                        min="0.000001"
+                        step="0.01"
+                        value={equilibration.temperature_k}
+                        onChange={(event) =>
+                          updateEquilibration({
+                            temperature_k: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </Field>
+                    <TemperatureCoupling
+                      value={equilibration}
+                      controlId="equilibration-thermostat"
+                      onChange={(patch) =>
+                        updateEquilibration({
+                          ...patch,
+                          thermostat: patch.thermostat ?? equilibration.thermostat,
+                          thermostat_relaxation_ps:
+                            patch.thermostat_relaxation_ps ??
+                            equilibration.thermostat_relaxation_ps,
+                        })
+                      }
+                    />
+                  </>
+                )}
+              </ConditionRow>
               </div>
             </section>
-          )}
 
-          {activeStep === "review" && (
-            <section className="step-panel review-panel">
-              <StepHeading
-                eyebrow="05 · Review"
-                title="Review the inputs"
-                description="Check the input sequence before creating the run package."
-              />
-              <div className="form-grid review-fields">
-                <Field label="Run name" controlId="run-name">
-                  <input
-                    value={setup.file_prefix}
-                    onChange={(event) =>
-                      setSetup((existing) => ({
-                        ...existing,
-                        file_prefix: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-                <Field label="Start file" controlId="start-file">
-                  <input
-                    value={setup.start_file}
-                    onChange={(event) =>
-                      setSetup((existing) => ({
-                        ...existing,
-                        start_file: event.target.value,
-                      }))
-                    }
-                  />
-                </Field>
-              </div>
-              <div className="review-summary" aria-live="polite">
-                <span>
-                  <strong>{rendered?.files.length ?? 0}</strong>{" "}
-                  {rendered?.files.length === 1 ? "input file" : "input files"}
-                </span>
-                <span>
-                  <strong>{selectedMethodLabel}</strong> method
-                </span>
-                <span>
-                  <strong>{samplingRunCount}</strong> sampling{" "}
-                  {samplingRunCount === 1 ? "file" : "files"}
-                  {equilibration ? " + eq" : ""}
-                </span>
-              </div>
-              <section
-                className="run-launcher"
-                aria-labelledby="run-launcher-title"
-              >
-                <div>
-                  <strong id="run-launcher-title">Run the package</strong>
-                  <span>{runLauncher.detail}</span>
-                </div>
-                <pre>
-                  <code>{runLauncher.command}</code>
-                </pre>
-                <p>
-                  Stops at the first failed input or when PQ does not report{" "}
-                  <code>PQ ended normally</code>.
-                </p>
-              </section>
-              {rendered && rendered.files.length > 0 && (
-                <section
-                  className="generated-inputs"
-                  aria-labelledby="generated-inputs-title"
+            <section
+              className="setup-section results-section"
+              id="section-output"
+              aria-labelledby="section-output-title"
+            >
+              <h2 className="section-title" id="section-output-title">
+                Output
+              </h2>
+              <div className="run-band">
+                <ConditionRow
+                  icon={PackageIcon}
+                  title="Package"
+                  hint={`${setup.file_prefix || "…"}.zip`}
+                  className="output-fields"
                 >
-                  <header>
-                    <span>
-                      <strong id="generated-inputs-title">
-                        Generated inputs
-                      </strong>
-                      <small>{selectedMethodLabel}</small>
-                    </span>
-                    <span>
-                      {rendered.files.length}{" "}
-                      {rendered.files.length === 1 ? "file" : "files"}
-                    </span>
-                  </header>
-                  {rendered.files.length === 1 ? (
-                    <div className="single-input-file">
-                      <FileCode2 size={16} aria-hidden="true" />
-                      <span>
-                        <strong>{selectedFile?.name}</strong>
-                        <small>{selectedFile?.stage_label}</small>
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="input-navigator">
-                      <button
-                        type="button"
-                        aria-label="Previous input"
-                        aria-controls="generated-input-preview"
-                        disabled={selectedFileIndex <= 0}
-                        onClick={() => {
-                          if (selectedFileIndex <= 0) return;
-                          setSelectedFileKey(
-                            rendered.files[selectedFileIndex - 1].name,
-                          );
-                        }}
+                  <Field label="Name" controlId="run-name">
+                    <input
+                      value={setup.file_prefix}
+                      onChange={(event) =>
+                        setSetup((existing) => ({
+                          ...existing,
+                          file_prefix: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label="Write every"
+                    unit="steps"
+                    controlId="output-freq"
+                    info="How often PQ writes the trajectory, energy and restart files."
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={
+                        typeof setup.extra_settings.output_freq === "number"
+                          ? setup.extra_settings.output_freq
+                          : ""
+                      }
+                      onChange={(event) =>
+                        setExtra(
+                          "output_freq",
+                          event.target.value ? Number(event.target.value) : null,
+                        )
+                      }
+                    />
+                  </Field>
+                </ConditionRow>
+
+                <ConditionRow
+                  icon={FileCode2}
+                  title="Inputs"
+                  hint={
+                    rendered
+                      ? `${rendered.files.length} ${
+                          rendered.files.length === 1 ? "file" : "files"
+                        }`
+                      : undefined
+                  }
+                >
+                  <div className="condition-full">
+                    {rendered ? (
+                      <div
+                        className="input-preview page-input-preview"
+                        id="generated-input-preview"
+                        role="region"
+                        aria-label={`Input preview: ${
+                          selectedFile?.name ?? "preparing inputs"
+                        }`}
                       >
-                        <ChevronLeft size={16} aria-hidden="true" />
-                      </button>
-                      <label htmlFor={generatedInputSelectId}>
-                        <span className="visually-hidden">Generated input</span>
-                        <select
-                          id={generatedInputSelectId}
-                          aria-label="Generated input"
-                          aria-controls="generated-input-preview"
-                          value={selectedFile?.name ?? ""}
-                          onChange={(event) =>
-                            setSelectedFileKey(event.target.value)
-                          }
+                        <div className="input-tabs">
+                          <div className="input-tab-list" role="tablist">
+                          {rendered.files.length <= MAX_INPUT_TABS ? (
+                            rendered.files.map((file) => {
+                              const active = file.name === selectedFile?.name;
+                              return (
+                                <button
+                                  type="button"
+                                  role="tab"
+                                  aria-selected={active}
+                                  aria-controls="generated-input-body"
+                                  className={active ? "selected" : ""}
+                                  key={file.name}
+                                  onClick={() => setSelectedFileKey(file.name)}
+                                >
+                                  <span>{file.name}</span>
+                                  <small>
+                                    {file.stage_id === "equilibration"
+                                      ? "eq"
+                                      : samplingLabel(
+                                          file.segment_index ?? file.stage_index,
+                                        )}
+                                  </small>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <InputNavigator
+                              rendered={rendered}
+                              selectedFile={selectedFile}
+                              selectedFileIndex={selectedFileIndex}
+                              selectId={generatedInputSelectId}
+                              equilibrationFiles={equilibrationFiles}
+                              samplingFiles={samplingFiles}
+                              onSelect={setSelectedFileKey}
+                            />
+                          )}
+                          </div>
+                          <div className="preview-title-actions">
+                            {rendering && (
+                              <LoaderCircle className="spin" size={15} />
+                            )}
+                            <button
+                              type="button"
+                              className="preview-expand"
+                              aria-label="Copy input"
+                              title="Copy input"
+                              disabled={!selectedFile?.input_text}
+                              onClick={() =>
+                                void navigator.clipboard.writeText(
+                                  selectedFile?.input_text ?? "",
+                                )
+                              }
+                            >
+                              <Copy size={14} aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="preview-expand"
+                              aria-haspopup="dialog"
+                              aria-label="Show full input"
+                              title="Show full input"
+                              onClick={() => setModal("input")}
+                            >
+                              <Maximize2 size={15} aria-hidden="true" />
+                            </button>
+                          </div>
+                        </div>
+                        <pre
+                          className="input-preview-body"
+                          id="generated-input-body"
+                          role="tabpanel"
                         >
-                          {equilibrationFiles.length > 0 && (
-                            <optgroup label="Equilibration">
-                              {equilibrationFiles.map((file) => (
-                                <option key={file.name} value={file.name}>
-                                  {plannedInputOptionLabel(
-                                    file,
-                                    rendered.files.length,
-                                  )}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {samplingFiles.length > 0 && (
-                            <optgroup label="Sampling">
-                              {samplingFiles.map((file) => (
-                                <option key={file.name} value={file.name}>
-                                  {plannedInputOptionLabel(
-                                    file,
-                                    rendered.files.length,
-                                  )}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </select>
-                      </label>
-                      <output aria-live="polite">
-                        {selectedFileIndex + 1} of {rendered.files.length}
-                      </output>
+                          <InputSource text={deferredStageInputText} />
+                        </pre>
+                      </div>
+                    ) : (
+                      <div
+                        className="output-empty page-input-preview"
+                        id="generated-input-preview"
+                        role="region"
+                        aria-label="Input preview"
+                      >
+                        <LoaderCircle
+                          className="spin"
+                          size={22}
+                          aria-hidden="true"
+                        />
+                        <FileCode2 size={16} aria-hidden="true" />
+                        <strong>Generating input…</strong>
+                      </div>
+                    )}
+
+                    <div className="footer-run" aria-label="Run command">
+                      <Terminal size={14} aria-hidden="true" />
+                      <code title={runLauncher.command}>
+                        {runLauncher.command}
+                      </code>
                       <button
                         type="button"
-                        aria-label="Next input"
-                        aria-controls="generated-input-preview"
-                        disabled={
-                          selectedFileIndex < 0 ||
-                          selectedFileIndex >= rendered.files.length - 1
+                        className="footer-run-copy"
+                        aria-label="Copy run command"
+                        title="Copy run command"
+                        onClick={() =>
+                          void navigator.clipboard.writeText(
+                            runLauncher.command,
+                          )
                         }
-                        onClick={() => {
-                          if (
-                            selectedFileIndex < 0 ||
-                            selectedFileIndex >= rendered.files.length - 1
-                          ) {
-                            return;
-                          }
-                          setSelectedFileKey(
-                            rendered.files[selectedFileIndex + 1].name,
-                          );
-                        }}
                       >
-                        <ChevronRight size={16} aria-hidden="true" />
+                        <Copy size={14} aria-hidden="true" />
                       </button>
                     </div>
-                  )}
-                </section>
-              )}
-              <div
-                className="input-preview"
-                id="generated-input-preview"
-                role="region"
-                aria-label={`Input preview: ${
-                  selectedFile?.name ?? "preparing inputs"
-                }`}
-              >
-                <div className="preview-title">
-                  <span>
-                    <FileCode2 size={16} />
-                    {selectedFile?.name ?? "Preparing inputs…"}
-                  </span>
-                  {rendering && <LoaderCircle className="spin" size={15} />}
-                </div>
-                {selectedFile && (
-                  <div className="preview-continuation">
-                    <span>
-                      Starts from <strong>{selectedFile.start_file}</strong>
-                    </span>
-                    <ArrowRight size={13} aria-hidden="true" />
-                    <span>
-                      writes <strong>{selectedFile.restart_file}</strong>
-                    </span>
                   </div>
-                )}
-                <pre>
-                  <code>
-                    {selectedFile?.input_text ||
-                      rendered?.diagnostics[0]?.message ||
-                      "Preparing inputs…"}
-                  </code>
-                </pre>
+                </ConditionRow>
               </div>
+            </section>
+          </div>
+
+          <footer className="page-footer">
+            <div className="page-footer-bar">
+              {!rendered || rendering ? (
+                <div className="footer-status loading" role="status">
+                  <LoaderCircle className="spin" size={18} aria-hidden="true" />
+                  <span className="footer-status-copy">
+                    <span>rendering…</span>
+                  </span>
+                </div>
+              ) : ready || !firstBlockingIssue ? (
+                <div className="footer-status ready" role="status">
+                  <CheckCircle2 aria-hidden="true" />
+                  <span className="footer-status-copy">
+                    <strong>{setup.file_prefix}.zip</strong>
+                    <span>
+                      {rendered?.files.length ?? 0}{" "}
+                      {rendered?.files.length === 1 ? "input" : "inputs"}
+                    </span>
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="footer-status attention"
+                  title={firstBlockingIssue.message}
+                  onClick={() =>
+                    goToControl(
+                      firstBlockingIssue.section,
+                      firstBlockingIssue.controlId,
+                    )
+                  }
+                >
+                  <CircleAlert aria-hidden="true" />
+                  <span className="footer-status-copy">
+                    {blockingIssues.length > 1 && (
+                      <strong>{blockingIssues.length} issues</strong>
+                    )}
+                    <span>{firstBlockingIssue.message}</span>
+                  </span>
+                  <ChevronRight size={14} aria-hidden="true" />
+                </button>
+              )}
               <button
                 type="button"
-                className="create-run large"
+                className="create-run"
                 disabled={!ready || exporting}
                 onClick={() => void createRun()}
               >
+                {exporting ? "…" : "Package"}
                 {exporting ? (
-                  <LoaderCircle className="spin" size={18} />
+                  <LoaderCircle className="spin" size={16} />
                 ) : (
-                  <Download size={18} />
+                  <PackageIcon size={16} aria-hidden="true" />
                 )}
-                {exporting
-                  ? "Creating package…"
-                  : `Create package · ${rendered?.files.length ?? 0} ${
-                      rendered?.files.length === 1 ? "input" : "inputs"
-                    }`}
-                <span>Ctrl Enter</span>
               </button>
-            </section>
-          )}
-
-          <footer className="step-footer">
-            <span>
-              Step {STEPS.findIndex((step) => step.id === activeStep) + 1} of{" "}
-              {STEPS.length}
-            </span>
-            {activeStep !== "review" && (
-              <button
-                type="button"
-                onClick={() => {
-                  const index = STEPS.findIndex(
-                    (step) => step.id === activeStep,
-                  );
-                  setActiveStep(STEPS[Math.min(index + 1, STEPS.length - 1)].id);
-                }}
-              >
-                Continue
-                <ArrowRight size={16} />
-              </button>
-            )}
-          </footer>
-        </main>
-
-        <aside className="inspector">
-          <StructureViewer
-            analysis={analysis}
-            example={isExample}
-            generatedCellTreatment={
-              molecularMechanics ? "density" : "padding"
-            }
-            densityGcm3={setup.density_g_cm3}
-          />
-          <section className="preflight" aria-labelledby="preflight-title">
-            <div className="preflight-heading">
-              <div>
-                <span className="eyebrow">Preflight</span>
-                <h2 id="preflight-title">
-                  {ready ? "Ready to create" : "Check the run"}
-                </h2>
-              </div>
-              <span className={`preflight-score ${ready ? "ready" : ""}`}>
-                {errorCount}
-              </span>
             </div>
-            <ul className="preflight-list">
-              <li className={bootstrap?.pq.found ? "ok" : "warn"}>
-                <StatusDot status={bootstrap?.pq.found ? "ok" : "warn"} />
-                <span>
-                  <strong>PQ executable</strong>
-                  <small>{bootstrap?.pq.detail ?? "Checking…"}</small>
-                </span>
-              </li>
-              <li className={analysis.valid ? "ok" : "warn"}>
-                <StatusDot status={analysis.valid ? "ok" : "warn"} />
-                <span>
-                  <strong>Structure</strong>
-                  <small>
-                    {analysis.valid
-                      ? "Coordinates and cell are valid."
-                      : "Structure errors need attention."}
-                  </small>
-                </span>
-              </li>
-              <li
-                className={
-                  methodReady && !pqMethodUnavailable ? "ok" : "warn"
-                }
-              >
-                <StatusDot
-                  status={
-                    methodReady && !pqMethodUnavailable
-                      ? "ok"
-                      : methodReady || molecularMechanics
-                        ? "warn"
-                        : "idle"
+          </footer>
+      </main>
+
+      <Modal
+        open={modal === "structure"}
+        size="full"
+        title={
+          <>
+            <ChemicalFormula
+              formula={analysis.summary.formula}
+              fallback="Structure"
+            />
+            {" · "}
+            {analysis.summary.atom_count}{" "}
+            {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
+          </>
+        }
+        subtitle={analysis.structure.source_name}
+        onClose={() => setModal(null)}
+      >
+        <StructureViewer
+          variant="stage"
+          analysis={analysis}
+          defaultOpen
+        />
+      </Modal>
+
+      <Modal
+        open={modal === "input"}
+        size="input"
+        title={selectedFile?.name ?? "Generated input"}
+        subtitle={
+          selectedFile
+            ? `${selectedFile.start_file} → ${selectedFile.restart_file}`
+            : undefined
+        }
+        onClose={() => setModal(null)}
+      >
+        {rendered ? (
+          <div className="input-preview modal-input-preview">
+            <div className="preview-title">
+              <InputNavigator
+                rendered={rendered}
+                selectedFile={selectedFile}
+                selectedFileIndex={selectedFileIndex}
+                selectId={modalInputSelectId}
+                equilibrationFiles={equilibrationFiles}
+                samplingFiles={samplingFiles}
+                onSelect={setSelectedFileKey}
+              />
+              <div className="preview-title-actions">
+                <button
+                  type="button"
+                  className="preview-expand"
+                  aria-label="Copy input"
+                  title="Copy input"
+                  disabled={!selectedFile?.input_text}
+                  onClick={() =>
+                    void navigator.clipboard.writeText(
+                      selectedFile?.input_text ?? "",
+                    )
                   }
-                />
-                <span>
-                  <strong>Method</strong>
-                  <small>
-                    {molecularMechanics
-                      ? !hasTypedMolecules
-                        ? "Import a PQ restart with molecule type IDs."
-                        : missingMethodFiles.length
-                          ? `Add ${missingMethodFiles.length} required force-field ${
-                              missingMethodFiles.length === 1 ? "file" : "files"
-                            }.`
-                          : !mmDensityReady
-                            ? "Set the system density."
-                            : `${selectedMethodLabel} is ready.`
-                      : !setup.runner
-                        ? "Choose a calculator."
-                        : electronicProgram && !selectedElectronicMethod
-                          ? "Choose an electronic method."
-                          : missingMethodFiles.length
-                            ? `Add ${missingMethodFiles.length} required ${
-                                missingMethodFiles.length === 1 ? "file" : "files"
-                              }.`
-                            : pqMethodUnavailable
-                              ? `Selected PQ build does not include ${selectedCalculatorLabel}.`
-                              : calculatorMissing
-                                ? `${selectedMethodLabel} not detected here; export still works.`
-                                : `${selectedMethodLabel} is ready.`}
-                  </small>
-                </span>
-              </li>
-              <li className={rendered?.valid ? "ok" : "warn"}>
-                <StatusDot
-                  status={rendered?.valid ? "ok" : rendered ? "warn" : "idle"}
-                />
-                <span>
-                  <strong>PQ inputs</strong>
-                  <small>
-                    {rendered?.valid
-                      ? portableValidationAvailable
-                        ? `${rendered.files.length} input ${
-                            rendered.files.length === 1 ? "file" : "files"
-                          } ready for PQ validation.`
-                        : `${rendered.files.length} input ${
-                            rendered.files.length === 1 ? "file" : "files"
-                          } generated locally; PQ validation is unavailable.`
-                      : rendering
-                        ? "Validating…"
-                        : "Input settings need attention."}
-                  </small>
-                </span>
-              </li>
-            </ul>
-            {displayedDiagnostics.length > 0 && (
-              <div className="diagnostics">
-                {displayedDiagnostics
-                  .slice(0, 4)
-                  .map((item: Diagnostic, index) =>
-                    item.severity === "info" ? (
-                      <div
-                        className="diagnostic-row info"
-                        key={`${item.code}-${index}`}
-                      >
-                        <CircleHelp size={14} aria-hidden="true" />
-                        <span>{item.message}</span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        key={`${item.code}-${index}`}
-                        className={item.severity}
-                        onClick={() => setActiveStep(diagnosticStep(item.code))}
-                      >
-                        <CircleAlert size={14} aria-hidden="true" />
-                        <span>{item.message}</span>
-                        <ChevronRight size={14} aria-hidden="true" />
-                      </button>
-                    ),
-                  )}
+                >
+                  <Copy size={14} aria-hidden="true" />
+                </button>
               </div>
-            )}
-            <button
-              type="button"
-              className="create-run"
-              disabled={!ready || exporting}
-              onClick={() => void createRun()}
-            >
-              {exporting ? (
-                <LoaderCircle className="spin" size={17} />
-              ) : (
-                <Download size={17} />
-              )}
-              Create package
-            </button>
-          </section>
-        </aside>
-      </div>
+            </div>
+            <pre className="input-preview-body">
+              <InputSource text={deferredStageInputText} />
+            </pre>
+          </div>
+        ) : (
+          <div className="output-empty">
+            <LoaderCircle className="spin" size={22} aria-hidden="true" />
+            <strong>Generating input…</strong>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={modal === "calculator"}
+        title="Advanced settings"
+        subtitle={
+          molecularMechanics
+            ? MM_MODES.find((option) => option.value === setup.mm_force_field)
+                ?.label
+            : selectedRunnerStatus?.label ?? setup.runner ?? undefined
+        }
+        onClose={() => setModal(null)}
+      >
+        {molecularMechanics ? (
+          <MMSettingsForm
+            mode={setup.mm_force_field}
+            extra={setup.extra_settings}
+            setExtra={setExtra}
+          />
+        ) : (
+          <QMSettingsForm
+            runner={setup.runner}
+            extra={setup.extra_settings}
+            setExtra={setExtra}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={modal === "run"}
+        title="Kinetic resets"
+        subtitle={`${setup.ensemble} · applied by PQ's MD engine every step`}
+        onClose={() => setModal(null)}
+      >
+        <RunSettingsForm
+          thermal={isThermalEnsemble(setup)}
+          extra={setup.extra_settings}
+          setExtra={setExtra}
+        />
+      </Modal>
 
       <CommandPalette
         open={paletteOpen}
         commands={commands}
+        groupOrder={COMMAND_GROUP_ORDER}
+        placeholder="Search setup…"
         onClose={() => setPaletteOpen(false)}
       />
     </div>

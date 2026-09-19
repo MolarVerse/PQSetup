@@ -1,5 +1,4 @@
 import type {
-  Ensemble,
   ExternalQMCapabilities,
   ExternalQMProgram,
   ExternalQMScript,
@@ -83,6 +82,11 @@ const FILE_SPECS: Record<SetupFileRole, Omit<SetupFileSpec, "optional">> = {
     label: "Intramolecular nonbonded",
     defaultName: "intra-nonbonded.dat",
   },
+  mshake: {
+    role: "mshake",
+    label: "M-SHAKE geometries",
+    defaultName: "mshake.dat",
+  },
   dftb_template: {
     role: "dftb_template",
     label: "DFTB+ template",
@@ -156,13 +160,22 @@ export function mmModeLabel(mode: MMForceFieldMode): string {
   return MM_MODES.find((option) => option.value === mode)?.label ?? "GUFF";
 }
 
-export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
+/**
+ * Files an MM run needs. The mode decides the force-field files; the
+ * Advanced dialog sits above this list, so its `shake = mshake` may add the
+ * M-SHAKE geometry file here (PQ reads it only then).
+ */
+export function setupFileSpecs(
+  mode: MMForceFieldMode,
+  mshake = false,
+): SetupFileSpec[] {
   const required: SetupFileRole[] =
     mode === "off"
       ? ["moldescriptor", "guff"]
       : mode === "bonded"
         ? ["moldescriptor", "guff", "topology", "parameter"]
         : ["moldescriptor", "topology", "parameter"];
+  if (mode !== "off" && mshake) required.push("mshake");
 
   return [
     ...required.map((role) => ({ ...FILE_SPECS[role], optional: false })),
@@ -172,14 +185,21 @@ export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
   ];
 }
 
+/**
+ * Files a QM run may need. Only what is above decides: the calculator, its
+ * Advanced constraints, and, from the Structure section, whether atoms carry
+ * molecule types. PQ reads the molecule descriptor exactly then, so the slot
+ * appears (and is required) only for typed structures. Nothing in Run may
+ * change this list.
+ */
 export function qmSetupFileSpecs(
   runner: string | null,
-  ensemble: Ensemble,
   runnerScript: string | null = null,
   externalQM: ExternalQMCapabilities | null = null,
+  typedMolecules = false,
+  constrained = false,
 ): SetupFileSpec[] {
   const roles = new Set<SetupFileRole>();
-  if (ensemble === "NPT") roles.add("moldescriptor");
   const script = selectedExternalQMScript(externalQM, runner, runnerScript);
   script?.required_file_keywords.forEach((dependency) => {
     const role = FILE_KEYWORD_ROLES[dependency];
@@ -189,10 +209,55 @@ export function qmSetupFileSpecs(
     const role = WORKING_FILE_ROLES[dependency];
     if (role) roles.add(role);
   });
+  if (typedMolecules) roles.add("moldescriptor");
+  // SHAKE / distance constraints (Advanced, above this list) read their bonds
+  // from a topology file, in QM runs as well.
+  if (constrained) roles.add("topology");
   return [...roles].map((role) => ({
     ...FILE_SPECS[role],
-    optional: role === "moldescriptor" || role === "dftb_template",
+    optional: role === "dftb_template",
   }));
+}
+
+/** Companion-file extensions and name stems, used to sort a dropped folder. */
+const STRUCTURE_EXTENSIONS = new Set([
+  "rst",
+  "xyz",
+  "extxyz",
+  "cif",
+  "pdb",
+  "mol",
+  "sdf",
+  "traj",
+]);
+
+export function isStructureFileName(name: string): boolean {
+  const extension = name.toLowerCase().split(".").pop() ?? "";
+  return STRUCTURE_EXTENSIONS.has(extension);
+}
+
+/**
+ * Guess which companion role a file plays from its name, so a whole run
+ * folder can be dropped at once. Returns null for anything unrecognised.
+ */
+export function companionRoleForFileName(name: string): SetupFileRole | null {
+  const lower = name.toLowerCase();
+  const base = lower.split("/").pop() ?? lower;
+  if (base === "tm_define.template" || base.startsWith("tm_define")) {
+    return "turbomole_define_template";
+  }
+  if (base.startsWith("dftb_in") || base.endsWith(".hsd")) return "dftb_template";
+  if (base.includes("moldescriptor") || base.includes("moldesc")) {
+    return "moldescriptor";
+  }
+  if (base.includes("intra") && base.includes("nonbonded")) {
+    return "intra_nonbonded";
+  }
+  if (base.includes("mshake")) return "mshake";
+  if (base.includes("guff")) return "guff";
+  if (base.includes("topolog")) return "topology";
+  if (base.includes("param")) return "parameter";
+  return null;
 }
 
 export function externalQMProgram(
