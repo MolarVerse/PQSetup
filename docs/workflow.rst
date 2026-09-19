@@ -61,7 +61,8 @@ MM
    set the Coulomb cutoff and, for a generated cell, the density.
 
 **Advanced** opens the optional PQ keywords for the selected calculator or
-force field (see :doc:`reference/settings`). Keywords in force are listed
+force field (see :doc:`reference/settings`); run-level extras such as
+kinetic resets live under Run › Steps instead. Keywords in force are listed
 under the button exactly as they will appear in the input file, e.g.
 ``xtb_method = gfn1-xtb;``. Switching program or interaction model keeps your
 choices in memory, but only the keywords that apply to the current selection
@@ -96,7 +97,9 @@ Steps
    Sampling steps, timestep and *Runs*. More than one run writes a numbered
    restart chain (``run-01.in`` … ``run-NN.in``) where every input reads the
    previous restart. A hydrogen-containing structure with a timestep above
-   0.5 fs is flagged.
+   0.5 fs is flagged. **Advanced** holds PQ's kinetic resets (hard temperature
+   rescaling for NVT/NPT, momentum / angular-momentum / net-force removal),
+   echoed next to the button like the method keywords.
 
 Equilibration
    An optional NVT stage written as ``run-eq.in`` that runs before sampling

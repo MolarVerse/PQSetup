@@ -131,6 +131,23 @@ describe("effectiveSetup", () => {
     ).toEqual({});
   });
 
+  it("keeps temperature rescaling only for a thermal ensemble, drift removal for any MD", () => {
+    const resets = {
+      ...base,
+      extra_settings: { nscale: 100, fscale: 10, freset: 50, freset_forces: 1 },
+    };
+    expect(effectiveSetup({ ...resets, ensemble: "NVT" }, false).extra_settings).toEqual(
+      resets.extra_settings,
+    );
+    expect(effectiveSetup({ ...resets, ensemble: "NVE" }, false).extra_settings).toEqual({
+      freset: 50,
+      freset_forces: 1,
+    });
+    expect(effectiveSetup({ ...resets, ensemble: "OPT" }, false).extra_settings).toEqual(
+      {},
+    );
+  });
+
   it("never writes a density for a structure that brought its own cell", () => {
     expect(
       effectiveSetup({ ...base, job_type: "mm-md" }, false).density_g_cm3,

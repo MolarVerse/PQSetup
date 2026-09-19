@@ -212,16 +212,38 @@ export const MM_KEYS = [
   "virial",
 ] as const;
 
-/** Momentum / temperature resets: valid for every MD job, never pruned. */
-export const RESET_KEYS = [
-  "nscale",
-  "fscale",
+/**
+ * Kinetic resets live in PQ's MD engine, so they apply to every MD run
+ * whatever the calculator. They are edited under Run › Steps, not with the
+ * method. Temperature rescaling needs a target temperature (NVT / NPT).
+ */
+export const TEMPERATURE_RESET_KEYS = ["nscale", "fscale"] as const;
+export const MOMENTUM_RESET_KEYS = [
   "nreset",
   "freset",
   "nreset_angular",
   "freset_angular",
   "freset_forces",
 ] as const;
+export const RESET_KEYS = [
+  ...TEMPERATURE_RESET_KEYS,
+  ...MOMENTUM_RESET_KEYS,
+] as const;
+
+export function isThermalEnsemble(setup: SimulationSetup): boolean {
+  return setup.ensemble === "NVT" || setup.ensemble === "NPT";
+}
+
+/** Reset keys the Run section may write for this ensemble. */
+export function applicableResetKeys(setup: SimulationSetup): Set<string> {
+  const keys = new Set<string>();
+  if (setup.ensemble === "OPT") return keys;
+  for (const key of MOMENTUM_RESET_KEYS) keys.add(key);
+  if (isThermalEnsemble(setup)) {
+    for (const key of TEMPERATURE_RESET_KEYS) keys.add(key);
+  }
+  return keys;
+}
 
 /**
  * Keys that make sense for the current method/runner. Anything owned by the
@@ -276,8 +298,11 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
 
 /** Drop dialog-owned keys that no longer apply; returns the same object if clean. */
 export function pruneExtraSettings(setup: SimulationSetup): ExtraSettings {
-  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS]);
-  const allowed = applicableSettingKeys(setup);
+  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS, ...RESET_KEYS]);
+  const allowed = new Set([
+    ...applicableSettingKeys(setup),
+    ...applicableResetKeys(setup),
+  ]);
   const stale = Object.keys(setup.extra_settings).filter(
     (key) => owned.has(key) && !allowed.has(key),
   );
@@ -303,6 +328,15 @@ export function settingsLines(setup: SimulationSetup): string[] {
         typeof value === "boolean" ? (value ? "true" : "false") : String(value);
       return `${key} = ${text};`;
     });
+}
+
+/** The reset keywords in force, in input-file form, for the Steps row. */
+export function runSettingsLines(setup: SimulationSetup): string[] {
+  const allowed = applicableResetKeys(setup);
+  return Object.keys(setup.extra_settings)
+    .filter((key) => allowed.has(key))
+    .sort()
+    .map((key) => `${key} = ${String(setup.extra_settings[key])};`);
 }
 
 function label(options: ChoiceOption[], value: string): string {
@@ -339,19 +373,6 @@ export function qmSettingsSummary(setup: SimulationSetup): string[] {
   if (extraBool(extra, "distance-constraints", false)) {
     parts.push("distance constraints");
   }
-  return [...parts, ...resetSummary(extra)];
-}
-
-function resetSummary(extra: ExtraSettings): string[] {
-  const parts: string[] = [];
-  if (extraNumber(extra, "nscale") != null || extraNumber(extra, "fscale") != null) {
-    parts.push("T rescaling");
-  }
-  if (
-    RESET_KEYS.slice(2).some((key) => extraNumber(extra, key) != null)
-  ) {
-    parts.push("momentum resets");
-  }
   return parts;
 }
 
@@ -374,5 +395,5 @@ export function mmSettingsSummary(setup: SimulationSetup): string[] {
   if (extraBool(extra, "distance-constraints", false)) {
     parts.push("distance constraints");
   }
-  return [...parts, ...resetSummary(extra)];
+  return parts;
 }

@@ -57,8 +57,14 @@ import SetupFileList from "./components/SetupFileList";
 
 /** A palette command whose group is one of the setup page's groups. */
 type SetupCommand = Command & { group: CommandGroup };
-import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
+  MMSettingsForm,
+  QMSettingsForm,
+  RunSettingsForm,
+} from "./SettingsForms";
+import {
+  isThermalEnsemble,
+  runSettingsLines,
   settingsLines,
   usesConstraints,
   usesMShake,
@@ -421,7 +427,7 @@ export default function App() {
   const [sigma, setSigma] = useState(0.01);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [modal, setModal] = useState<
-    "structure" | "input" | "calculator" | null
+    "structure" | "input" | "calculator" | "run" | null
   >(null);
   const generatedInputSelectId = useId();
   const modalInputSelectId = useId();
@@ -1327,16 +1333,26 @@ export default function App() {
       {
         id: "calculator-settings",
         group: "Actions",
-        label: "Advanced settings",
+        label: "Advanced method settings",
         detail: molecularMechanics
-          ? "Potentials, neighbour search, constraints, resets"
-          : "Calculator, QM run, resets",
+          ? "Potentials, neighbour search, constraints"
+          : "Calculator, QM run, constraints",
         keywords: ["settings", "advanced", "options", "extra", "keywords"],
         disabledReason:
           !molecularMechanics && !setup.runner
             ? "Choose a calculator first."
             : undefined,
         run: () => setModal("calculator"),
+      },
+      {
+        id: "run-settings",
+        group: "Actions",
+        label: "Advanced run settings",
+        detail: "Temperature rescaling, drift removal",
+        keywords: ["reset", "rescale", "momentum", "drift", "nscale", "nreset"],
+        disabledReason:
+          setup.ensemble === "OPT" ? "Not used by an optimisation." : undefined,
+        run: () => setModal("run"),
       },
       {
         id: "import",
@@ -2517,6 +2533,12 @@ export default function App() {
                     }}
                   />
                 </Field>
+                {setup.ensemble !== "OPT" && (
+                  <SettingsLine
+                    parts={runSettingsLines(effective)}
+                    onOpen={() => setModal("run")}
+                  />
+                )}
               </ConditionRow>
 
               {/* A separate NVT stage written as run-eq.in; sampling run 01
@@ -2951,6 +2973,19 @@ export default function App() {
             setExtra={setExtra}
           />
         )}
+      </Modal>
+
+      <Modal
+        open={modal === "run"}
+        title="Advanced run settings"
+        subtitle={`${setup.ensemble} · kinetic resets`}
+        onClose={() => setModal(null)}
+      >
+        <RunSettingsForm
+          thermal={isThermalEnsemble(setup)}
+          extra={setup.extra_settings}
+          setExtra={setExtra}
+        />
       </Modal>
 
       <CommandPalette

@@ -89,13 +89,23 @@ Molecular mechanics
        reference geometry per molecule type. Bond and distance constraints
        themselves come from the topology file.
 
-Resets (any MD run)
--------------------
+Run › Steps › Advanced (kinetic resets)
+---------------------------------------
 
-``nscale``, ``fscale``, ``nreset``, ``freset``, ``nreset_angular``,
-``freset_angular``, ``freset_forces`` — hard temperature rescaling and
-momentum / angular-momentum / net-force removal, as a number of initial steps
-or an interval. Blank means never.
+These keywords are not calculator settings: PQ applies them in its MD engine
+(``MDEngine::takeStepAfterForces``) for every MD run, QM or MM, whatever the
+runner. They therefore live under **Run › Steps**, next to the step count
+they refer to, and are echoed there.
+
+* **Temperature rescaling** — ``nscale`` (first *n* steps), ``fscale`` (every
+  *n* steps): hard velocity scaling to the target temperature. Offered for
+  NVT and NPT only; PQ would scale an NVE run to 0 K, so the keys are refused
+  there.
+* **Drift removal** — ``nreset`` / ``freset`` (total momentum),
+  ``nreset_angular`` / ``freset_angular`` (angular momentum),
+  ``freset_forces`` (net force): as a number of initial steps or an interval.
+
+Blank means never. Optimisations ignore all of them.
 
 What validation checks
 ----------------------
@@ -110,7 +120,8 @@ What validation checks
   without a path (and a path without ``custom``), MACE-OFF with a MACE-MP-only
   model, reaction field without ``rf_epsilon``, constraints without a
   topology file, M-SHAKE without its file (or in a QM run), a cell list
-  without a Coulomb cutoff or in a QM run.
+  without a Coulomb cutoff or in a QM run, temperature rescaling without a
+  target temperature.
 * Spelling: ``cell-list`` and ``cell_list`` are the same keyword to PQ, so
   setting both is refused; a keyword PQSetup writes itself is refused too.
 

@@ -177,6 +177,20 @@ def test_qm_runs_may_constrain_bonds_through_a_topology() -> None:
     assert "MM runs" in _messages(mshake)
 
 
+def test_kinetic_resets_follow_the_ensemble_not_the_calculator() -> None:
+    nve = SimulationSetup(runner="ase_xtb", ensemble="NVE", extra_settings={"nscale": 100})
+    assert "zero" in _messages(nve)
+    nvt = nve.model_copy(update={"ensemble": "NVT"})
+    assert not [item for item in validate_setup(nvt) if item.code.startswith("input.extra")]
+    momentum = SimulationSetup(runner="mace_mp", ensemble="NVE", extra_settings={"freset": 50})
+    assert not [item for item in validate_setup(momentum) if item.code.startswith("input.extra")]
+    opt = SimulationSetup(job_type="mm-opt", ensemble="OPT", extra_settings={"freset": 50})
+    assert any(
+        item.code == "input.extra_scope" and "optimisation" in item.message
+        for item in validate_setup(opt)
+    )
+
+
 def test_duplicate_spellings_are_refused() -> None:
     setup = _mm(extra_settings={"cell-list": "on", "cell_list": "off"})
     assert "input.extra_conflict" in _codes(setup)

@@ -114,6 +114,8 @@ class Keyword:
 
     def applies(self, setup: SimulationSetup) -> bool:
         mm = setup.job_type.startswith("mm-")
+        if self.scope == "md" and _is_optimisation(setup):
+            return False
         if self.scope == "qm" and mm:
             return False
         if self.scope == "mm" and not mm:
@@ -292,9 +294,21 @@ KEYWORDS: tuple[Keyword, ...] = (
         ff_modes=TOPOLOGY_MODES,
         note="Distance constraints defined in the topology.",
     ),
-    # --- any MD job ------------------------------------------------------
-    Keyword("nscale", "md", "int", minimum=0),
-    Keyword("fscale", "md", "int", minimum=0),
+    # --- any MD job: kinetic resets from MDEngine::takeStepAfterForces -----
+    Keyword(
+        "nscale",
+        "md",
+        "int",
+        minimum=0,
+        note="Hard temperature rescaling for the first n steps (NVT / NPT).",
+    ),
+    Keyword(
+        "fscale",
+        "md",
+        "int",
+        minimum=0,
+        note="Hard temperature rescaling every n steps (NVT / NPT).",
+    ),
     Keyword("nreset", "md", "int", minimum=0),
     Keyword("freset", "md", "int", minimum=0),
     Keyword("nreset_angular", "md", "int", minimum=0),
@@ -474,10 +488,19 @@ def validate_extra_settings(setup: SimulationSetup) -> list[Diagnostic]:
     return diagnostics
 
 
+def _is_optimisation(setup: SimulationSetup) -> bool:
+    return setup.ensemble == "OPT" or setup.job_type.endswith("-opt")
+
+
 def _scope_diagnostic(
     keyword: Keyword, key: str, setup: SimulationSetup
 ) -> Diagnostic:
     mm = setup.job_type.startswith("mm-")
+    if keyword.scope == "md" and _is_optimisation(setup):
+        return _warning(
+            "input.extra_scope",
+            f"'{key}' is ignored by an optimisation.",
+        )
     if keyword.name == "cell-list" and not mm:
         return _error(
             "input.extra_scope",
@@ -560,6 +583,18 @@ def _combination_diagnostics(
                     "MACE-OFF ships only small, medium and large models.",
                 )
             )
+
+    if setup.ensemble not in {"NVT", "NPT"} and any(
+        extras.get(key) is not None for key in ("nscale", "fscale")
+    ):
+        diagnostics.append(
+            _error(
+                "input.extra_value",
+                "Temperature rescaling (nscale / fscale) needs the target "
+                "temperature of an NVT or NPT run; PQ would scale velocities "
+                "to zero.",
+            )
+        )
 
     shake = normalize_value(extras.get("shake", "off"))
     if not mm and shake == "mshake":

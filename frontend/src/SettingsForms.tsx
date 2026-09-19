@@ -96,66 +96,79 @@ function TextRow({
   );
 }
 
-/** Hard temperature rescaling and momentum / force resets (any MD job). */
-function ResetsGroup({
+/**
+ * Kinetic resets from PQ's MD engine (Run › Steps › Advanced). They apply to
+ * every MD run whatever the calculator; hard temperature rescaling needs the
+ * target temperature of an NVT / NPT run, so it is offered only then.
+ */
+export function RunSettingsForm({
+  thermal,
   extra,
   setExtra,
 }: {
+  thermal: boolean;
   extra: ExtraSettings;
   setExtra: SetExtra;
 }) {
   const common = { extra, setExtra, placeholder: "never" };
   return (
-    <Group
-      title="Resets"
-      info="Hard rescaling and drift removal · blank = never"
-    >
-      <div className="form-grid">
-        <NumberRow
-          label="T rescale · first n steps"
-          keyName="nscale"
-          {...common}
-        />
-        <NumberRow
-          label="T rescale · every"
-          keyName="fscale"
-          unit="steps"
-          min="1"
-          {...common}
-        />
-        <NumberRow
-          label="Momentum · first n steps"
-          keyName="nreset"
-          {...common}
-        />
-        <NumberRow
-          label="Momentum · every"
-          keyName="freset"
-          unit="steps"
-          min="1"
-          {...common}
-        />
-        <NumberRow
-          label="Angular mom. · first n steps"
-          keyName="nreset_angular"
-          {...common}
-        />
-        <NumberRow
-          label="Angular mom. · every"
-          keyName="freset_angular"
-          unit="steps"
-          min="1"
-          {...common}
-        />
-        <NumberRow
-          label="Net force · every"
-          keyName="freset_forces"
-          unit="steps"
-          min="1"
-          {...common}
-        />
-      </div>
-    </Group>
+    <div className="settings-form">
+      {thermal && (
+        <Group
+          title="Temperature rescaling"
+          info="Hard velocity scaling to the target temperature · blank = never"
+        >
+          <div className="form-grid">
+            <NumberRow label="First n steps" keyName="nscale" {...common} />
+            <NumberRow
+              label="Every"
+              keyName="fscale"
+              unit="steps"
+              min="1"
+              {...common}
+            />
+          </div>
+        </Group>
+      )}
+      <Group
+        title="Drift removal"
+        info="Zero the total momentum, angular momentum or net force · blank = never"
+      >
+        <div className="form-grid">
+          <NumberRow
+            label="Momentum · first n steps"
+            keyName="nreset"
+            {...common}
+          />
+          <NumberRow
+            label="Momentum · every"
+            keyName="freset"
+            unit="steps"
+            min="1"
+            {...common}
+          />
+          <NumberRow
+            label="Angular mom. · first n steps"
+            keyName="nreset_angular"
+            {...common}
+          />
+          <NumberRow
+            label="Angular mom. · every"
+            keyName="freset_angular"
+            unit="steps"
+            min="1"
+            {...common}
+          />
+          <NumberRow
+            label="Net force · every"
+            keyName="freset_forces"
+            unit="steps"
+            min="1"
+            {...common}
+          />
+        </div>
+      </Group>
+    </div>
   );
 }
 
@@ -444,8 +457,6 @@ export function QMSettingsForm({
         mshake={false}
         info="Freeze bonds to move the timestep past 0.5 fs"
       />
-
-      <ResetsGroup extra={extra} setExtra={setExtra} />
     </div>
   );
 }
@@ -554,8 +565,6 @@ export function MMSettingsForm({
           info="Definitions come from the topology file"
         />
       )}
-
-      <ResetsGroup extra={extra} setExtra={setExtra} />
     </div>
   );
 }
