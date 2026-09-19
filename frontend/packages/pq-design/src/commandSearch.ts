@@ -1,15 +1,10 @@
-export type CommandGroup =
-  | "Suggested"
-  | "Problems"
-  | "Workflow"
-  | "Scientific setup"
-  | "Parameters"
-  | "Inputs"
-  | "Actions";
-
+/**
+ * Fuzzy ranking for a command palette. Group names are free strings; the
+ * palette receives the display order, so each tool defines its own groups.
+ */
 export interface SearchableCommand {
   id: string;
-  group: CommandGroup;
+  group: string;
   label: string;
   detail?: string;
   hint?: string;
@@ -18,16 +13,6 @@ export interface SearchableCommand {
   current?: boolean;
   disabledReason?: string;
 }
-
-export const COMMAND_GROUP_ORDER: CommandGroup[] = [
-  "Suggested",
-  "Problems",
-  "Workflow",
-  "Scientific setup",
-  "Parameters",
-  "Inputs",
-  "Actions",
-];
 
 function normalize(value: string): string {
   return value
@@ -85,10 +70,9 @@ function commandScore(command: SearchableCommand, query: string): number | null 
 export function rankCommands<T extends SearchableCommand>(
   commands: T[],
   query: string,
+  groupOrder: readonly string[] = [],
 ): T[] {
-  const groupRank = new Map(
-    COMMAND_GROUP_ORDER.map((group, index) => [group, index]),
-  );
+  const groupRank = new Map(groupOrder.map((group, index) => [group, index]));
 
   return commands
     .map((command, index) => ({

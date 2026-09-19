@@ -1,58 +1,53 @@
-import { ArrowRight, Check, Search, X } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
-import {
-  COMMAND_GROUP_ORDER,
-  rankCommands,
-  type CommandGroup,
-  type SearchableCommand,
-} from "./commandSearch";
+import { Check, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { rankCommands, type SearchableCommand } from "./commandSearch";
 
 export interface Command extends SearchableCommand {
   run: () => void;
 }
 
-interface CommandPaletteProps {
+export interface CommandPaletteProps {
   open: boolean;
   commands: Command[];
+  /** Display order of command groups; unknown groups sort last. */
+  groupOrder: readonly string[];
   onClose: () => void;
+  placeholder?: string;
 }
 
 export default function CommandPalette({
   open,
   commands,
+  groupOrder,
   onClose,
+  placeholder = "Search…",
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const dialog = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   const selectedRow = useRef<HTMLButtonElement>(null);
-  const restoreFocus = useRef<HTMLElement | null>(null);
   const filtered = useMemo(
-    () => rankCommands(commands, query),
-    [commands, query],
+    () => rankCommands(commands, query, groupOrder),
+    [commands, groupOrder, query],
   );
   const grouped = useMemo(() => {
-    const groups = new Map<
-      CommandGroup,
-      { command: Command; index: number }[]
-    >();
+    const groups = new Map<string, { command: Command; index: number }[]>();
     filtered.forEach((command, index) => {
       const items = groups.get(command.group) ?? [];
       items.push({ command, index });
       groups.set(command.group, items);
     });
-    return COMMAND_GROUP_ORDER.flatMap((group) => {
+    const known = new Set(groupOrder);
+    const order = [
+      ...groupOrder,
+      ...[...groups.keys()].filter((group) => !known.has(group)),
+    ];
+    return order.flatMap((group) => {
       const items = groups.get(group);
       return items?.length ? [{ group, items }] : [];
     });
-  }, [filtered]);
+  }, [filtered, groupOrder]);
   const ordered = useMemo(
     () => grouped.flatMap(({ items }) => items.map(({ command }) => command)),
     [grouped],
@@ -65,27 +60,22 @@ export default function CommandPalette({
     ? `command-option-${ordered[selected].id}`
     : undefined;
 
+  // Native modal <dialog>: the browser handles the top layer, inertness of
+  // the page behind, focus trapping and focus restore. Nothing on <body>
+  // changes, so the page cannot reflow while the palette is open. The dialog
+  // fills the viewport as its own scroll container (overscroll-behavior:
+  // contain), so wheel events over the dimmed area do not scroll the page.
   useEffect(() => {
-    if (!open) return;
-    restoreFocus.current = document.activeElement as HTMLElement | null;
-    const background = document.querySelectorAll<HTMLElement>(
-      ".app-header, .workspace",
-    );
-    background.forEach((element) => {
-      element.inert = true;
-    });
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    setQuery("");
-    setSelected(0);
-    requestAnimationFrame(() => input.current?.focus());
-    return () => {
-      background.forEach((element) => {
-        element.inert = false;
-      });
-      document.body.style.overflow = previousOverflow;
-      restoreFocus.current?.focus();
-    };
+    const element = dialog.current;
+    if (!element) return;
+    if (open && !element.open) {
+      element.showModal();
+      setQuery("");
+      setSelected(0);
+      requestAnimationFrame(() => input.current?.focus());
+    } else if (!open && element.open) {
+      element.close();
+    }
   }, [open]);
 
   useEffect(() => {
@@ -102,53 +92,28 @@ export default function CommandPalette({
     selectedRow.current?.scrollIntoView({ block: "nearest" });
   }, [query, selected]);
 
-  useEffect(() => {
-    if (!open) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose, open]);
-
-  if (!open) return null;
-
   function run(command: Command) {
     if (command.disabledReason) return;
     onClose();
     command.run();
   }
 
-  function trapFocus(event: ReactKeyboardEvent<HTMLElement>) {
-    if (event.key !== "Tab" || !dialog.current) return;
-    const focusable = Array.from(
-      dialog.current.querySelectorAll<HTMLElement>(
-        "button:not([disabled]), input:not([disabled])",
-      ),
-    );
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
   return (
-    <div className="palette-backdrop" onMouseDown={onClose}>
-      <section
-        ref={dialog}
-        className="command-palette"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Search setup"
-        onMouseDown={(event) => event.stopPropagation()}
-        onKeyDown={trapFocus}
-      >
+    <dialog
+      ref={dialog}
+      className="command-palette"
+      aria-label="Search setup"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClick={(event) => {
+        // Clicks on the ::backdrop arrive with the dialog itself as target.
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      {open && (
+        <div className="palette-panel">
         <div className="palette-search">
           <Search size={19} aria-hidden="true" />
           <input
@@ -183,7 +148,7 @@ export default function CommandPalette({
                 run(ordered[selected]);
               }
             }}
-            placeholder="Search settings, methods, or actions"
+            placeholder={placeholder}
             aria-label="Search setup"
             role="combobox"
             aria-expanded="true"
@@ -227,19 +192,11 @@ export default function CommandPalette({
                   >
                     <span className="command-copy">
                       <strong>{command.label}</strong>
-                      {(command.disabledReason || command.detail) && (
-                        <small>
-                          {command.disabledReason ?? command.detail}
-                        </small>
-                      )}
                     </span>
                     <span className="command-hint">
+                      {command.disabledReason ?? command.hint}
                       {command.current && (
                         <Check size={15} aria-label="Current" />
-                      )}
-                      {command.hint}
-                      {!command.current && (
-                        <ArrowRight size={15} aria-hidden="true" />
                       )}
                     </span>
                   </button>
@@ -249,23 +206,12 @@ export default function CommandPalette({
             ))
           ) : (
             <div className="palette-empty">
-              <strong>No matching setting</strong>
-              <span>Try temperature, barostat, calculator, eq, or xyz.</span>
+              <strong>No results</strong>
             </div>
           )}
         </div>
-        <footer>
-          <span>
-            <kbd>↑↓</kbd> navigate
-          </span>
-          <span>
-            <kbd>Enter</kbd> select
-          </span>
-          <span>
-            <kbd>Esc</kbd> close
-          </span>
-        </footer>
-      </section>
-    </div>
+        </div>
+      )}
+    </dialog>
   );
 }
