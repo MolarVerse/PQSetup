@@ -4,8 +4,10 @@ Compatibility
 PQ inputs
 ---------
 
-PQSetup currently writes inputs for the stable PQ v0.7.0 release. It does not
-expose unreleased keywords merely because they exist on a development branch.
+PQSetup currently writes inputs for the stable PQ v0.7.0 release. Its keyword
+list is checked against the v0.7.x input parsers; it does not expose
+unreleased keywords merely because they exist on a development branch (see
+:doc:`settings`).
 
 .. list-table::
    :header-rows: 1
@@ -81,6 +83,16 @@ write the configured density to the PQ input instead.
 
 QM NPT setup requires an imported physical cell; a generated vacuum cell is not
 accepted for that workflow.
+
+Molecule descriptor
+-------------------
+
+PQ reads ``moldescriptor_file`` when atoms in the ``.rst`` carry a molecule
+type other than 0, for GUFF force fields, and for water models. It is not
+needed for NPT by itself: untyped atoms become one-atom molecules. Because
+naming the file in the input makes PQ insist that it exists, PQSetup writes
+``moldescriptor_file`` only when a descriptor is actually packed — always for
+MM, and for QM when the structure carries molecule types.
 
 Platform notes
 --------------
