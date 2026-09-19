@@ -18,6 +18,7 @@ import {
   Sparkles,
   Terminal,
   Thermometer,
+  RotateCcw,
   Timer,
   Upload,
   X,
@@ -1333,7 +1334,7 @@ export default function App() {
       {
         id: "calculator-settings",
         group: "Actions",
-        label: "Advanced method settings",
+        label: "Advanced settings",
         detail: molecularMechanics
           ? "Potentials, neighbour search, constraints"
           : "Calculator, QM run, constraints",
@@ -1347,8 +1348,8 @@ export default function App() {
       {
         id: "run-settings",
         group: "Actions",
-        label: "Advanced run settings",
-        detail: "Temperature rescaling, drift removal",
+        label: "Kinetic resets",
+        detail: "Temperature rescaling, drift removal (Run › Steps)",
         keywords: ["reset", "rescale", "momentum", "drift", "nscale", "nreset"],
         disabledReason:
           setup.ensemble === "OPT" ? "Not used by an optimisation." : undefined,
@@ -2535,6 +2536,9 @@ export default function App() {
                 </Field>
                 {setup.ensemble !== "OPT" && (
                   <SettingsLine
+                    label="Resets"
+                    icon={RotateCcw}
+                    title="Kinetic resets"
                     parts={runSettingsLines(effective)}
                     onOpen={() => setModal("run")}
                   />
@@ -2977,8 +2981,8 @@ export default function App() {
 
       <Modal
         open={modal === "run"}
-        title="Advanced run settings"
-        subtitle={`${setup.ensemble} · kinetic resets`}
+        title="Kinetic resets"
+        subtitle={`${setup.ensemble} · applied by PQ's MD engine every step`}
         onClose={() => setModal(null)}
       >
         <RunSettingsForm

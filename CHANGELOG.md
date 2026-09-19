@@ -39,7 +39,7 @@ user-visible changes.
 - `virial = molecular | atomic` in the MM advanced settings.
 - Kinetic resets (`nscale`, `fscale`, `nreset`, `freset`, `nreset_angular`,
   `freset_angular`, `freset_forces`) moved from the method dialog to
-  Run › Steps › Advanced, where they belong: PQ applies them in the MD engine
+  Run › Steps › Resets, where they belong: PQ applies them in the MD engine
   for every runner. Temperature rescaling is offered for NVT/NPT only.
 
 ### Removed

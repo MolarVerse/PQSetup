@@ -89,13 +89,13 @@ Molecular mechanics
        reference geometry per molecule type. Bond and distance constraints
        themselves come from the topology file.
 
-Run › Steps › Advanced (kinetic resets)
----------------------------------------
+Run › Steps › Resets
+--------------------
 
 These keywords are not calculator settings: PQ applies them in its MD engine
 (``MDEngine::takeStepAfterForces``) for every MD run, QM or MM, whatever the
-runner. They therefore live under **Run › Steps**, next to the step count
-they refer to, and are echoed there.
+runner. They therefore live under **Run › Steps** behind the *Resets* button,
+next to the step count they refer to, and are echoed there.
 
 * **Temperature rescaling** — ``nscale`` (first *n* steps), ``fscale`` (every
   *n* steps): hard velocity scaling to the target temperature. Offered for
