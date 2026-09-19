@@ -294,45 +294,6 @@ def test_export_rejects_seed_when_slakos_missing(tmp_path: Path) -> None:
     assert "slakos" in str(response.json()).lower() or "template" in str(response.json()).lower()
 
 
-def test_export_rejects_seeded_moldescriptor_for_non_water() -> None:
-    methane = WATER.model_copy(deep=True)
-    methane.atoms[0].symbol = "C"
-    client = TestClient(create_app())
-    response = client.post(
-        "/api/project/export",
-        json={
-            "project_name": "methane-npt",
-            "structure": methane.model_dump(mode="json"),
-            "setup": {
-                "job_type": "qm-md",
-                "ensemble": "NPT",
-                "start_file": "water-example.rst",
-                "file_prefix": "methane",
-                "steps": 3,
-                "timestep_fs": 0.5,
-                "temperature_k": 298.15,
-                "pressure_bar": 1.0,
-                "thermostat": "velocity_rescaling",
-                "initialize_velocities": True,
-                "runner": "pyscf",
-                "runner_script": "pyscf_hf",
-                "mm_force_field": "off",
-            },
-            "equilibration": {
-                "enabled": False,
-                "steps": 5,
-                "timestep_fs": 0.5,
-                "temperature_k": 298.15,
-            },
-            "sampling_run_count": 1,
-            "setup_files": [],
-            "preparation": None,
-        },
-    )
-    assert response.status_code == 422
-    assert "H and O" in str(response.json())
-
-
 def test_seed_keeps_custom_dftb_template() -> None:
     custom = "# CUSTOM-DFTB-TEMPLATE\nGeometry = GenFormat { <<< \"geom.gen\" }\n"
     setup = SimulationSetup(

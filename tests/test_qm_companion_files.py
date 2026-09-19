@@ -83,7 +83,7 @@ def test_direct_dftb_requires_and_writes_its_template(tmp_path: Path) -> None:
     assert "dftb_file = dftb_in.template;" in seeded.files[0].input_text
 
 
-def test_qm_npt_requires_and_writes_a_molecule_descriptor() -> None:
+def test_qm_writes_a_molecule_descriptor_only_when_one_is_packed() -> None:
     setup = SimulationSetup(
         ensemble="NPT",
         runner="ase_xtb",
@@ -108,13 +108,31 @@ def test_qm_npt_requires_and_writes_a_molecule_descriptor() -> None:
     assert result.valid
     assert "moldescriptor_file = moldescriptor.dat;" in result.files[0].input_text
 
-    seeded = render_run_plan(
+    # PQ only insists on the file once the input names it; NPT alone does not
+    # need one, so nothing is demanded or seeded when the user adds none.
+    without = render_run_plan(
         RunPlanRequest(setup=setup.model_copy(update={"moldescriptor_file": None})),
         pq=_pq(),
         runners=[_runner("ase_xtb")],
     )
-    assert seeded.valid
-    assert "moldescriptor_file = moldescriptor.dat;" in seeded.files[0].input_text
+    assert without.valid
+    assert "moldescriptor_file" not in without.files[0].input_text
+
+    # The descriptor is accepted for QM regardless of the ensemble.
+    nvt = render_run_plan(
+        RunPlanRequest(
+            setup=setup.model_copy(
+                update={"ensemble": "NVT", "pressure_bar": None, "manostat": None}
+            ),
+            setup_files=[
+                SetupFileReference(role="moldescriptor", name="moldescriptor.dat")
+            ],
+        ),
+        pq=_pq(),
+        runners=[_runner("ase_xtb")],
+    )
+    assert nvt.valid, nvt.diagnostics
+    assert "moldescriptor_file = moldescriptor.dat;" in nvt.files[0].input_text
 
 
 def test_direct_dftb_export_packages_the_typed_template(monkeypatch) -> None:

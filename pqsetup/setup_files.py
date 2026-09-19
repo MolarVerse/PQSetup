@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .external_qm import selected_external_qm_script
+from .keywords import uses_constraints
 from .models import (
     Diagnostic,
     ExternalQMCapabilities,
@@ -15,12 +16,14 @@ from .models import (
 
 QM_FILE_FIELDS: dict[SetupFileRole, str] = {
     "moldescriptor": "moldescriptor_file",
+    "topology": "topology_file",
     "dftb_template": "dftb_template_file",
     "turbomole_define_template": "turbomole_define_template_file",
 }
 
 QM_FILE_LABELS: dict[SetupFileRole, str] = {
     "moldescriptor": "Molecule descriptor",
+    "topology": "Topology",
     "dftb_template": "DFTB+ template",
     "turbomole_define_template": "Turbomole define template",
 }
@@ -40,8 +43,6 @@ def required_qm_file_roles(
     if not setup.job_type.startswith("qm-"):
         return ()
     roles: list[SetupFileRole] = []
-    if setup.ensemble == "NPT":
-        roles.append("moldescriptor")
     script, _ = selected_external_qm_script(
         setup.runner,
         setup.runner_script,
@@ -58,6 +59,10 @@ def required_qm_file_roles(
             for dependency in script.required_working_files
             if (role := _WORKING_FILE_ROLES.get(dependency)) is not None
         )
+    # SHAKE / distance constraints read their bonds from the topology file,
+    # for QM runs as much as for MM ones.
+    if uses_constraints(setup):
+        roles.append("topology")
     return tuple(dict.fromkeys(roles))
 
 
@@ -79,6 +84,13 @@ def required_qm_working_file_names(
     }
 
 
+# Accepted for any QM job when supplied, never demanded: PQ reads the molecule
+# descriptor only when atoms carry molecule types (or for the molecular virial),
+# and it works from one-atom molecules without it. Naming it in the input,
+# however, makes PQ insist the file exists — so it is written only when packed.
+OPTIONAL_QM_FILE_ROLES: tuple[SetupFileRole, ...] = ("moldescriptor",)
+
+
 def validate_qm_setup_files(
     setup: SimulationSetup,
     files: Iterable[SetupFileReference],
@@ -89,6 +101,7 @@ def validate_qm_setup_files(
 
     diagnostics: list[Diagnostic] = []
     required = set(required_qm_file_roles(setup, external_qm))
+    accepted = required | set(OPTIONAL_QM_FILE_ROLES)
     working_file_names = required_qm_working_file_names(setup, external_qm)
     files_by_role: dict[SetupFileRole, SetupFileReference] = {}
     names: set[str] = set()
@@ -176,7 +189,7 @@ def validate_qm_setup_files(
             )
 
     for role, item in files_by_role.items():
-        if role not in required:
+        if role not in accepted:
             diagnostics.append(
                 _error(
                     "qm.file_unused",
