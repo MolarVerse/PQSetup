@@ -260,7 +260,9 @@ def test_generated_vacuum_cell_is_exportable_except_for_npt() -> None:
 
     assert nvt.status_code == 200
     assert npt.status_code == 422
-    assert "physical periodic cell" in npt.json()["detail"]
+    assert [item["code"] for item in npt.json()["detail"]] == [
+        "conditions.generated_cell_npt"
+    ]
 
 
 def test_export_records_and_verifies_perturbation() -> None:

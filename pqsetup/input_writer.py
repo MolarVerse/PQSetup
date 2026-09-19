@@ -5,7 +5,19 @@ import re
 from pathlib import Path
 
 from .external_qm import selected_external_qm_script
-from .mm import MM_FILE_FIELDS, mm_method_label, required_mm_file_roles
+from .keywords import (
+    KEY_PATTERN,
+    extra_value,
+    normalize_key,
+    uses_constraints,
+    validate_extra_settings,
+)
+from .mm import (
+    MM_FILE_FIELDS,
+    mm_method_label,
+    required_mm_file_roles,
+    uses_mshake,
+)
 from .models import (
     Diagnostic,
     ExternalQMCapabilities,
@@ -23,50 +35,16 @@ from .release import (
 from .structures import analyze_structure, parse_structure_bytes
 
 
-_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_KEY = KEY_PATTERN
 _RUNNER_INPUT_NAMES = {
     "ase_dftbplus": "ase-dftbplus",
     "ase_xtb": "ase-xtb",
     "mace_mp": "mace",
     "mace_off": "mace_off",
 }
-_GENERATED_KEYS = {
-    "jobtype",
-    "nstep",
-    "timestep",
-    "start_file",
-    "restart_file",
-    "file_prefix",
-    "random_seed",
-    "init_velocities",
-    "thermostat",
-    "temp",
-    "start_temp",
-    "temp_ramp_steps",
-    "temp_ramp_frequency",
-    "t_relaxation",
-    "friction",
-    "nh_chain_length",
-    "coupling_frequency",
-    "manostat",
-    "pressure",
-    "p_relaxation",
-    "compressibility",
-    "isotropy",
-    "qm_prog",
-    "qm_script",
-    "density",
-    "rcoulomb",
-    "virial",
-    "force_field",
-    "moldescriptor_file",
-    "guff_file",
-    "topology_file",
-    "parameter_file",
-    "intra_nonbonded_file",
-    "dftb_file",
-    "overwrite_output",
-}
+# Advanced keywords the MM block writes in place; they are skipped in the
+# trailing "additional settings" dump so no key appears twice.
+_INLINE_EXTRA_KEYS = {"virial"}
 _EXTERNAL_RUNNERS = {"dftbplus", "pyscf", "turbomole"}
 
 
@@ -82,7 +60,7 @@ def render_input(
     lines = [
         *_header(setup),
         "",
-        "# ── Dynamics ──────────────────────────────────────────────────",
+        _section("dynamics"),
         f"jobtype = {setup.job_type};",
     ]
     if setup.ensemble != "OPT":
@@ -95,7 +73,7 @@ def render_input(
     lines.extend(
         [
             "",
-            "# ── Files and continuation ────────────────────────────────────",
+            _section("files & continuation"),
             f"start_file = {setup.start_file};",
             f"restart_file = {restart_filename(setup)};",
             f"file_prefix = {setup.file_prefix};",
@@ -108,7 +86,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Initial state ─────────────────────────────────────────────",
+                _section("initial state"),
             ]
         )
         if setup.initialize_velocities or setup.ensemble in {"NVT", "NPT"}:
@@ -120,10 +98,18 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Temperature coupling ──────────────────────────────────────",
+                _section("temperature coupling"),
                 f"thermostat = {setup.thermostat};",
             ]
         )
+        if setup.start_temperature_k is not None and setup.temperature_k is not None:
+            lines.append(
+                _ramp_bar(
+                    setup.start_temperature_k,
+                    setup.temperature_k,
+                    setup.temperature_ramp_steps or setup.steps,
+                )
+            )
         if setup.start_temperature_k is not None:
             lines.append(f"start_temp = {_number(setup.start_temperature_k)};")
             if setup.temperature_ramp_steps is not None:
@@ -148,7 +134,7 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Pressure coupling ─────────────────────────────────────────",
+                _section("pressure coupling"),
                 f"manostat = {setup.manostat};",
                 f"pressure = {_number(setup.pressure_bar)};",
             ]
@@ -166,18 +152,19 @@ def render_input(
         lines.extend(
             [
                 "",
-                "# ── Molecular mechanics ───────────────────────────────────────",
+                _section("molecular mechanics"),
             ]
         )
         if setup.density_g_cm3 is not None:
             lines.append(f"density = {_number(setup.density_g_cm3)};")
+        virial = extra_value(setup, "virial") or "molecular"
         lines.extend(
             [
                 f"rcoulomb = {_number(setup.coulomb_cutoff_angstrom)};",
-                "virial = molecular;",
+                f"virial = {str(virial).strip().lower()};",
                 f"force-field = {setup.mm_force_field};",
                 "",
-                "# ── Force-field files ─────────────────────────────────────────",
+                _section("force-field files"),
                 f"moldescriptor_file = {setup.moldescriptor_file};",
             ]
         )
@@ -192,13 +179,19 @@ def render_input(
             )
         if setup.mm_force_field in {"bonded", "on"} and setup.intra_nonbonded_file:
             lines.append(f"intra-nonbonded_file = {setup.intra_nonbonded_file};")
+        if (
+            setup.mm_force_field in {"bonded", "on"}
+            and uses_mshake(setup)
+            and setup.mshake_file
+        ):
+            lines.append(f"mshake_file = {setup.mshake_file};")
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
         lines.extend(
             [
                 "",
-                "# ── Electronic structure ──────────────────────────────────────",
+                _section("electronic structure"),
                 f"qm_prog = {runner_name};",
             ]
         )
@@ -207,43 +200,59 @@ def render_input(
             setup.runner_script,
             external_qm,
         )
-        if runner_script:
+        # PQ treats qm_script and qm_script_full_path as mutually exclusive.
+        if runner_script and not has_script_full_path(setup):
             lines.append(f"qm_script = {runner_script.name};")
-        if setup.ensemble == "NPT":
-            lines.append(
-                "moldescriptor_file = "
-                f"{setup.moldescriptor_file or 'moldescriptor.dat'};"
-            )
+        # Only when a descriptor is actually packed: naming one makes PQ
+        # require the file, and it is not needed for NPT by itself.
+        if setup.moldescriptor_file:
+            lines.append(f"moldescriptor_file = {setup.moldescriptor_file};")
         if setup.runner == "dftbplus":
             lines.append(
                 f"dftb_file = {setup.dftb_template_file or 'dftb_in.template'};"
             )
+        if uses_constraints(setup) and setup.topology_file:
+            lines.append(f"topology_file = {setup.topology_file};")
         if (
             setup.runner == "ase_xtb"
             and "xtb_method" not in setup.extra_settings
             and "xtb-method" not in setup.extra_settings
         ):
             lines.append("xtb_method = gfn2-xtb;")
-        if (
-            setup.runner == "ase_dftbplus"
-            and "slakos" not in setup.extra_settings
-        ):
-            lines.append("slakos = 3ob;")
+        if setup.runner == "ase_dftbplus":
+            if "slakos" not in setup.extra_settings:
+                lines.append("slakos = 3ob;")
             if "dispersion" not in setup.extra_settings:
                 lines.append("dispersion = on;")
-    if setup.extra_settings:
+    additional = sorted(
+        key
+        for key in setup.extra_settings
+        if not (
+            setup.job_type == "mm-md" and normalize_key(key) in _INLINE_EXTRA_KEYS
+        )
+    )
+    if additional:
         lines.extend(
             [
                 "",
-                "# ── Additional settings ───────────────────────────────────────",
+                _section("additional settings"),
             ]
         )
-        for key in sorted(setup.extra_settings):
+        for key in additional:
             lines.append(f"{key} = {_value(setup.extra_settings[key])};")
+    lines.extend(sign_off(setup))
     return RenderResult(
-        input_text="\n".join(lines).rstrip() + "\n",
+        input_text="\n".join(_annotate(lines)).rstrip() + "\n",
         diagnostics=diagnostics,
         valid=True,
+    )
+
+
+def has_script_full_path(setup: SimulationSetup) -> bool:
+    """True when the user points PQ at a script by path; excludes ``qm_script``."""
+    return (
+        "qm_script_full_path" in setup.extra_settings
+        or "qm-script-full-path" in setup.extra_settings
     )
 
 
@@ -337,60 +346,63 @@ def validate_setup(
                     "Temperature must be finite and positive.",
                 )
             )
-    if setup.start_temperature_k is not None and not _nonnegative_finite(
-        setup.start_temperature_k
-    ):
-        diagnostics.append(
-            _error(
-                "conditions.start_temperature",
-                "Starting temperature must be finite and non-negative.",
-            )
-        )
-    if setup.temperature_ramp_steps is not None and setup.start_temperature_k is None:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "A temperature ramp needs a starting temperature.",
-            )
-        )
-    if setup.temperature_ramp_steps is not None and setup.temperature_ramp_steps < 0:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "Temperature ramp steps must be non-negative.",
-            )
-        )
-    if (
-        setup.temperature_ramp_steps is not None
-        and setup.steps is not None
-        and setup.temperature_ramp_steps > setup.steps
-    ):
-        diagnostics.append(
-            _error(
-                "conditions.ramp_steps",
-                "Temperature ramp steps cannot exceed the run length.",
-            )
-        )
-    if setup.temperature_ramp_frequency <= 0:
-        diagnostics.append(
-            _error(
-                "conditions.ramp_frequency",
-                "Temperature ramp frequency must be positive.",
-            )
-        )
-    elif setup.start_temperature_k is not None:
-        effective_ramp_steps = setup.temperature_ramp_steps or setup.steps
-        if (
-            effective_ramp_steps is not None
-            and effective_ramp_steps > 0
-            and setup.temperature_ramp_frequency > effective_ramp_steps
+    # A ramp only exists under a thermostat; the writer ignores it otherwise,
+    # so it must not block an NVE run either.
+    if setup.ensemble in {"NVT", "NPT"}:
+        if setup.start_temperature_k is not None and not _nonnegative_finite(
+            setup.start_temperature_k
         ):
             diagnostics.append(
                 _error(
-                    "conditions.ramp_frequency",
-                    "Temperature ramp frequency cannot exceed the ramp length.",
+                    "conditions.start_temperature",
+                    "Starting temperature must be finite and non-negative.",
                 )
             )
+        if setup.temperature_ramp_steps is not None and setup.start_temperature_k is None:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "A temperature ramp needs a starting temperature.",
+                )
+            )
+        if setup.temperature_ramp_steps is not None and setup.temperature_ramp_steps < 0:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "Temperature ramp steps must be non-negative.",
+                )
+            )
+        if (
+            setup.temperature_ramp_steps is not None
+            and setup.steps is not None
+            and setup.temperature_ramp_steps > setup.steps
+        ):
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_steps",
+                    "Temperature ramp steps cannot exceed the run length.",
+                )
+            )
+        if setup.temperature_ramp_frequency <= 0:
+            diagnostics.append(
+                _error(
+                    "conditions.ramp_frequency",
+                    "Temperature ramp frequency must be positive.",
+                )
+            )
+        elif setup.start_temperature_k is not None:
+            effective_ramp_steps = setup.temperature_ramp_steps or setup.steps
+            if (
+                effective_ramp_steps is not None
+                and effective_ramp_steps > 0
+                and setup.temperature_ramp_frequency > effective_ramp_steps
+            ):
+                diagnostics.append(
+                    _error(
+                        "conditions.ramp_frequency",
+                        "Temperature ramp frequency cannot exceed the ramp length.",
+                    )
+                )
     if setup.ensemble in {"NVT", "NPT"}:
         if not setup.thermostat:
             diagnostics.append(
@@ -519,6 +531,7 @@ def validate_setup(
         "topology_file": setup.topology_file,
         "parameter_file": setup.parameter_file,
         "intra_nonbonded_file": setup.intra_nonbonded_file,
+        "mshake_file": setup.mshake_file,
         "dftb_template_file": setup.dftb_template_file,
         "turbomole_define_template_file": setup.turbomole_define_template_file,
     }.items():
@@ -602,8 +615,10 @@ def validate_setup(
                     "Coulomb cutoff must be finite and positive.",
                 )
             )
-        for role in required_mm_file_roles(setup.mm_force_field):
+        for role in required_mm_file_roles(setup.mm_force_field, setup):
             field_name = MM_FILE_FIELDS[role]
+            if role == "mshake":
+                continue  # reported with the shake keyword by validate_extra_settings
             if not getattr(setup, field_name):
                 diagnostics.append(
                     _error(
@@ -629,10 +644,7 @@ def validate_setup(
                 setup.runner_script,
                 external_qm,
             )
-            has_full_path = (
-                "qm_script_full_path" in setup.extra_settings
-                or "qm-script-full-path" in setup.extra_settings
-            )
+            has_full_path = has_script_full_path(setup)
             if script_error and (setup.runner_script or not has_full_path):
                 diagnostics.append(_error("runner.script", script_error))
         for field_name in (
@@ -658,36 +670,7 @@ def validate_setup(
                         f"{field_name.replace('_', ' ').capitalize()} is too long.",
                     )
                 )
-    for key, value in setup.extra_settings.items():
-        normalized = key.replace("-", "_").lower()
-        if not _KEY.fullmatch(key):
-            diagnostics.append(
-                _error(
-                    "input.extra_key",
-                    f"'{key}' is not a valid PQ keyword.",
-                )
-            )
-        elif normalized in _GENERATED_KEYS:
-            diagnostics.append(
-                _error(
-                    "input.extra_conflict",
-                    f"'{key}' is already managed by PQSetup.",
-                )
-            )
-        if isinstance(value, float) and not math.isfinite(value):
-            diagnostics.append(
-                _error(
-                    "input.extra_value",
-                    f"'{key}' must be finite.",
-                )
-            )
-        if isinstance(value, str) and any(character in value for character in ";\n\r#"):
-            diagnostics.append(
-                _error(
-                    "input.extra_value",
-                    f"'{key}' contains an invalid character.",
-                )
-            )
+    diagnostics.extend(validate_extra_settings(setup))
     return diagnostics
 
 
@@ -792,15 +775,195 @@ def restart_filename(setup: SimulationSetup) -> str:
     return setup.restart_file or f"{setup.file_prefix}.rst"
 
 
+SECTION_WIDTH = 64
+NOTE_COLUMN = 30
+
+# One-line quips per section. Purely cosmetic (comments), always deterministic.
+_SECTION_QUIPS = {
+    "dynamics": "how long, how fine",
+    "files & continuation": "from here to there",
+    "initial state": "roll the dice (seeded)",
+    "temperature coupling": "gentle nudges toward T",
+    "pressure coupling": "squeeze, but politely",
+    "molecular mechanics": "springs, spheres and charges",
+    "force-field files": "the recipe book",
+    "electronic structure": "where the electrons live",
+    "additional settings": "the fine print",
+}
+
+# A glyph per section: the divider reads `# ── ψ electronic structure ───`.
+_SECTION_GLYPHS = {
+    "dynamics": "∫",
+    "files & continuation": "⇄",
+    "initial state": "⚄",
+    "temperature coupling": "T",
+    "pressure coupling": "P",
+    "molecular mechanics": "⚛",
+    "force-field files": "⚙",
+    "electronic structure": "ψ",
+    "additional settings": "+",
+    "fin": "∎",
+}
+
+_ENSEMBLE_QUIPS = {
+    "NVE": "energy conserved · nothing else promised",
+    "NVT": "keep it cool",
+    "NPT": "temperature and pressure on a leash",
+    "OPT": "downhill only",
+}
+
+# Sign-off picked by random_seed so every run card gets one, reproducibly.
+_SIGN_OFFS = (
+    "May your trajectory be ergodic.",
+    "Conserve energy. Or at least temperature.",
+    "Every timestep is a tiny leap of faith.",
+    "Statistically, this will be fine.",
+    "Entropy always wins — make it work for you.",
+    "Integrate responsibly.",
+    "Go compute something beautiful.",
+    "The atoms are ready. Are you?",
+    "Equilibrated is a state of mind.",
+    "Boltzmann would have wanted this.",
+    "⟨A⟩ awaits. Sample well.",
+    "Verlet, not verily.",
+)
+
+
+# Trailing `# unit` notes for numeric keys; aligned per section by _annotate.
+_NOTES = {
+    "nstep": "steps",
+    "timestep": "fs",
+    "temp": "K",
+    "start_temp": "K",
+    "temp_ramp_steps": "steps",
+    "temp_ramp_frequency": "steps",
+    "t_relaxation": "ps",
+    "friction": "ps⁻¹",
+    "coupling_frequency": "cm⁻¹",
+    "pressure": "bar",
+    "p_relaxation": "ps",
+    "compressibility": "bar⁻¹",
+    "density": "g/cm³",
+    "rcoulomb": "Å",
+    "rnoncoulomb": "Å",
+    "wolf_param": "Å⁻¹",
+    "output_freq": "steps",
+    "qm_loop_time_limit": "s",
+    "init_velocities": "Maxwell–Boltzmann",
+    "random_seed": "reproducible",
+}
+_ASSIGNMENT = re.compile(r"^([A-Za-z][A-Za-z0-9_-]*) = .*;$")
+
+
+def _annotate(lines: list[str]) -> list[str]:
+    """Append `# unit` notes to known keys in one shared column.
+
+    Only annotated lines decide the column, so a long filename elsewhere does
+    not push the notes out; `key = value;` itself stays untouched/greppable.
+    """
+    notes: list[str | None] = []
+    for line in lines:
+        match = _ASSIGNMENT.match(line)
+        key = match.group(1).replace("-", "_").lower() if match else None
+        notes.append(_NOTES.get(key) if key else None)
+    if not any(notes):
+        return lines
+    column = max(
+        NOTE_COLUMN,
+        max(len(line) for line, note in zip(lines, notes) if note) + 2,
+    )
+    return [
+        f"{line:<{column}}# {note}" if note else line
+        for line, note in zip(lines, notes)
+    ]
+
+
+def _section(title: str, quip: str | None = None) -> str:
+    """Divider with the title left and the quip right, rule in between:
+
+    `# ── dynamics ──────────────────── how long, how fine ──`
+    """
+    quip = _SECTION_QUIPS.get(title) if quip is None else quip
+    glyph = _SECTION_GLYPHS.get(title)
+    lead = f"# ── {glyph} {title} " if glyph else f"# ── {title} "
+    tail = f" {quip} ──" if quip else ""
+    fill = "─" * max(4, SECTION_WIDTH - len(lead) - len(tail))
+    return lead + fill + tail
+
+
+def _span(steps: int | None, timestep_fs: float | None) -> str | None:
+    """Human span of the run: `1000 × 0.5 fs = 0.5 ps of physics`."""
+    if steps is None or timestep_fs is None:
+        return None
+    total_fs = steps * timestep_fs
+    if total_fs >= 1e6:
+        total = f"{total_fs / 1e6:.4g} ns"
+    elif total_fs >= 1e3:
+        total = f"{total_fs / 1e3:.4g} ps"
+    else:
+        total = f"{total_fs:.4g} fs"
+    return f"{steps} × {_number(timestep_fs)} fs = {total} of physics"
+
+
+_BOLTZMANN_EV = 8.617333262e-5  # eV/K
+_BOLTZMANN_KJ_MOL = 8.314462618e-3  # kJ/(mol·K)
+_OH_STRETCH_PERIOD_FS = 9.1  # ~3650 cm⁻¹, the fastest common vibration
+
+
+def _thermal_energy(temperature_k: float | None) -> str | None:
+    """`25.7 meV · 2.48 kJ/mol` — what kT buys you at this temperature."""
+    if temperature_k is None or not math.isfinite(temperature_k):
+        return None
+    mev = _BOLTZMANN_EV * temperature_k * 1000
+    kj = _BOLTZMANN_KJ_MOL * temperature_k
+    return f"{mev:.3g} meV · {kj:.3g} kJ/mol"
+
+
+def _frames(steps: int | None, output_freq: object) -> str | None:
+    """How many snapshots the trajectory will hold."""
+    if steps is None:
+        return None
+    try:
+        every = max(1, int(output_freq))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        every = 1
+    count = steps // every
+    stride = "every step" if every == 1 else f"every {every} steps"
+    return f"{count} snapshots · {stride}"
+
+
+def _resolution(timestep_fs: float | None) -> str | None:
+    """Steps per O–H stretch period: the classic timestep sanity check."""
+    if timestep_fs is None or timestep_fs <= 0:
+        return None
+    per_period = _OH_STRETCH_PERIOD_FS / timestep_fs
+    verdict = "fine" if per_period >= 10 else "coarse" if per_period >= 4 else "bold"
+    return f"{per_period:.0f} steps per O–H stretch · {verdict}"
+
+
+def _ramp_bar(start_k: float, target_k: float, steps: int | None) -> str:
+    """`# 100 K ━━━━━━━━━━━▶ 298.15 K · 500 steps`."""
+    over = f" · {steps} steps" if steps else ""
+    return f"# {_number(start_k)} K {'━' * 14}▶ {_number(target_k)} K{over}"
+
+
+def sign_off(setup: SimulationSetup) -> list[str]:
+    """Closing divider carrying a seed-picked one-liner."""
+    return ["", _section("fin", _SIGN_OFFS[setup.random_seed % len(_SIGN_OFFS)])]
+
+
+# figlet "small": the PQ wordmark that opens every run card.
+_PQ_ART = (
+    r" ___  ___   ",
+    r"| _ \/ _ \  ",
+    r"|  _/ (_) | ",
+    r"|_|  \__\_\ ",
+)
+ART_WIDTH = 13  # art column incl. gutter; InputSource.tsx splits here too
+
+
 def _header(setup: SimulationSetup) -> list[str]:
-    width = 62
-    title = "─ PQSetup · simulation input "
-    top = title + "─" * (width - len(title))
-
-    def row(value: str) -> str:
-        content = value if len(value) <= width - 2 else f"{value[: width - 3]}…"
-        return f"# │ {content:<{width - 2}} │"
-
+    """Run card in a box: PQ wordmark + name/kind, a rule, then facts."""
     method = (
         mm_method_label(setup.mm_force_field)
         if setup.job_type == "mm-md"
@@ -809,15 +972,52 @@ def _header(setup: SimulationSetup) -> list[str]:
             setup.runner or setup.job_type,
         )
     )
-    transition = f"{setup.start_file} → {restart_filename(setup)}"
-
+    ensemble_quip = _ENSEMBLE_QUIPS.get(setup.ensemble)
+    ensemble = (
+        f"{setup.ensemble} · {ensemble_quip}" if ensemble_quip else setup.ensemble
+    )
+    facts: list[tuple[str, str]] = [
+        ("ensemble", ensemble),
+        ("method", method),
+    ]
+    span = _span(setup.steps, setup.timestep_fs)
+    if span:
+        facts.append(("span", span))
+    if setup.ensemble != "OPT":
+        resolution = _resolution(setup.timestep_fs)
+        if resolution:
+            facts.append(("timestep", resolution))
+        if setup.ensemble in {"NVT", "NPT"} or setup.initialize_velocities:
+            kt = _thermal_energy(setup.temperature_k)
+            if kt:
+                facts.append(("kT", kt))
+        frames = _frames(setup.steps, setup.extra_settings.get("output_freq"))
+        if frames:
+            facts.append(("frames", frames))
+    facts.append(("files", f"{setup.start_file} → {restart_filename(setup)}"))
+    kind = "geometry optimization" if setup.ensemble == "OPT" else "molecular dynamics"
+    title_texts = [
+        "",
+        setup.file_prefix,
+        f"{kind} · PQ {TARGET_PQ_RELEASE}",
+        "written by PQSetup",
+    ]
+    title_rows = [
+        f"{art:<{ART_WIDTH}}{text}" for art, text in zip(_PQ_ART, title_texts)
+    ]
+    rows = [f"{label:<11} {value}" for label, value in facts]
+    inner = max(
+        SECTION_WIDTH - 6,
+        *(len(row) for row in title_rows),
+        *(len(row) for row in rows),
+    )
+    rule = "─" * (inner + 2)
     return [
-        f"# ╭{top}╮",
-        row(f"       ●          {setup.ensemble} · {method}"),
-        row(f"      ╱ ╲         {transition}"),
-        row(f"     ●───●        Written by PQSetup · target {TARGET_PQ_RELEASE}"),
-        f"# ╰{'─' * width}╯",
-        "# Generated deterministically. Review paths and resources before running.",
+        f"# ┌{rule}┐",
+        *(f"# │ {row:<{inner}} │" for row in title_rows),
+        f"# ├{rule}┤",
+        *(f"# │ {row:<{inner}} │" for row in rows),
+        f"# └{rule}┘",
     ]
 
 
