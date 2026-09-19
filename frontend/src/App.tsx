@@ -60,6 +60,7 @@ type SetupCommand = Command & { group: CommandGroup };
 import { MMSettingsForm, QMSettingsForm } from "./SettingsForms";
 import {
   settingsLines,
+  usesMShake,
   usesTopology,
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
@@ -273,6 +274,7 @@ const INITIAL_SETUP: SimulationSetup = {
   topology_file: null,
   parameter_file: null,
   intra_nonbonded_file: null,
+  mshake_file: null,
   dftb_template_file: null,
   turbomole_define_template_file: null,
   overwrite_output: false,
@@ -340,6 +342,7 @@ function withSetupFileName(
   if (role === "intra_nonbonded") {
     return { ...setup, intra_nonbonded_file: name };
   }
+  if (role === "mshake") return { ...setup, mshake_file: name };
   if (role === "dftb_template") {
     return { ...setup, dftb_template_file: name };
   }
@@ -504,10 +507,11 @@ export default function App() {
   const hasTypedMolecules = analysis.structure.atoms.some(
     (atom) => atom.molecule_type > 0,
   );
+  const mshake = usesMShake(setup);
   const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
-        ? setupFileSpecs(setup.mm_force_field)
+        ? setupFileSpecs(setup.mm_force_field, mshake)
         : qmSetupFileSpecs(
             setup.runner,
             setup.runner_script,
@@ -518,6 +522,7 @@ export default function App() {
       externalQM,
       hasTypedMolecules,
       molecularMechanics,
+      mshake,
       setup.mm_force_field,
       setup.runner,
       setup.runner_script,

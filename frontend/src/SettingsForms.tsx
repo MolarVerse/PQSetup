@@ -9,6 +9,7 @@ import {
   QM_DEFAULTS,
   SHAKE_MODES,
   SLAKOS_SETS,
+  VIRIAL_KINDS,
   XTB_METHODS,
   dispersionDefault,
   extraBool,
@@ -171,16 +172,23 @@ export function QMSettingsForm({
   const isMace = runner === "mace_mp" || runner === "mace_off";
   const maceModel = extraString(extra, "mace_model", QM_DEFAULTS.mace_model);
   const slakos = extraString(extra, "slakos", QM_DEFAULTS.slakos);
+  // PQ switches third order on for 3ob when the key is absent, off otherwise.
+  const thirdOrder = extraBool(extra, "third_order", slakos === "3ob");
   const hasCalculatorGroup =
     runner === "ase_xtb" ||
     runner === "ase_dftbplus" ||
     isMace ||
     usesExternalScript(runner);
+  const calculatorInfo = usesExternalScript(runner)
+    ? runner === "dftbplus"
+      ? "Hamiltonian, SCC and k-points live in the DFTB+ template under Files"
+      : "Method, basis and convergence live in the QM script itself"
+    : undefined;
 
   return (
     <div className="settings-form">
       {hasCalculatorGroup && (
-        <Group title="Calculator">
+        <Group title="Calculator" info={calculatorInfo}>
           {runner === "ase_xtb" && (
             <Choice
               label="xTB method"
@@ -218,18 +226,23 @@ export function QMSettingsForm({
               )}
               <Toggle
                 label="Third-order expansion"
-                info="Implied by 3ob"
-                checked={extraBool(extra, "third_order", slakos === "3ob")}
-                onChange={(value) => setExtra("third_order", value)}
+                info="PQ turns it on for 3ob unless set here"
+                checked={thirdOrder}
+                onChange={(value) => {
+                  setExtra("third_order", value);
+                  if (!value) setExtra("hubbard_derivs", null);
+                }}
               />
-              <TextRow
-                label="Hubbard derivatives"
-                keyName="hubbard_derivs"
-                info="Per element, e.g. C: -0.1492, H: -0.1857"
-                placeholder="C: -0.1492, H: -0.1857, O: -0.1575"
-                extra={extra}
-                setExtra={setExtra}
-              />
+              {thirdOrder && (
+                <TextRow
+                  label="Hubbard derivatives"
+                  keyName="hubbard_derivs"
+                  info="Override the built-in 3ob values · element: value, …"
+                  placeholder="C: -0.1492, H: -0.1857, O: -0.1575"
+                  extra={extra}
+                  setExtra={setExtra}
+                />
+              )}
             </>
           )}
 
@@ -275,7 +288,7 @@ export function QMSettingsForm({
             <TextRow
               label="Script full path"
               keyName="qm_script_full_path"
-              info="Overrides the bundled qm_script lookup"
+              info="Run your own script instead of the bundled one"
               placeholder="/opt/pq/scripts/…"
               extra={extra}
               setExtra={setExtra}
@@ -379,6 +392,15 @@ export function MMSettingsForm({
             setExtra={setExtra}
           />
         )}
+        <Choice
+          label="Virial"
+          value={extraString(extra, "virial", MM_DEFAULTS.virial)}
+          options={VIRIAL_KINDS}
+          info="Molecular applies the intramolecular correction from the molecule descriptor"
+          onChange={(value) =>
+            setExtra("virial", value === MM_DEFAULTS.virial ? null : value)
+          }
+        />
       </Group>
 
       <Group title="Neighbour search">
@@ -409,6 +431,7 @@ export function MMSettingsForm({
             label="Bond constraints"
             value={shake}
             options={SHAKE_MODES}
+            info="M-SHAKE needs reference geometries · a file slot appears under Files"
             onChange={(value) => {
               setExtra("shake", value === MM_DEFAULTS.shake ? null : value);
               if (value === "off") {
@@ -420,6 +443,10 @@ export function MMSettingsForm({
                 ]) {
                   setExtra(key, null);
                 }
+              }
+              if (value !== "mshake") {
+                setExtra("mshake-tolerance", null);
+                setExtra("mshake-iter", null);
               }
             }}
           />
@@ -458,6 +485,26 @@ export function MMSettingsForm({
                 extra={extra}
                 setExtra={setExtra}
               />
+              {shake === "mshake" && (
+                <>
+                  <NumberRow
+                    label="M-SHAKE tolerance"
+                    keyName="mshake-tolerance"
+                    step="1e-9"
+                    placeholder={String(MM_DEFAULTS["mshake-tolerance"])}
+                    extra={extra}
+                    setExtra={setExtra}
+                  />
+                  <NumberRow
+                    label="M-SHAKE iterations"
+                    keyName="mshake-iter"
+                    min="1"
+                    placeholder={String(MM_DEFAULTS["mshake-iter"])}
+                    extra={extra}
+                    setExtra={setExtra}
+                  />
+                </>
+              )}
             </div>
           )}
           <Toggle

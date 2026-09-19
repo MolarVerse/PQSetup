@@ -69,7 +69,8 @@ reach the input.
 
 **Files** lists the companion files the selection needs, each with an *Add
 file* / *Added* state. MM always needs a molecule descriptor plus the GUFF,
-topology, or parameter files of its mode. For QM the row shows the template a
+topology, or parameter files of its mode; choosing M-SHAKE under Advanced
+adds the geometry file it reads. For QM the row shows the template a
 program needs, and a molecule descriptor **only when the structure carries
 molecule types** in its ``.rst`` — PQ reads the descriptor exactly then, so
 the slot follows the structure, not the ensemble.

@@ -82,6 +82,11 @@ const FILE_SPECS: Record<SetupFileRole, Omit<SetupFileSpec, "optional">> = {
     label: "Intramolecular nonbonded",
     defaultName: "intra-nonbonded.dat",
   },
+  mshake: {
+    role: "mshake",
+    label: "M-SHAKE geometries",
+    defaultName: "mshake.dat",
+  },
   dftb_template: {
     role: "dftb_template",
     label: "DFTB+ template",
@@ -155,13 +160,22 @@ export function mmModeLabel(mode: MMForceFieldMode): string {
   return MM_MODES.find((option) => option.value === mode)?.label ?? "GUFF";
 }
 
-export function setupFileSpecs(mode: MMForceFieldMode): SetupFileSpec[] {
+/**
+ * Files an MM run needs. The mode decides the force-field files; the
+ * Advanced dialog sits above this list, so its `shake = mshake` may add the
+ * M-SHAKE geometry file here (PQ reads it only then).
+ */
+export function setupFileSpecs(
+  mode: MMForceFieldMode,
+  mshake = false,
+): SetupFileSpec[] {
   const required: SetupFileRole[] =
     mode === "off"
       ? ["moldescriptor", "guff"]
       : mode === "bonded"
         ? ["moldescriptor", "guff", "topology", "parameter"]
         : ["moldescriptor", "topology", "parameter"];
+  if (mode !== "off" && mshake) required.push("mshake");
 
   return [
     ...required.map((role) => ({ ...FILE_SPECS[role], optional: false })),
@@ -234,6 +248,7 @@ export function companionRoleForFileName(name: string): SetupFileRole | null {
   if (base.includes("intra") && base.includes("nonbonded")) {
     return "intra_nonbonded";
   }
+  if (base.includes("mshake")) return "mshake";
   if (base.includes("guff")) return "guff";
   if (base.includes("topolog")) return "topology";
   if (base.includes("param")) return "parameter";

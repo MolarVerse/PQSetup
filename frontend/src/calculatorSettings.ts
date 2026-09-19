@@ -53,16 +53,21 @@ export const NONCOULOMB_KINDS: ChoiceOption[] = [
 ];
 
 export const LONG_RANGE_KINDS: ChoiceOption[] = [
-  { value: "none", label: "None" },
+  { value: "none", label: "None · shifted potential" },
   { value: "wolf", label: "Wolf summation" },
   { value: "reaction-field", label: "Reaction field" },
 ];
 
-// M-SHAKE (needs an mshake_file) and the water models / rnoncoulomb exist only
-// in PQ's development tree, not in the v0.7.x releases PQSetup targets.
+export const VIRIAL_KINDS: ChoiceOption[] = [
+  { value: "molecular", label: "Molecular" },
+  { value: "atomic", label: "Atomic" },
+];
+
+/** `on` and `shake` are synonyms in PQ; `mshake` also needs an mshake_file. */
 export const SHAKE_MODES: ChoiceOption[] = [
   { value: "off", label: "Off" },
   { value: "on", label: "SHAKE + RATTLE" },
+  { value: "mshake", label: "M-SHAKE rigid bodies + SHAKE" },
 ];
 
 /** Runners that PQ drives through an external script (qm_script_full_path). */
@@ -83,11 +88,14 @@ export const MM_DEFAULTS = {
   noncoulomb: "guff",
   long_range: "none",
   wolf_param: 0.25,
+  virial: "molecular",
   shake: "off",
   "shake-tolerance": 1e-8,
   "shake-iter": 20,
   "rattle-tolerance": 1e4,
   "rattle-iter": 20,
+  "mshake-tolerance": 1e-8,
+  "mshake-iter": 20,
   "cell-number": 7,
 } as const;
 
@@ -140,6 +148,15 @@ export function usesTopology(mode: MMForceFieldMode): boolean {
   return mode === "on" || mode === "bonded";
 }
 
+/** True when the Advanced dialog asked for M-SHAKE (which needs a file). */
+export function usesMShake(setup: SimulationSetup): boolean {
+  return (
+    setup.job_type === "mm-md" &&
+    usesTopology(setup.mm_force_field) &&
+    setup.extra_settings.shake === "mshake"
+  );
+}
+
 /** Keys the settings dialog owns; anything else in extra_settings is kept. */
 export const QM_KEYS = [
   "xtb_method",
@@ -168,7 +185,10 @@ export const MM_KEYS = [
   "shake-iter",
   "rattle-tolerance",
   "rattle-iter",
+  "mshake-tolerance",
+  "mshake-iter",
   "distance-constraints",
+  "virial",
 ] as const;
 
 /** Momentum / temperature resets: valid for every MD job, never pruned. */
@@ -194,6 +214,7 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
       "long_range",
       "wolf_param",
       "rf_epsilon",
+      "virial",
       "cell-list",
       "cell-number",
     ]) {
@@ -212,6 +233,10 @@ export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
         "distance-constraints",
       ]) {
         keys.add(key);
+      }
+      if (setup.extra_settings.shake === "mshake") {
+        keys.add("mshake-tolerance");
+        keys.add("mshake-iter");
       }
     }
     return keys;
@@ -322,9 +347,12 @@ export function mmSettingsSummary(setup: SimulationSetup): string[] {
   if (extra.long_range && extra.long_range !== MM_DEFAULTS.long_range) {
     parts.push(label(LONG_RANGE_KINDS, String(extra.long_range)));
   }
+  if (extra.virial && extra.virial !== MM_DEFAULTS.virial) {
+    parts.push("atomic virial");
+  }
   if (extraBool(extra, "cell-list", false)) parts.push("cell list");
   if (extra.shake && extra.shake !== MM_DEFAULTS.shake) {
-    parts.push(label(SHAKE_MODES, String(extra.shake)));
+    parts.push(extra.shake === "mshake" ? "M-SHAKE" : label(SHAKE_MODES, String(extra.shake)));
   }
   if (extraBool(extra, "distance-constraints", false)) {
     parts.push("distance constraints");

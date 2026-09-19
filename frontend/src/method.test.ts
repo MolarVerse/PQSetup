@@ -93,6 +93,18 @@ describe("molecular mechanics method", () => {
     ]);
   });
 
+  it("adds the required M-SHAKE file only when the shake keyword asks for it", () => {
+    const withMShake = setupFileSpecs("on", true);
+    expect(withMShake.find((file) => file.role === "mshake")?.optional).toBe(
+      false,
+    );
+    expect(setupFileSpecs("off", true).map((file) => file.role)).toEqual([
+      "moldescriptor",
+      "guff",
+    ]);
+    expect(companionRoleForFileName("water_mshake.dat")).toBe("mshake");
+  });
+
   it("keeps optional intramolecular data out of readiness", () => {
     expect(missingSetupFileRoles("on", files.slice(0, 1))).toEqual([
       "topology",

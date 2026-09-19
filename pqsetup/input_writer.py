@@ -5,7 +5,18 @@ import re
 from pathlib import Path
 
 from .external_qm import selected_external_qm_script
-from .mm import MM_FILE_FIELDS, mm_method_label, required_mm_file_roles
+from .keywords import (
+    KEY_PATTERN,
+    extra_value,
+    normalize_key,
+    validate_extra_settings,
+)
+from .mm import (
+    MM_FILE_FIELDS,
+    mm_method_label,
+    required_mm_file_roles,
+    uses_mshake,
+)
 from .models import (
     Diagnostic,
     ExternalQMCapabilities,
@@ -23,50 +34,16 @@ from .release import (
 from .structures import analyze_structure, parse_structure_bytes
 
 
-_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_KEY = KEY_PATTERN
 _RUNNER_INPUT_NAMES = {
     "ase_dftbplus": "ase-dftbplus",
     "ase_xtb": "ase-xtb",
     "mace_mp": "mace",
     "mace_off": "mace_off",
 }
-_GENERATED_KEYS = {
-    "jobtype",
-    "nstep",
-    "timestep",
-    "start_file",
-    "restart_file",
-    "file_prefix",
-    "random_seed",
-    "init_velocities",
-    "thermostat",
-    "temp",
-    "start_temp",
-    "temp_ramp_steps",
-    "temp_ramp_frequency",
-    "t_relaxation",
-    "friction",
-    "nh_chain_length",
-    "coupling_frequency",
-    "manostat",
-    "pressure",
-    "p_relaxation",
-    "compressibility",
-    "isotropy",
-    "qm_prog",
-    "qm_script",
-    "density",
-    "rcoulomb",
-    "virial",
-    "force_field",
-    "moldescriptor_file",
-    "guff_file",
-    "topology_file",
-    "parameter_file",
-    "intra_nonbonded_file",
-    "dftb_file",
-    "overwrite_output",
-}
+# Advanced keywords the MM block writes in place; they are skipped in the
+# trailing "additional settings" dump so no key appears twice.
+_INLINE_EXTRA_KEYS = {"virial"}
 _EXTERNAL_RUNNERS = {"dftbplus", "pyscf", "turbomole"}
 
 
@@ -179,10 +156,11 @@ def render_input(
         )
         if setup.density_g_cm3 is not None:
             lines.append(f"density = {_number(setup.density_g_cm3)};")
+        virial = extra_value(setup, "virial") or "molecular"
         lines.extend(
             [
                 f"rcoulomb = {_number(setup.coulomb_cutoff_angstrom)};",
-                "virial = molecular;",
+                f"virial = {str(virial).strip().lower()};",
                 f"force-field = {setup.mm_force_field};",
                 "",
                 _section("force-field files"),
@@ -200,6 +178,12 @@ def render_input(
             )
         if setup.mm_force_field in {"bonded", "on"} and setup.intra_nonbonded_file:
             lines.append(f"intra-nonbonded_file = {setup.intra_nonbonded_file};")
+        if (
+            setup.mm_force_field in {"bonded", "on"}
+            and uses_mshake(setup)
+            and setup.mshake_file
+        ):
+            lines.append(f"mshake_file = {setup.mshake_file};")
 
     if setup.job_type.startswith("qm-") and setup.runner:
         runner_name = _RUNNER_INPUT_NAMES.get(setup.runner, setup.runner)
@@ -237,14 +221,21 @@ def render_input(
                 lines.append("slakos = 3ob;")
             if "dispersion" not in setup.extra_settings:
                 lines.append("dispersion = on;")
-    if setup.extra_settings:
+    additional = sorted(
+        key
+        for key in setup.extra_settings
+        if not (
+            setup.job_type == "mm-md" and normalize_key(key) in _INLINE_EXTRA_KEYS
+        )
+    )
+    if additional:
         lines.extend(
             [
                 "",
                 _section("additional settings"),
             ]
         )
-        for key in sorted(setup.extra_settings):
+        for key in additional:
             lines.append(f"{key} = {_value(setup.extra_settings[key])};")
     lines.extend(sign_off(setup))
     return RenderResult(
@@ -537,6 +528,7 @@ def validate_setup(
         "topology_file": setup.topology_file,
         "parameter_file": setup.parameter_file,
         "intra_nonbonded_file": setup.intra_nonbonded_file,
+        "mshake_file": setup.mshake_file,
         "dftb_template_file": setup.dftb_template_file,
         "turbomole_define_template_file": setup.turbomole_define_template_file,
     }.items():
@@ -620,8 +612,10 @@ def validate_setup(
                     "Coulomb cutoff must be finite and positive.",
                 )
             )
-        for role in required_mm_file_roles(setup.mm_force_field):
+        for role in required_mm_file_roles(setup.mm_force_field, setup):
             field_name = MM_FILE_FIELDS[role]
+            if role == "mshake":
+                continue  # reported with the shake keyword by validate_extra_settings
             if not getattr(setup, field_name):
                 diagnostics.append(
                     _error(
@@ -673,66 +667,8 @@ def validate_setup(
                         f"{field_name.replace('_', ' ').capitalize()} is too long.",
                     )
                 )
-    extras = {
-        key.replace("-", "_").lower(): value
-        for key, value in setup.extra_settings.items()
-    }
-    if extras.get("hubbard_derivs") and _is_off(extras.get("third_order")):
-        diagnostics.append(
-            _error(
-                "input.extra_value",
-                "Hubbard derivatives need third-order DFTB; PQ rejects them "
-                "with third_order off.",
-            )
-        )
-    if (
-        str(extras.get("long_range", "")).replace("-", "_").lower()
-        == "reaction_field"
-        and extras.get("rf_epsilon") is None
-    ):
-        diagnostics.append(
-            _error(
-                "input.extra_value",
-                "Reaction field needs a dielectric constant (rf_epsilon ≥ 1).",
-            )
-        )
-    for key, value in setup.extra_settings.items():
-        normalized = key.replace("-", "_").lower()
-        if not _KEY.fullmatch(key):
-            diagnostics.append(
-                _error(
-                    "input.extra_key",
-                    f"'{key}' is not a valid PQ keyword.",
-                )
-            )
-        elif normalized in _GENERATED_KEYS:
-            diagnostics.append(
-                _error(
-                    "input.extra_conflict",
-                    f"'{key}' is already managed by PQSetup.",
-                )
-            )
-        if isinstance(value, float) and not math.isfinite(value):
-            diagnostics.append(
-                _error(
-                    "input.extra_value",
-                    f"'{key}' must be finite.",
-                )
-            )
-        if isinstance(value, str) and any(character in value for character in ";\n\r#"):
-            diagnostics.append(
-                _error(
-                    "input.extra_value",
-                    f"'{key}' contains an invalid character.",
-                )
-            )
+    diagnostics.extend(validate_extra_settings(setup))
     return diagnostics
-
-
-def _is_off(value: object) -> bool:
-    if isinstance(value, bool):
-        return not value
-    return str(value).strip().lower() in {"off", "false", "no", "0"}
 
 
 def validate_input_file(path: Path) -> list[Diagnostic]:

@@ -10,9 +10,9 @@ export function diagnosticStep(code: string): DiagnosticStep {
   ) {
     return "system";
   }
-  // The QM molecule descriptor is picked in Run › Pressure, not in Method.
-  if (code.startsWith("qm.") && code.includes("moldescriptor")) {
-    return "conditions";
+  // Advanced keywords are edited in the Method dialog, not in the review.
+  if (code.startsWith("input.extra_")) {
+    return "method";
   }
   if (
     code.startsWith("method.") ||

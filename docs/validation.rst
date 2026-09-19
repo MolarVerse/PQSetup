@@ -17,8 +17,10 @@ Local checks run while the setup is edited. They cover:
 * ensemble and coupling parameters, including the temperature ramp;
 * required calculator, topology, parameter, template, and molecule-descriptor
   files;
-* advanced-keyword combinations PQ rejects (for example Hubbard derivatives
-  without third order, or a reaction field without ``rf_epsilon``);
+* advanced keywords against PQ's parsers: option lists, bounds and the
+  combinations PQ rejects (for example Hubbard derivatives without third
+  order, a reaction field without ``rf_epsilon``, or M-SHAKE without its
+  geometry file);
 * restart names and generated-input consistency.
 
 Only settings that are visible on the page reach the input. Values you typed

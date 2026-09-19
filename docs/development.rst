@@ -97,9 +97,11 @@ rules of the language.
 Checking against PQ
 -------------------
 
-``pqsetup/release.py`` names the PQ release the writer targets. The advanced
-keywords in ``calculatorSettings.ts`` and the generated keys in
-``input_writer.py`` are cross-checked against PQ's ``src/input`` parsers of
-that release; a keyword that only exists on PQ's development branch is not
-offered. ``tests/test_pq_integration.py`` runs the exported package against a
+``pqsetup/release.py`` names the PQ release the writer targets.
+``pqsetup/keywords.py`` lists every optional keyword the dialog may write
+with the values, bounds and combinations PQ's ``src/input`` parsers of that
+release accept; ``calculatorSettings.ts`` mirrors it for the UI and the
+generated keys in ``input_writer.py`` are kept out of it. When PQ moves, edit
+the table (and the frontend option lists) rather than the validator. A
+keyword that only exists on PQ's development branch is not offered. ``tests/test_pq_integration.py`` runs the exported package against a
 local PQ build when one is available.

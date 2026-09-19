@@ -26,14 +26,21 @@ user-visible changes.
 - Command palette (Ctrl+K or `/`) with problems, sections and actions.
 - `@molarverse/pq-design`: the shared design language as a workspace package
   (tokens, base styles, React primitives) for PQViewer and PQEnalyzer.
-- Validation of keyword combinations PQ rejects (Hubbard derivatives without
-  third order, reaction field without `rf_epsilon`).
+- `pqsetup/keywords.py`: one table of the optional PQ keywords with the
+  values, ranges and combinations the v0.7.x parsers accept. Advanced
+  settings are checked against it (option lists, bounds, custom Slater–Koster
+  and MACE paths, Hubbard derivatives without third order, reaction field
+  without `rf_epsilon`, cell lists in QM runs, duplicate spellings); keywords
+  that do not apply to the current job warn.
+- M-SHAKE constraints (`shake = mshake`, `mshake-tolerance`, `mshake-iter`)
+  with the required `mshake_file` slot appearing under Method › Files.
+- `virial = molecular | atomic` in the MM advanced settings.
 
 ### Removed
 
 - Keywords absent from the PQ v0.7.x parsers: `water_intra`, `water_inter`,
-  `rnoncoulomb`, `shake = mshake`. Dispersion is offered for ASE DFTB+ and
-  MACE, no longer for xTB where PQ ignores it.
+  `rnoncoulomb`. Dispersion is offered for ASE DFTB+ and MACE, no longer for
+  xTB where PQ ignores it.
 
 ## [0.1.0] - 2026-09-13
 

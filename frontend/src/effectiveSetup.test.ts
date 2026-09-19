@@ -37,6 +37,7 @@ const base: SimulationSetup = {
   topology_file: null,
   parameter_file: null,
   intra_nonbonded_file: null,
+  mshake_file: null,
   dftb_template_file: null,
   turbomole_define_template_file: null,
   overwrite_output: false,
@@ -85,6 +86,29 @@ describe("effectiveSetup", () => {
     expect(qm.runner).toBe("ase_xtb");
     expect(qm.extra_settings).toEqual({ xtb_method: "gfn1-xtb", output_freq: 10 });
     expect(qm.density_g_cm3).toBeNull();
+  });
+
+  it("names the M-SHAKE file only while shake = mshake is in force", () => {
+    const mm = {
+      ...base,
+      job_type: "mm-md" as const,
+      mm_force_field: "on" as const,
+      mshake_file: "mshake.dat",
+    };
+    expect(effectiveSetup(mm, false).mshake_file).toBeNull();
+    const constrained = {
+      ...mm,
+      extra_settings: { shake: "mshake", "mshake-iter": 50 },
+    };
+    expect(effectiveSetup(constrained, false).mshake_file).toBe("mshake.dat");
+    expect(effectiveSetup(constrained, false).extra_settings).toEqual({
+      shake: "mshake",
+      "mshake-iter": 50,
+    });
+    expect(
+      effectiveSetup({ ...constrained, extra_settings: { "mshake-iter": 50 } }, false)
+        .extra_settings,
+    ).toEqual({});
   });
 
   it("never writes a density for a structure that brought its own cell", () => {

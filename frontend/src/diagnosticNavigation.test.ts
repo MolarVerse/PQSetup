@@ -25,9 +25,13 @@ describe("diagnostic navigation", () => {
     expect(diagnosticControl("run.random_seed")).toBe("position-seed");
   });
 
-  it("sends the QM molecule descriptor to Run › Pressure", () => {
-    expect(diagnosticStep("qm.file_missing.moldescriptor")).toBe("conditions");
-    expect(diagnosticStep("qm.moldescriptor_file")).toBe("conditions");
+  it("sends companion files and advanced keywords to Method", () => {
+    expect(diagnosticStep("qm.file_missing.moldescriptor")).toBe("method");
+    expect(diagnosticStep("qm.moldescriptor_file")).toBe("method");
     expect(diagnosticStep("qm.file_missing.dftb_template")).toBe("method");
+    expect(diagnosticStep("mm.mshake_file")).toBe("method");
+    expect(diagnosticStep("input.extra_value")).toBe("method");
+    expect(diagnosticStep("input.extra_scope")).toBe("method");
+    expect(diagnosticStep("input.syntax")).toBe("review");
   });
 });

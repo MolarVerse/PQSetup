@@ -17,6 +17,7 @@ SetupFileRole = Literal[
     "topology",
     "parameter",
     "intra_nonbonded",
+    "mshake",
     "dftb_template",
     "turbomole_define_template",
 ]
@@ -226,6 +227,7 @@ class SimulationSetup(BaseModel):
     topology_file: str | None = None
     parameter_file: str | None = None
     intra_nonbonded_file: str | None = None
+    mshake_file: str | None = None
     dftb_template_file: str | None = None
     turbomole_define_template_file: str | None = None
     overwrite_output: bool = False
