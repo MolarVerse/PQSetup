@@ -5,6 +5,8 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
 ### Changed
 
 - Redesigned interface: one page with Structure, Method, Run and Output
