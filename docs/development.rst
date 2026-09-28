@@ -29,6 +29,7 @@ Layout
    pqsetup/                 Python: FastAPI app, CLI, PQ knowledge
      api.py                 HTTP endpoints, export packaging
      input_writer.py        SimulationSetup → PQ input text
+     input_presentation.py  generated input header and comment styling
      validation.py          setup and input-file validation
      run_plan.py            equilibration / chained runs, effective setup
      setup_files.py         which companion files a method needs

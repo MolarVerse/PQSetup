@@ -1252,6 +1252,27 @@ kbd {
   margin-left: auto;
 }
 
+.preview-header-toggle {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  color: var(--ink-soft);
+  background: transparent;
+  font: 0.78rem var(--mono);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.preview-header-toggle:hover {
+  color: var(--accent-dark);
+  background: var(--surface-subtle);
+}
+
+.preview-header-toggle:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+}
+
 .setup-review {
   display: flex;
   flex-direction: column;
@@ -1442,8 +1463,50 @@ kbd {
   user-select: none;
 }
 
+.src-box {
+  color: var(--border-strong);
+}
+
+.src-title-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.src-art {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.src-title-kind {
+  color: var(--muted);
+}
+
+.src-meta,
+
 .src-comment {
   color: var(--muted);
+}
+
+.src-meta-label {
+  color: var(--muted);
+}
+
+.src-meta-value {
+  color: var(--ink-soft);
+}
+
+.src-section {
+  color: var(--border-strong);
+}
+
+.src-section-title {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.src-section-quip {
+  color: var(--accent-dark);
+  font-style: italic;
 }
 
 .src-key {
@@ -1474,6 +1537,10 @@ kbd {
 .src-note {
   color: var(--muted);
   font-style: italic;
+}
+
+.src-ramp {
+  color: var(--accent);
 }
 
 /* Carbon primary button: blue-60 fill, square, left-aligned label. */

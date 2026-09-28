@@ -73,6 +73,7 @@ import {
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
+import { compactInputPreview } from "./inputPreview";
 import {
   MANOSTATS,
   THERMOSTATS,
@@ -248,6 +249,7 @@ export default function App() {
   const [samplingRunCountDraft, setSamplingRunCountDraft] = useState("1");
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
+  const [showInputHeader, setShowInputHeader] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
@@ -509,6 +511,11 @@ export default function App() {
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
   const stageInputText = selectedFile?.input_text ?? "";
+  const preview = useMemo(
+    () => compactInputPreview(stageInputText, showInputHeader),
+    [stageInputText, showInputHeader],
+  );
+  const deferredPreview = useDeferredValue(preview);
   const deferredFullInputText = useDeferredValue(stageInputText);
   useEffect(() => {
     const list = document.querySelector<HTMLElement>(".input-tab-list");
@@ -2894,6 +2901,16 @@ export default function App() {
                             {rendering && (
                               <LoaderCircle className="spin" size={15} />
                             )}
+                            {preview.headerHidden || showInputHeader ? (
+                              <button
+                                type="button"
+                                className="preview-header-toggle"
+                                aria-pressed={showInputHeader}
+                                onClick={() => setShowInputHeader((value) => !value)}
+                              >
+                                {showInputHeader ? "Hide header" : "Show header"}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="preview-expand"
@@ -2924,9 +2941,12 @@ export default function App() {
                           className="input-preview-body"
                           id="generated-input-body"
                           role="tabpanel"
-                          key={selectedFile?.name ?? "none"}
+                          key={`${selectedFile?.name ?? "none"}:${showInputHeader}`}
                         >
-                          <InputSource text={deferredFullInputText} />
+                          <InputSource
+                            text={deferredPreview.text}
+                            firstLine={deferredPreview.firstLine}
+                          />
                         </pre>
                       </div>
                     ) : rendered ? (

@@ -136,9 +136,9 @@ Output
 and how often PQ writes output. **Review** shows the structure, model,
 sampling duration, velocity initialization and output frequency, with a link
 to every blocking issue and warning. **Inputs** shows one tab per generated
-input. The preview shows the complete generated file, and the expand button
-opens it full size. The first comment records the PQSetup version and target
-PQ release.
+input. The preview starts at the first PQ keyword; **Show header** reveals its
+decorative comments, and the expand button opens the complete file full size.
+The generated input still includes its PQSetup header and target PQ release.
 
 .. figure:: assets/screenshots/input-review.jpg
    :alt: PQSetup Output section with package settings, review and four input tabs
