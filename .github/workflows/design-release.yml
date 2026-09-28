@@ -50,5 +50,6 @@ jobs:
           gh release create "$DESIGN_TAG" ./*.tgz ./SHA256SUMS \
             --title "PQ design ${DESIGN_TAG#pq-design-v}" \
             --notes "Versioned flat-mono tokens, CSS and React primitives for PQSetup, PQViewer and PQEnalyzer Web." \
+            --latest=false \
             --verify-tag \
             --repo "$GITHUB_REPOSITORY"
