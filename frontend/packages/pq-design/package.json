@@ -1,6 +1,6 @@
 {
   "name": "@molarverse/pq-design",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Flat-mono design language (tokens, base styles, React primitives) shared by PQSetup, PQViewer and PQEnalyzer.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2022 --external:react --external:react-dom --external:react/jsx-runtime --external:lucide-react --outfile=dist/index.js",
+    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2022 --jsx=automatic --external:react --external:react-dom --external:react/jsx-runtime --external:lucide-react --outfile=dist/index.js",
     "tokens": "node scripts/build-tokens.mjs"
   },
   "peerDependencies": {

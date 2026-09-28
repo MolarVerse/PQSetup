@@ -28,10 +28,18 @@ try {
       "-e",
       `import { existsSync } from "node:fs";
        import { createRequire } from "node:module";
+       import { createElement } from "react";
+       import { renderToStaticMarkup } from "react-dom/server";
        import { Field, Modal } from "@molarverse/pq-design";
        const require = createRequire(import.meta.url);
        if (typeof Field !== "function" || typeof Modal !== "function") {
          throw new Error("React controls are unavailable");
+       }
+       const markup = renderToStaticMarkup(
+         createElement(Field, { label: "Input" }, createElement("input", { type: "text" })),
+       );
+       if (!markup.includes("Input") || !markup.includes("<input")) {
+         throw new Error("Packed React control did not render");
        }
        for (const name of ["styles.css", "tokens.css", "tokens.json"]) {
          if (!existsSync(require.resolve("@molarverse/pq-design/" + name))) {

@@ -9,7 +9,7 @@ square corners and hairline dividers.
 Install a versioned archive from the public PQSetup GitHub release:
 
 ```bash
-npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.0/molarverse-pq-design-0.1.0.tgz"
+npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.1/molarverse-pq-design-0.1.1.tgz"
 ```
 
 Commit the updated `package.json` and `package-lock.json`. A clean `npm ci`

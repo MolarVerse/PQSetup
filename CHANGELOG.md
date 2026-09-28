@@ -5,6 +5,14 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-28
+
+### Fixed
+
+- Compile the shared design controls with the automatic JSX runtime so the
+  setup page renders in the browser. Verify a React control from the packed
+  archive before publishing the design package.
+
 ## [0.2.2] - 2026-09-28
 
 ### Changed
