@@ -24,10 +24,16 @@ function valueClass(value: string): string {
   return "src-value";
 }
 
-export default function InputSource({ text }: { text: string }) {
+export default function InputSource({
+  text,
+  firstLine = 1,
+}: {
+  text: string;
+  firstLine?: number;
+}) {
   const lines = text.split("\n");
   return (
-    <code className="input-source">
+    <code className="input-source" style={{ counterReset: `line ${firstLine - 1}` }}>
       {lines.map((line, index) => {
         const key = `${index}:${line.slice(0, 24)}`;
         if (line.startsWith("#")) {

@@ -21,8 +21,8 @@ describe("diagnostic navigation", () => {
     expect(diagnosticStep("input.file_prefix")).toBe("review");
     expect(diagnosticControl("input.file_prefix")).toBe("run-name");
     expect(diagnosticStep("input.start_file")).toBe("system");
-    expect(diagnosticStep("run.random_seed")).toBe("system");
-    expect(diagnosticControl("run.random_seed")).toBe("position-seed");
+    expect(diagnosticStep("run.random_seed")).toBe("conditions");
+    expect(diagnosticControl("run.random_seed")).toBe("run-random-seed");
   });
 
   it("sends companion files and advanced keywords to Method", () => {

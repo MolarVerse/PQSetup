@@ -320,7 +320,7 @@ export function settingsLines(setup: SimulationSetup): string[] {
   const owned = new Set<string>([...QM_KEYS, ...MM_KEYS]);
   const allowed = applicableSettingKeys(setup);
   return Object.keys(setup.extra_settings)
-    .filter((key) => owned.has(key) && allowed.has(key))
+    .filter((key) => key !== "xtb_method" && owned.has(key) && allowed.has(key))
     .sort()
     .map((key) => {
       const value = setup.extra_settings[key];

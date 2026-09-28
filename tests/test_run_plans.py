@@ -134,6 +134,24 @@ def test_equilibration_and_sampling_segments_form_exact_chain() -> None:
     )
 
 
+def test_initial_velocity_choice_applies_to_equilibration_first_stage() -> None:
+    result = _render(
+        RunPlanRequest(
+            setup=_setup(initialize_velocities=False),
+            equilibration=EquilibrationStage(enabled=True),
+            sampling_run_count=2,
+        )
+    )
+
+    assert result.valid
+    assert [item.name for item in result.files] == [
+        "run-eq.in",
+        "run-01.in",
+        "run-02.in",
+    ]
+    assert all("init_velocities = true;" not in item.input_text for item in result.files)
+
+
 def test_sampling_only_starts_from_structure_and_numbers_from_one() -> None:
     result = _render(
         RunPlanRequest(

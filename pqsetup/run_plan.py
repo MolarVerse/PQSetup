@@ -350,7 +350,7 @@ def _equilibration_setup(
             "nh_chain_length": stage.nh_chain_length,
             "coupling_frequency_cm_inverse": (stage.coupling_frequency_cm_inverse),
             "manostat": None,
-            "initialize_velocities": True,
+            "initialize_velocities": setup.initialize_velocities,
             "random_seed": random_seed,
         },
     )

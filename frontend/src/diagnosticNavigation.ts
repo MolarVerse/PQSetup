@@ -5,8 +5,7 @@ export function diagnosticStep(code: string): DiagnosticStep {
   if (
     code.startsWith("structure.") ||
     code.startsWith("cell.") ||
-    code === "input.start_file" ||
-    code === "run.random_seed"
+    code === "input.start_file"
   ) {
     return "system";
   }
@@ -39,7 +38,8 @@ const CONTROLS: Record<string, string> = {
   "conditions.manostat": "sampling-manostat",
   "conditions.steps": "sampling-steps",
   "conditions.timestep": "sampling-timestep",
-  "run.random_seed": "position-seed",
+  "run.random_seed": "run-random-seed",
+  "run.initial_velocities_missing": "initial-velocities-control",
   "mm.density": "mm-density",
 };
 

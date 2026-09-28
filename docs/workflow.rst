@@ -16,6 +16,10 @@ section as the settings change.
 Structure
 ---------
 
+The built-in water structure is a short demonstration with one molecule in a
+vacuum cell. Its cell is not a physical periodic sample, so QM NPT requires an
+imported periodic structure.
+
 Import ``.rst``, ``.cif``, ``.xyz``, ``.extxyz``, ``.pdb``, ``.mol``,
 ``.sdf``, or ``.traj``, or drop a file on the page. For a multi-frame
 trajectory, PQSetup imports the final frame.
@@ -54,7 +58,7 @@ QM
    also offer a *Method* list read from the installed scripts. PQSetup shows
    whether each program was detected; that is a discovery check, not an
    energy calculation, and a portable package can still be prepared for
-   another machine.
+   another machine. ASE · xTB exposes its electronic model directly in Method.
 
 MM
    Pick the force-field mode: *GUFF*, *bonded + GUFF*, or *force field*, and
@@ -84,9 +88,18 @@ Run
 Pick the ensemble — **NVE**, **NVT**, or **NPT** — then work down the rows.
 Each row owns one physical concern and is independent of the others.
 
+Initial velocities
+   Choose whether PQ should generate velocities when the starting restart has
+   none. Existing restart velocities are preserved. The choice applies to the
+   first input, including an optional equilibration stage. The random seed
+   controls all random events in the PQ simulation; the Jitter seed in
+   Structure is separate.
+
 Temperature
-   Target, thermostat and its parameters. *Start K* and *Ramp steps* define
-   an optional linear temperature ramp inside the sampling run.
+   Target, thermostat and its parameters for NVT/NPT. For NVE, the temperature
+   only seeds initial velocities, so the row is hidden when velocity
+   initialization is off. *Start K* and *Ramp steps* define an optional linear
+   temperature ramp inside the sampling run.
 
 Pressure
    NPT only: target pressure, manostat (PQ's word for the barostat),
@@ -120,22 +133,25 @@ Output
 ------
 
 **Package** sets the run name (derived from the structure until you edit it)
-and how often PQ writes output. **Inputs** shows one tab per generated input
-with the complete text, syntax-coloured; the expand button opens it full size.
-The header of every input identifies PQSetup, the target PQ release and the
-plan in plain words.
+and how often PQ writes output. **Review** shows the structure, model,
+sampling duration, velocity initialization and output frequency, with a link
+to every blocking issue and warning. **Inputs** shows one tab per generated
+input. The preview starts at the first PQ keyword; **Show header** reveals its
+decorative comments, and the expand button opens the complete file full size.
+The generated input still includes its PQSetup header and target PQ release.
 
-.. figure:: assets/screenshots/input-review.png
-   :alt: PQSetup Output section with the generated inputs
+.. figure:: assets/screenshots/input-review.jpg
+   :alt: PQSetup Output section with package settings, review and four input tabs
    :class: pq-shot
    :align: center
 
    Four inputs: the equilibration stage and three sampling runs.
 
 The footer shows the package name, the number of inputs, and the count of
-open issues. Errors block **Package**; click the issue to jump to the control
-that caused it. Warnings remain visible and are recorded in the manifest. The
-line under the inputs is the launch command to run after unpacking.
+open issues. Errors block **Package**; click the issue count to inspect every
+issue in Review, then follow an issue to its control. Warnings remain visible
+in Review and are recorded in the manifest. The line under valid inputs is
+the launch command to run after unpacking.
 
 Search and shortcuts
 --------------------

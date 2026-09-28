@@ -152,7 +152,11 @@ export function PressureCoupling({
             }
           />
         </Field>
-        <Field label="Compressibility" unit="bar⁻¹">
+        <Field
+          label="Compressibility"
+          unit="bar⁻¹"
+          info="4.591 × 10⁻⁵ bar⁻¹ is the ambient-water default. Choose a value for the material being simulated."
+        >
           <input
             type="number"
             min="0"
@@ -182,6 +186,10 @@ export function PressureCoupling({
             ))}
           </select>
         </Field>
+        <p className="condition-full pressure-default-note">
+          The default compressibility is for ambient water. Check this value
+          for your material before using NPT.
+        </p>
       </div>
     </section>
   );

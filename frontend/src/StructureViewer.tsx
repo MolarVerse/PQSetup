@@ -71,13 +71,14 @@ interface StructureViewerProps {
 
 type Point3 = [number, number, number];
 type ViewPreset = "free" | "xy" | "xz" | "yz";
+type FitTarget = "atoms" | "cell";
 
 const ATOM_RADIUS_MIN = 3;
 // viewBox units; small molecules fill the stage, so a tighter cap left
 // them as dots on long sticks.
 const ATOM_RADIUS_MAX = 34;
 const VIEW_FIT_PADDING = 1.12;
-const CELL_FIT_FRACTION = 0.44;
+const CELL_FIT_FRACTION = 0.9;
 
 const ELEMENT_COLORS: Record<string, string> = {
   H: "#d8ddd9",
@@ -189,6 +190,7 @@ export default function StructureViewer({
   stageHeightRef.current = stageHeight;
   const [rotation, setRotation] = useState<[number, number]>([-0.42, 0.58]);
   const [zoom, setZoom] = useState(1);
+  const [fitTarget, setFitTarget] = useState<FitTarget>("atoms");
   const [showGeneratedCell, setShowGeneratedCell] = useState(false);
   const stage = useRef<SVGSVGElement>(null);
   const drag = useRef<{ x: number; y: number; rx: number; ry: number } | null>(
@@ -240,6 +242,8 @@ export default function StructureViewer({
 
   useEffect(() => {
     setShowGeneratedCell(false);
+    setFitTarget("atoms");
+    setZoom(1);
   }, [analysis.structure]);
 
   const generatedCell = analysis.structure.cell_generated;
@@ -276,7 +280,7 @@ export default function StructureViewer({
     const corners = displayCell && analysis.structure.cell
       ? cellCorners(analysis.structure.cell as Point3[])
       : [];
-    const center: Point3 = displayCell && analysis.structure.cell
+    const center: Point3 = fitTarget === "cell" && displayCell && analysis.structure.cell
       ? [0, 0, 0]
       : points.length
         ? ([0, 1, 2].map((axis) => {
@@ -301,7 +305,7 @@ export default function StructureViewer({
         0.01,
       );
       fitRadius = atomExtent * VIEW_FIT_PADDING;
-      if (centeredCorners.length > 0) {
+      if (fitTarget === "cell" && centeredCorners.length > 0) {
         const cellExtent = Math.max(
           ...centeredCorners.map((point) =>
             Math.hypot(point[0], point[1], point[2]),
@@ -375,7 +379,7 @@ export default function StructureViewer({
       cell: projectedCell,
       sampled: stride > 1,
     };
-  }, [showViewer, analysis, displayCell, rotation, zoom]);
+  }, [showViewer, analysis, displayCell, fitTarget, rotation, zoom]);
 
   const collisionAtoms = useMemo(
     () =>
@@ -634,21 +638,41 @@ export default function StructureViewer({
         <button type="button" onClick={() => setPreset("yz")}>YZ</button>
         <button
           type="button"
-          className="fit-view"
+          className="fit-view fit-atoms"
+          aria-pressed={fitTarget === "atoms"}
           onClick={() => {
+            setFitTarget("atoms");
             setZoom(1);
-            setRotation((value) => [...value]);
           }}
         >
           <Focus size={15} aria-hidden="true" />
-          Fit
+          Fit atoms
         </button>
+        {analysis.structure.cell && (
+          <button
+            type="button"
+            className="fit-view"
+            aria-pressed={fitTarget === "cell"}
+            onClick={() => {
+              setShowGeneratedCell(true);
+              setFitTarget("cell");
+              setZoom(1);
+            }}
+          >
+            <Box size={14} aria-hidden="true" />
+            Fit cell
+          </button>
+        )}
         {generatedCell && (
           <button
             type="button"
             aria-pressed={showGeneratedCell}
             title="Preview box"
-            onClick={() => setShowGeneratedCell((value) => !value)}
+            onClick={() => {
+              if (showGeneratedCell) setFitTarget("atoms");
+              setShowGeneratedCell(!showGeneratedCell);
+              setZoom(1);
+            }}
           >
             <Box size={14} aria-hidden="true" />
             box
