@@ -1,13 +1,13 @@
 {
   "name": "pqsetup-ui",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --config vite.config.ts",
+    "dev": "npm run build -w @molarverse/pq-design && vite",
+    "build": "npm run build -w @molarverse/pq-design && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build --config vite.config.ts",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "npm run build -w @molarverse/pq-design && vitest run",
     "tokens": "npm run tokens -w @molarverse/pq-design"
   },
   "dependencies": {

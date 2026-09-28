@@ -1,91 +1,53 @@
 # @molarverse/pq-design
 
-The flat-mono design language shared by the PQ tools (PQSetup, PQViewer,
-PQEnalyzer): IBM Carbon's Gray 10 palette, IBM Plex Mono everywhere, square
-corners, hairline dividers, no shadows.
+Shared flat mono tokens, CSS and React controls for PQSetup, PQViewer and
+PQEnalyzer Web. The package uses the IBM Carbon Gray 10 palette, IBM Plex Mono,
+square corners and hairline dividers.
 
-```
-tokens.json          single source of truth (colours, type, spacing, shape)
-src/styles/
-  tokens.css         generated from tokens.json  →  npm run tokens
-  base.css           reset, typography, focus ring, status glyphs
-  components.css     styles for the primitives below + documented class names
-  index.css          all three, in order
-src/
-  Modal, Info, Field, Choice, Toggle, Group, ConditionRow, CommandPalette
+## Install
+
+Install a versioned archive from the public PQSetup GitHub release:
+
+```bash
+npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.0/molarverse-pq-design-0.1.0.tgz"
 ```
 
-## Rules of the language
+Commit the updated `package.json` and `package-lock.json`. A clean `npm ci`
+works without a sibling PQSetup checkout. The app must provide React 19,
+React DOM 19 and Lucide as peer dependencies.
 
-- **Type**: `--mono` only. Base 14px / 1.5, labels 12px, nothing below 11px.
-- **Shape**: `--radius: 0`. Dividers are 1px `--border`; emphasis is a 2px
-  edge or a dark fill (`--selected`), never a shadow.
-- **Focus**: 2px solid `--focus-color`, inset (`outline-offset: -2px`).
-- **Fields**: layer fill (`--surface-subtle`) with a 1px bottom border.
-- **Status glyphs**: `● ok · ◐ pending · ○ missing` via `.pq-tag.{ok,pending,missing}`.
-- **Text over chrome**: explain with an `<Info>` tooltip rather than a
-  sentence next to the control. Never duplicate a view (inline *or* modal).
-- **Flow**: a page reads top to bottom. A control may only change what is
-  below it.
-
-## Using it from a Vite + React app
-
-```jsonc
-// package.json
-"dependencies": { "@molarverse/pq-design": "file:../../PQSetup/frontend/packages/pq-design" }
-```
-
-```ts
-// main.tsx
+```tsx
 import "@molarverse/pq-design/styles.css";
-import "./styles.css"; // app-specific layout on top
-```
-
-```tsx
 import { ConditionRow, Field, Info, Modal, Toggle } from "@molarverse/pq-design";
-import { Thermometer } from "lucide-react";
-
-<ConditionRow icon={Thermometer} title="Temperature" info="Target of the thermostat">
-  <Field label="Target" unit="K">
-    <input type="number" value={t} onChange={…} />
-  </Field>
-</ConditionRow>
 ```
 
-The package ships TypeScript source; Vite transpiles it because the `file:`
-install is a symlink outside `node_modules`. `react`, `react-dom` and
-`lucide-react` are peer dependencies so one copy of React is used.
+Import the shared stylesheet before app-specific layout rules. Consumers that
+only need the palette can import `@molarverse/pq-design/tokens.css` or read
+`@molarverse/pq-design/tokens.json`.
 
-### Command palette
+## Package contents
 
-`CommandPalette` is tool-agnostic: commands carry a free-form `group`, and
-the tool passes the display order.
+- `tokens.json` is the source for shared colour, type, spacing and shape values.
+- `src/styles/tokens.css` is generated from the JSON. `base.css` and
+  `components.css` style shared controls and public class names.
+- `dist/index.js` and TypeScript declarations provide `Modal`, `Info`,
+  `Field`, `Choice`, `Toggle`, `Group`, `ConditionRow` and `CommandPalette`.
+- `CommandPalette` takes tool-specific commands and a display order; it has no
+  PQSetup-specific navigation.
 
-```tsx
-const GROUPS = ["Suggested", "Problems", "Actions"] as const;
-<CommandPalette open={open} commands={commands} groupOrder={GROUPS}
-  placeholder="Search viewer…" onClose={() => setOpen(false)} />
-```
+The design rules are: monospaced type, square controls, one-pixel dividers,
+clear two-pixel keyboard focus, and no shadows. Keep page layout and product
+logic in the consuming app.
 
-## Using the tokens from Python (PQEnalyzer)
+## Change and release
 
-`tokens.json` is plain data. For a Tk / Textual / Matplotlib front end:
+Edit this package in the PQSetup repository. When tokens change, run
+`npm --prefix frontend run tokens` and commit the generated CSS. Build and
+test the workspace with `npm --prefix frontend test` and
+`npm --prefix frontend run build`.
 
-```python
-import json, pathlib
-tokens = json.loads(pathlib.Path("tokens.json").read_text())
-ink, accent = tokens["color"]["ink"], tokens["color"]["accent"]
-mono = tokens["font"]["mono"].split(",")[0].strip('" ')  # "IBM Plex Mono"
-```
-
-Map `color.background/surface/ink/muted/border/accent/success/warning/danger`
-onto the widget palette; `code.*` are the syntax colours for input-file
-listings.
-
-## Changing the language
-
-1. Edit `tokens.json`, run `npm run tokens`, commit both files.
-2. Add or change a primitive in `src/` together with its rules in
-   `components.css`; keep app-specific overrides in the consuming app.
-3. A class in `components.css` is public API: renaming it is a breaking
-   change for every tool.
+Bump this package's version when exported controls, tokens or public class
+names change. A `pq-design-v<version>` tag on a verified main commit publishes
+the installable archive and SHA-256 checksums. Consumers update the archive
+URL and lockfile together. The design version is independent of PQSetup's
+Python release version.

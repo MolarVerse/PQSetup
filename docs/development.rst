@@ -60,10 +60,10 @@ Shared design language
 ----------------------
 
 ``frontend/packages/pq-design`` is the ``@molarverse/pq-design`` workspace
-package: the flat-mono theme (IBM Carbon Gray 10 palette, IBM Plex Mono,
-square corners, hairline dividers) as tokens, base styles, and React
-primitives. PQViewer and PQEnalyzer are meant to consume the same package so
-the PQ tools look and behave alike.
+package: the flat mono theme (IBM Carbon Gray 10 palette, IBM Plex Mono,
+square corners, hairline dividers) as tokens, base styles and React
+primitives. PQViewer and PQEnalyzer Web consume a versioned archive of this
+package; see :doc:`design-system` for installation and update steps.
 
 .. code-block:: text
 
@@ -75,18 +75,9 @@ the PQ tools look and behave alike.
    src/
      Modal  Info  Field  Choice  Toggle  Group  ConditionRow  CommandPalette
 
-Consuming it from another Vite + React app:
-
-.. code-block:: json
-
-   { "dependencies": { "@molarverse/pq-design": "file:../PQSetup/frontend/packages/pq-design" } }
-
-.. code-block:: ts
-
-   import "@molarverse/pq-design/styles.css";
-   import { ConditionRow, Field, Info, Modal } from "@molarverse/pq-design";
-
-Python front ends read ``tokens.json`` directly:
+The public package exports compiled JavaScript and TypeScript declarations,
+plus the CSS and ``tokens.json``. Python front ends can read the tokens from a
+checked-out package source or a downloaded archive:
 
 .. code-block:: python
 

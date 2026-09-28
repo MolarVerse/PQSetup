@@ -136,9 +136,11 @@ Output
 and how often PQ writes output. **Review** shows the structure, model,
 sampling duration, velocity initialization and output frequency, with a link
 to every blocking issue and warning. **Inputs** shows one tab per generated
-input. The preview starts at the first PQ keyword; **Show header** reveals its
-decorative comments, and the expand button opens the complete file full size.
-The generated input still includes its PQSetup header and target PQ release.
+input. The preview starts at the first PQ setting so the runnable values are
+immediately visible. **Show header** reveals the full run card: ensemble,
+method, duration, timestep, expected frames and file names. The expand button
+opens the complete file; **Copy input** copies it, including the header.
+Every packaged input also includes this header and the target PQ release.
 
 .. figure:: assets/screenshots/input-review.jpg
    :alt: PQSetup Output section with package settings, review and four input tabs
@@ -151,7 +153,8 @@ The footer shows the package name, the number of inputs, and the count of
 open issues. Errors block **Package**; click the issue count to inspect every
 issue in Review, then follow an issue to its control. Warnings remain visible
 in Review and are recorded in the manifest. The line under valid inputs is
-the launch command to run after unpacking.
+the launch command to run after unpacking. See :doc:`troubleshooting` if an
+input is unavailable or the package action stays disabled.
 
 Search and shortcuts
 --------------------

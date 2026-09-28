@@ -70,8 +70,9 @@ Project manifest
   export;
 * warnings and the result of each PQ validation layer.
 
-The manifest makes it possible to inspect what was prepared without parsing
-the decorative input header.
+The manifest is the machine-readable record. The input header is a readable
+summary for people reviewing individual ``.in`` files; it does not replace
+the manifest or change PQ settings.
 
 Move to another machine
 -----------------------
@@ -85,5 +86,6 @@ simulation:
    pqsetup --pq-executable /cluster/apps/PQ doctor
    pqsetup --pq-executable /cluster/apps/PQ validate run-01.in
 
-Then use the package launcher directly or call it from the site's scheduler
-script.
+``pqsetup validate`` requires PQSetup on that machine. The packaged ``run.sh``
+only requires Bash, PQ, the selected calculator and its runtime dependencies.
+Use the launcher directly or call it from the site's scheduler script.

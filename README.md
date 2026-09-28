@@ -76,6 +76,10 @@ stable PQ v0.7.0 release.
   — supported structure formats, cells, and calculators
 - [Advanced settings](https://molarverse.github.io/PQSetup/reference/settings.html)
   — the optional PQ keywords per calculator and force field
+- [Troubleshooting](https://molarverse.github.io/PQSetup/troubleshooting.html)
+  — blocked packages, missing PQ and runtime failures
+- [Shared design package](https://molarverse.github.io/PQSetup/design-system.html)
+  — versioned tokens, CSS and React controls for other PQ web tools
 
 ## Development
 
@@ -88,6 +92,6 @@ npm --prefix frontend run build
 ```
 
 The interface's theme lives in `frontend/packages/pq-design`
-(`@molarverse/pq-design`), a workspace package meant to be shared with
-PQViewer and PQEnalyzer. See the
-[development guide](https://molarverse.github.io/PQSetup/development.html).
+(`@molarverse/pq-design`). PQViewer and PQEnalyzer Web can install its
+[versioned archive](https://molarverse.github.io/PQSetup/design-system.html)
+without a sibling PQSetup checkout.
