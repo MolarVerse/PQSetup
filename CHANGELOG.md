@@ -5,6 +5,27 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-28
+
+### Changed
+
+- Keep the setup page at Structure on first load and identify the bundled
+  single-water structure as a vacuum example.
+- Surface the xTB electronic model, initial velocity choice, simulation random
+  seed and output frequency in the main flow; keep the Structure jitter seed
+  separate.
+- Add an Output review of the structure, method, duration, velocities,
+  temperature and write frequency, with direct links to blocking issues.
+- Show generated inputs from the first PQ keyword while retaining the complete
+  file on demand; show a clear unavailable state for invalid inputs.
+- Fit the 3D structure view to atoms by default and offer a separate cell fit.
+
+### Fixed
+
+- Require an imported physical periodic cell for QM NPT instead of accepting
+  the bundled vacuum example.
+- Respect disabled velocity initialization in the first equilibration stage.
+
 ## [0.2.0] - 2026-09-19
 
 ### Changed
