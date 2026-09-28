@@ -91,7 +91,6 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-The interface's theme lives in `frontend/packages/pq-design`
-(`@molarverse/pq-design`). PQViewer and PQEnalyzer Web can install its
-[versioned archive](https://molarverse.github.io/PQSetup/design-system.html)
-without a sibling PQSetup checkout.
+The interface uses [`@molarverse/pq-design`](https://github.com/MolarVerse/PQDesign),
+the shared design package for the PQ web tools. The frontend locks a public
+release archive in `package-lock.json` and needs no sibling checkout.

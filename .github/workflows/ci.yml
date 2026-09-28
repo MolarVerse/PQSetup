@@ -73,13 +73,5 @@ jobs:
       - name: Build
         run: npm --prefix frontend run build
 
-      - name: Verify standalone design package
-        working-directory: frontend
-        run: |
-          mkdir -p "$RUNNER_TEMP/design-dist"
-          npm pack -w @molarverse/pq-design --pack-destination "$RUNNER_TEMP/design-dist"
-          archive=$(find "$RUNNER_TEMP/design-dist" -name '*.tgz' -print -quit)
-          node packages/pq-design/scripts/verify-package.mjs "$archive"
-
       - name: Check bundled interface
         run: git diff --exit-code -- pqsetup/static

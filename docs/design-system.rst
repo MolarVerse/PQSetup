@@ -2,9 +2,9 @@ Shared design package
 =====================
 
 ``@molarverse/pq-design`` supplies the flat mono tokens, CSS and React
-controls used by PQSetup. PQViewer and PQEnalyzer Web can install the same
-versioned package without a sibling PQSetup checkout. The package is released
-as a public GitHub asset, so an npm registry account is not required.
+controls used by PQSetup. Its source, CI and releases live in the public
+`PQDesign repository <https://github.com/MolarVerse/PQDesign>`_. PQViewer and
+PQEnalyzer Web install the same versioned package without a sibling checkout.
 
 Install in a web frontend
 -------------------------
@@ -13,7 +13,7 @@ From the consumer's frontend directory:
 
 .. code-block:: bash
 
-   npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.1/molarverse-pq-design-0.1.1.tgz"
+   npm install "https://github.com/MolarVerse/PQDesign/releases/download/v0.1.2/molarverse-pq-design-0.1.2.tgz"
 
 Commit ``package.json`` and ``package-lock.json``. ``npm ci`` then installs the
 same package version in CI and on another machine. React 19 and Lucide are peer
@@ -48,19 +48,19 @@ apps that need that exact face must supply its font files.
 Change the shared design
 ------------------------
 
-The source lives in ``frontend/packages/pq-design``. Edit ``tokens.json`` for
-shared values and regenerate the CSS with ``npm --prefix frontend run tokens``.
-Put reusable React controls in that package, with their styles in
-``src/styles/components.css``. Build and test from the PQSetup checkout:
+Edit the `PQDesign repository <https://github.com/MolarVerse/PQDesign>`_.
+``tokens.json`` is the source for the generated CSS. Reusable React controls
+and their styles live there too. Build and test from that checkout:
 
 .. code-block:: bash
 
-   npm --prefix frontend ci
-   npm --prefix frontend test
-   npm --prefix frontend run build
+   npm ci
+   npm run tokens
+   npm test
+   npm run build
 
 Changes to exported components, tokens or public class names require a design
-package version bump. Tag the verified commit ``pq-design-v<version>`` to build
+package version bump. Tag the verified commit ``v<version>`` in PQDesign to build
 the installable archive and its checksums. Consumer repositories then update
 the archive URL and lockfile together. PQSetup's Python release number is
 separate from the design package version.
