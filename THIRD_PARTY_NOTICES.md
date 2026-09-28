@@ -1,5 +1,11 @@
 # Third-party notices
 
+## PQ design
+
+The bundled interface includes `@molarverse/pq-design` 0.1.2 from
+https://github.com/MolarVerse/PQDesign. It is licensed under MIT, with
+Copyright (c) 2026 MolarVerse. The MIT license text is in `LICENSE`.
+
 ## Lucide
 
 PQSetup bundles icons from `lucide-react` 0.468.0.
