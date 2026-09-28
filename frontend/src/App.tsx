@@ -55,9 +55,6 @@ import { PressureCoupling, TemperatureCoupling } from "./components/Coupling";
 import InputNavigator from "./components/InputNavigator";
 import { SettingsLine } from "./components/SettingsLine";
 import SetupFileList from "./components/SetupFileList";
-
-/** A palette command whose group is one of the setup page's groups. */
-type SetupCommand = Command & { group: CommandGroup };
 import {
   MMSettingsForm,
   QMSettingsForm,
@@ -76,7 +73,6 @@ import {
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
-import { compactInputPreview } from "./inputPreview";
 import {
   MANOSTATS,
   THERMOSTATS,
@@ -110,6 +106,15 @@ import {
   samplingLabel,
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
+import { filesFromDrop } from "./droppedFiles";
+import {
+  EXAMPLE,
+  INITIAL_SETUP,
+  INITIAL_EQUILIBRATION,
+  isMolecularMechanics,
+  withMMFileNames,
+  withSetupFileName,
+} from "./setupState";
 import StructureViewer from "./StructureViewer";
 import type {
   Bootstrap,
@@ -123,6 +128,9 @@ import type {
   SimulationSetup,
   StructureAnalysis,
 } from "./types";
+
+/** A palette command whose group is one of the setup page's groups. */
+type SetupCommand = Command & { group: CommandGroup };
 
 /** Above this many generated inputs, tabs give way to the compact navigator. */
 const MAX_INPUT_TABS = 8;
@@ -200,115 +208,6 @@ interface BlockingIssue {
   controlId?: string;
 }
 
-const EXAMPLE: StructureAnalysis = {
-  structure: {
-    atoms: [
-      {
-        symbol: "O",
-        position: [0, 0, 0],
-        molecule_type: 0,
-        velocity: null,
-        force: null,
-      },
-      {
-        symbol: "H",
-        position: [0.9572, 0, 0],
-        molecule_type: 0,
-        velocity: null,
-        force: null,
-      },
-      {
-        symbol: "H",
-        position: [-0.239987, 0.927297, 0],
-        molecule_type: 0,
-        velocity: null,
-        force: null,
-      },
-    ],
-    cell: [
-      [12, 0, 0],
-      [0, 12, 0],
-      [0, 0, 12],
-    ],
-    periodic: [true, true, true],
-    source_name: "water-example.rst",
-    source_format: "pq-restart",
-    wrapped_centered: true,
-    // This built-in single-molecule box is a vacuum example, not a measured
-    // periodic cell suitable for pressure coupling.
-    cell_generated: true,
-    cell_padding_angstrom: null,
-  },
-  summary: {
-    atom_count: 3,
-    formula: "H2O",
-    volume_angstrom3: 1728,
-    density_g_cm3: 0.0173,
-    minimum_distance_angstrom: 0.9572,
-  },
-  diagnostics: [],
-  collisions: [],
-  collisions_truncated: false,
-  valid: true,
-};
-
-const INITIAL_SETUP: SimulationSetup = {
-  preset_id: null,
-  job_type: "qm-md",
-  ensemble: "NVT",
-  start_file: "water-example.rst",
-  restart_file: null,
-  file_prefix: "water-nvt",
-  timestep_fs: 0.5,
-  steps: 1000,
-  temperature_k: 298.15,
-  start_temperature_k: null,
-  temperature_ramp_steps: null,
-  temperature_ramp_frequency: 1,
-  pressure_bar: null,
-  thermostat: "velocity_rescaling",
-  thermostat_relaxation_ps: 0.1,
-  thermostat_friction_ps_inverse: 0.1,
-  nh_chain_length: 3,
-  coupling_frequency_cm_inverse: 1000,
-  manostat: null,
-  manostat_relaxation_ps: 1,
-  compressibility_bar_inverse: 4.591e-5,
-  pressure_isotropy: "isotropic",
-  initialize_velocities: true,
-  random_seed: 238917,
-  runner: "ase_xtb",
-  runner_script: null,
-  mm_force_field: "off",
-  density_g_cm3: null,
-  coulomb_cutoff_angstrom: 12.5,
-  moldescriptor_file: null,
-  guff_file: null,
-  topology_file: null,
-  parameter_file: null,
-  intra_nonbonded_file: null,
-  mshake_file: null,
-  dftb_template_file: null,
-  turbomole_define_template_file: null,
-  overwrite_output: false,
-  extra_settings: { output_freq: 1 },
-};
-
-const INITIAL_EQUILIBRATION: EquilibrationStage = {
-  enabled: true,
-  steps: 5000,
-  timestep_fs: 0.5,
-  temperature_k: 298.15,
-  start_temperature_k: null,
-  temperature_ramp_steps: null,
-  temperature_ramp_frequency: 1,
-  thermostat: "berendsen",
-  thermostat_relaxation_ps: 0.1,
-  thermostat_friction_ps_inverse: 0.1,
-  nh_chain_length: 3,
-  coupling_frequency_cm_inverse: 1000,
-};
-
 function formatCompact(value: number): string {
   return Number(value.toPrecision(4)).toString();
 }
@@ -318,89 +217,6 @@ function formatDuration(totalFs: number): string {
   if (totalFs >= 1e6) return `${formatCompact(totalFs / 1e6)} ns`;
   if (totalFs >= 1e3) return `${formatCompact(totalFs / 1e3)} ps`;
   return `${formatCompact(totalFs)} fs`;
-}
-
-function isMolecularMechanics(setup: SimulationSetup): boolean {
-  return setup.job_type === "mm-md" || setup.job_type === "mm-opt";
-}
-
-function withMMFileNames(
-  setup: SimulationSetup,
-  mode: MMForceFieldMode,
-): SimulationSetup {
-  return {
-    ...setup,
-    mm_force_field: mode,
-    moldescriptor_file:
-      setup.moldescriptor_file ?? defaultSetupFileName("moldescriptor"),
-    guff_file:
-      mode === "off" || mode === "bonded"
-        ? setup.guff_file ?? defaultSetupFileName("guff")
-        : setup.guff_file,
-    topology_file:
-      mode === "on" || mode === "bonded"
-        ? setup.topology_file ?? defaultSetupFileName("topology")
-        : setup.topology_file,
-    parameter_file:
-      mode === "on" || mode === "bonded"
-        ? setup.parameter_file ?? defaultSetupFileName("parameter")
-        : setup.parameter_file,
-  };
-}
-
-function withSetupFileName(
-  setup: SimulationSetup,
-  role: SetupFileRole,
-  name: string,
-): SimulationSetup {
-  if (role === "moldescriptor") {
-    return { ...setup, moldescriptor_file: name };
-  }
-  if (role === "guff") return { ...setup, guff_file: name };
-  if (role === "topology") return { ...setup, topology_file: name };
-  if (role === "parameter") return { ...setup, parameter_file: name };
-  if (role === "intra_nonbonded") {
-    return { ...setup, intra_nonbonded_file: name };
-  }
-  if (role === "mshake") return { ...setup, mshake_file: name };
-  if (role === "dftb_template") {
-    return { ...setup, dftb_template_file: name };
-  }
-  return { ...setup, turbomole_define_template_file: name };
-}
-
-/** Flatten a drop into files; dropped folders are read one level deep. */
-async function filesFromDrop(transfer: DataTransfer): Promise<File[]> {
-  const items = Array.from(transfer.items ?? []);
-  const entries = items
-    .map((item) =>
-      "webkitGetAsEntry" in item ? item.webkitGetAsEntry() : null,
-    )
-    .filter((entry): entry is FileSystemEntry => entry != null);
-  if (entries.length === 0 || !entries.some((entry) => entry.isDirectory)) {
-    return Array.from(transfer.files);
-  }
-  const files: File[] = [];
-  const readEntry = (entry: FileSystemEntry, depth: number): Promise<void> =>
-    new Promise((resolve) => {
-      if (entry.isFile) {
-        (entry as FileSystemFileEntry).file((file) => {
-          files.push(file);
-          resolve();
-        }, () => resolve());
-      } else if (entry.isDirectory && depth < 2) {
-        const reader = (entry as FileSystemDirectoryEntry).createReader();
-        reader.readEntries((children) => {
-          void Promise.all(
-            children.map((child) => readEntry(child, depth + 1)),
-          ).then(() => resolve());
-        }, () => resolve());
-      } else {
-        resolve();
-      }
-    });
-  await Promise.all(entries.map((entry) => readEntry(entry, 0)));
-  return files;
 }
 
 function formatError(error: unknown): string {
@@ -432,7 +248,6 @@ export default function App() {
   const [samplingRunCountDraft, setSamplingRunCountDraft] = useState("1");
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
-  const [showInputHeader, setShowInputHeader] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
@@ -694,11 +509,6 @@ export default function App() {
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
   const stageInputText = selectedFile?.input_text ?? "";
-  const preview = useMemo(
-    () => compactInputPreview(stageInputText, showInputHeader),
-    [stageInputText, showInputHeader],
-  );
-  const deferredPreview = useDeferredValue(preview);
   const deferredFullInputText = useDeferredValue(stageInputText);
   useEffect(() => {
     const list = document.querySelector<HTMLElement>(".input-tab-list");
@@ -3084,16 +2894,6 @@ export default function App() {
                             {rendering && (
                               <LoaderCircle className="spin" size={15} />
                             )}
-                            {preview.headerHidden || showInputHeader ? (
-                              <button
-                                type="button"
-                                className="preview-header-toggle"
-                                aria-pressed={showInputHeader}
-                                onClick={() => setShowInputHeader((value) => !value)}
-                              >
-                                {showInputHeader ? "Hide header" : "Show header"}
-                              </button>
-                            ) : null}
                             <button
                               type="button"
                               className="preview-expand"
@@ -3124,12 +2924,9 @@ export default function App() {
                           className="input-preview-body"
                           id="generated-input-body"
                           role="tabpanel"
-                          key={`${selectedFile?.name ?? "none"}:${showInputHeader}`}
+                          key={selectedFile?.name ?? "none"}
                         >
-                          <InputSource
-                            text={deferredPreview.text}
-                            firstLine={deferredPreview.firstLine}
-                          />
+                          <InputSource text={deferredFullInputText} />
                         </pre>
                       </div>
                     ) : rendered ? (

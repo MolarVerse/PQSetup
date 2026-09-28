@@ -9,7 +9,7 @@ from .companions import (
     with_seeded_setup_references,
 )
 from .external_qm import selected_external_qm_script
-from .input_writer import has_script_full_path, render_input, restart_filename
+from .input_writer import render_input
 from .mm import (
     mm_method_label,
     validate_mm_setup_contents,
@@ -32,6 +32,7 @@ from .release import (
     TARGET_PQ_RELEASE,
 )
 from .setup_files import required_qm_file_roles, validate_qm_setup_files
+from .validation import has_script_full_path, restart_filename
 
 
 _RUNNER_STATUS_ALIASES = {"mace": "mace_mp"}
