@@ -55,10 +55,22 @@ Create the first package
    and its files.
 #. **Run** — pick NVE, NVT or NPT, set temperature, pressure, steps and the
    number of chained runs; switch on equilibration if needed.
-#. **Output** — read the generated inputs, then press **Package**.
+#. **Output** — check the Review summary and every generated input, then press
+   **Package** to download the ZIP.
 
 The defaults are editable starting points, not validated production
-protocols.
+protocols. The water example is one molecule in a vacuum cell; use an
+appropriate structure and run length for research work.
+
+Before downloading, confirm the intended calculator, ensemble, temperature or
+pressure, timestep, run length, output frequency and restart order in Review.
+Errors block packaging. Warnings remain visible and are written to the project
+manifest. The input preview opens at the first PQ setting; **Show header**
+reveals the complete run card, including the method, duration and file names.
+
+PQSetup can export when PQ is not installed locally. In that case it reports
+that PQ parser validation was unavailable. Validate on the execution machine
+before a long run; see :doc:`validation`.
 
 Check the environment
 ---------------------
@@ -89,7 +101,9 @@ Unpack the download on the machine where PQ and the calculator are available:
    ./run.sh /opt/pq/bin/PQ
 
 The launcher follows the recorded input order, writes output to ``run-logs/``,
-and stops after the first failed or incomplete PQ run.
+and stops after the first failed or incomplete PQ run. It does not install PQ
+or a calculator. See :doc:`run-packages` for the archive contents and restart
+chain.
 
 PQSetup does not submit a scheduler job. Transfer and submission remain under
 the user's control.
@@ -100,3 +114,4 @@ Next
 * :doc:`Build a run <workflow>`
 * :doc:`Understand validation <validation>`
 * :doc:`Inspect the package format <run-packages>`
+* :doc:`Resolve a setup problem <troubleshooting>`

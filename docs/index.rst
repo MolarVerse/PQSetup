@@ -90,6 +90,18 @@ Documentation
 
       Architecture, the shared design language, and how to contribute.
 
+   .. grid-item-card:: Troubleshooting
+      :link: troubleshooting
+      :link-type: doc
+
+      Resolve blocked packages, missing PQ and runtime failures.
+
+   .. grid-item-card:: Shared design package
+      :link: design-system
+      :link-type: doc
+
+      Install versioned tokens, CSS and controls in other PQ web tools.
+
 .. toctree::
    :hidden:
    :maxdepth: 2
@@ -102,4 +114,6 @@ Documentation
    reference/cli
    reference/compatibility
    reference/settings
+   troubleshooting
+   design-system
    development

@@ -67,6 +67,20 @@ PQSetup discovers this support through ``PQ --capabilities=json``. Builds
 without the contract continue to receive local checks, and the missing PQ
 validation is reported explicitly.
 
+Read the result
+---------------
+
+An **error** is a known problem with the setup or generated package and blocks
+export. A **warning** needs review but permits export; warnings are recorded
+in ``pqproject.json``. **Unavailable** means a validation layer did not run,
+for example because PQ is not installed locally. It is not a pass or a claim
+that PQ will accept the input.
+
+When moving a package to another machine, check that machine with
+``pqsetup doctor`` and validate the generated inputs there if its PQ build
+supports the parser contract. The local preflight cannot check a calculator
+that is only installed on the destination machine.
+
 What validation does not prove
 ------------------------------
 

@@ -83,7 +83,7 @@ jobs:
               raise SystemExit("release is missing from CHANGELOG.md")
           PY
       - name: Install Python dependencies
-        run: python -m pip install --upgrade ".[test]" build twine
+        run: python -m pip install --upgrade ".[test]" build 'twine>=7'
       - name: Run Python tests
         run: python -m pytest
       - name: Build bundled interface

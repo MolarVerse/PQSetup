@@ -5,6 +5,17 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-28
+
+### Changed
+
+- Restore the generated input run card, section styling and preview controls
+  while retaining the validation and setup-state refactors.
+- Expand the getting-started, validation, troubleshooting and run-package
+  documentation around the complete prepare-to-run flow.
+- Build the shared flat mono design package as an independently installable
+  archive with JavaScript, TypeScript declarations, CSS and tokens.
+
 ## [0.2.1] - 2026-09-28
 
 ### Changed
