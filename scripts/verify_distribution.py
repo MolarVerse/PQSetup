@@ -49,8 +49,8 @@ def verify_wheel(path: Path) -> None:
             notice_paths[notice] = notice_path
 
         lockfile = json.loads(Path("frontend/package-lock.json").read_text())
-        # Workspace packages (our own code, linked into node_modules) and the
-        # root entry are not third parties and need no notice.
+        # Only installed runtime packages require a notice. Development and
+        # linked entries are not bundled into the interface.
         runtime_packages = {
             name.rsplit("node_modules/", 1)[-1]
             for name, package in lockfile["packages"].items()

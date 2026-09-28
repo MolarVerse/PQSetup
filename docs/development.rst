@@ -43,7 +43,6 @@ Layout
        components/          PQSetup-specific widgets
        effectiveSetup.ts    strips hidden state before rendering
        method.ts, calculatorSettings.ts, runPlan.ts   domain rules
-     packages/pq-design/    the shared design language (see below)
 
 Two rules shape the frontend:
 
@@ -59,35 +58,12 @@ Progressive detail
 Shared design language
 ----------------------
 
-``frontend/packages/pq-design`` is the ``@molarverse/pq-design`` workspace
-package: the flat mono theme (IBM Carbon Gray 10 palette, IBM Plex Mono,
-square corners, hairline dividers) as tokens, base styles and React
-primitives. PQViewer and PQEnalyzer Web consume a versioned archive of this
-package; see :doc:`design-system` for installation and update steps.
-
-.. code-block:: text
-
-   tokens.json          single source of truth: colours, type, spacing, shape
-   src/styles/
-     tokens.css         generated:  npm --prefix frontend run tokens
-     base.css           reset, typography, focus ring, status glyphs
-     components.css     styles of the primitives and their class names
-   src/
-     Modal  Info  Field  Choice  Toggle  Group  ConditionRow  CommandPalette
-
-The public package exports compiled JavaScript and TypeScript declarations,
-plus the CSS and ``tokens.json``. Python front ends can read the tokens from a
-checked-out package source or a downloaded archive:
-
-.. code-block:: python
-
-   tokens = json.loads(Path("tokens.json").read_text())
-   accent = tokens["color"]["accent"]
-
-To change the language edit ``tokens.json`` and regenerate ``tokens.css``, or
-add a primitive together with its rules in ``components.css``. Class names in
-``components.css`` are public API for every tool. The package README lists the
-rules of the language.
+The flat mono theme lives in the separate
+`PQDesign repository <https://github.com/MolarVerse/PQDesign>`_. PQSetup pins
+its public archive in ``frontend/package-lock.json``. Changes to shared
+tokens, CSS or React controls are made and released there; see
+:doc:`design-system` for the consumer integration rules. Keep PQSetup layout
+and product behavior in this repository.
 
 Checking against PQ
 -------------------
