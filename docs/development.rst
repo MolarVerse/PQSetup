@@ -28,7 +28,8 @@ Layout
 
    pqsetup/                 Python: FastAPI app, CLI, PQ knowledge
      api.py                 HTTP endpoints, export packaging
-     input_writer.py        SimulationSetup → PQ input text + validation
+     input_writer.py        SimulationSetup → PQ input text
+     validation.py          setup and input-file validation
      run_plan.py            equilibration / chained runs, effective setup
      setup_files.py         which companion files a method needs
      structures.py          structure import, wrapping, generated cells
@@ -36,6 +37,8 @@ Layout
    frontend/
      src/                   PQSetup page (React + Vite + TypeScript)
        App.tsx              the setup page: Structure · Method · Run · Output
+       setupState.ts         example, defaults, setup updates
+       droppedFiles.ts       file and folder drop handling
        components/          PQSetup-specific widgets
        effectiveSetup.ts    strips hidden state before rendering
        method.ts, calculatorSettings.ts, runPlan.ts   domain rules
@@ -48,9 +51,9 @@ Top to bottom
    single place that maps the remembered form state onto what is visible, so
    a hidden field never reaches the input file.
 
-No duplication
-   A view exists once — inline *or* in a dialog — and explanatory text lives
-   in ``Info`` tooltips, not beside the controls.
+Progressive detail
+   The setup page keeps the main choices inline. Advanced settings live in
+   dialogs, and the generated input can be expanded to read the full file.
 
 Shared design language
 ----------------------

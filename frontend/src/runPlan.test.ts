@@ -1,36 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   clampSamplingRunCount,
-  commitContinuedSamplingRunCountDraft,
-  compactRunFileNames,
+  commitSamplingRunCountDraft,
   nextPlannedInputSelection,
-  parseContinuedSamplingRunCountDraft,
+  parseSamplingRunCountDraft,
   plannedInputOptionLabel,
   samplingLabel,
-  samplingOutputMode,
-  samplingRunCountForMode,
-  samplingRunSummary,
 } from "./runPlan";
 import type { PlannedInput } from "./types";
 
 describe("run plan labels", () => {
-  it("keeps sampling numbering independent from equilibration", () => {
-    expect(compactRunFileNames(true, 2)).toEqual([
-      "run-eq.in",
-      "run-01.in",
-      "run-02.in",
-    ]);
-  });
-
-  it("compacts long continued runs", () => {
-    expect(compactRunFileNames(false, 12)).toEqual([
-      "run-01.in",
-      "run-02.in",
-      "…",
-      "run-12.in",
-    ]);
-  });
-
   it("clamps counts and pads labels", () => {
     expect(clampSamplingRunCount(0)).toBe(1);
     expect(clampSamplingRunCount(120)).toBe(120);
@@ -39,31 +18,13 @@ describe("run plan labels", () => {
     expect(samplingLabel(100)).toBe("100");
   });
 
-  it("keeps continued input counts between 2 and 999", () => {
-    expect(parseContinuedSamplingRunCountDraft("")).toBeNull();
-    expect(parseContinuedSamplingRunCountDraft("1")).toBeNull();
-    expect(parseContinuedSamplingRunCountDraft("12")).toBe(12);
-    expect(parseContinuedSamplingRunCountDraft("100")).toBe(100);
-    expect(parseContinuedSamplingRunCountDraft("1000")).toBeNull();
-    expect(commitContinuedSamplingRunCountDraft("", 12)).toBe(12);
-    expect(commitContinuedSamplingRunCountDraft("1", 12)).toBe(2);
-    expect(commitContinuedSamplingRunCountDraft("1000", 12)).toBe(999);
-  });
-
-  it("maps the visible output choice to the backend file count", () => {
-    expect(samplingOutputMode(1)).toBe("single");
-    expect(samplingOutputMode(3)).toBe("continued");
-    expect(samplingRunCountForMode("single", 8)).toBe(1);
-    expect(samplingRunCountForMode("continued")).toBe(3);
-    expect(samplingRunCountForMode("continued", 8)).toBe(8);
-  });
-
-  it("describes which sampling inputs are continuations", () => {
-    expect(samplingRunSummary(1, false)).toBe("1 sampling file");
-    expect(samplingRunSummary(3, false)).toBe(
-      "3 sampling files · 02–03 continued",
-    );
-    expect(samplingRunSummary(1, true)).toBe("1 sampling file · from eq");
+  it("parses and commits the sampling count used by the editor", () => {
+    expect(parseSamplingRunCountDraft("")).toBeNull();
+    expect(parseSamplingRunCountDraft("12")).toBe(12);
+    expect(parseSamplingRunCountDraft("1000")).toBeNull();
+    expect(commitSamplingRunCountDraft("", 12)).toBe(12);
+    expect(commitSamplingRunCountDraft("1", 12)).toBe(1);
+    expect(commitSamplingRunCountDraft("1000", 12)).toBe(999);
   });
 
   it("labels equilibration and large sampling plans for a file selector", () => {

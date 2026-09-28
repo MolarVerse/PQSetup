@@ -1,7 +1,7 @@
 import { ChevronDown, SlidersHorizontal, type LucideIcon } from "lucide-react";
 
 /** Chip that opens a settings dialog; defaults to the method's "Advanced". */
-export function SettingsChip({
+function SettingsChip({
   onOpen,
   label = "Advanced",
   icon: Icon = SlidersHorizontal,

@@ -1,6 +1,6 @@
-export type Severity = "error" | "warning" | "info";
+type Severity = "error" | "warning" | "info";
 export type Ensemble = "NPT" | "NVT" | "NVE" | "OPT";
-export type JobType = "mm-md" | "qm-md" | "qm-rpmd" | "mm-opt";
+type JobType = "mm-md" | "qm-md" | "qm-rpmd" | "mm-opt";
 export type MMForceFieldMode = "off" | "bonded" | "on";
 export type SetupFileRole =
   | "moldescriptor"
@@ -11,7 +11,7 @@ export type SetupFileRole =
   | "mshake"
   | "dftb_template"
   | "turbomole_define_template";
-export type PressureIsotropy =
+type PressureIsotropy =
   | "isotropic"
   | "xy"
   | "xz"
@@ -19,7 +19,7 @@ export type PressureIsotropy =
   | "anisotropic"
   | "full_anisotropic";
 
-export interface Diagnostic {
+interface Diagnostic {
   code: string;
   severity: Severity;
   message: string;
@@ -46,7 +46,7 @@ export interface Structure {
   cell_padding_angstrom: number | null;
 }
 
-export interface Collision {
+interface Collision {
   atom_i: number;
   atom_j: number;
   distance_angstrom: number;
@@ -54,7 +54,7 @@ export interface Collision {
   severity: "error" | "warning";
 }
 
-export interface StructureSummary {
+interface StructureSummary {
   atom_count: number;
   formula: string;
   volume_angstrom3: number | null;
@@ -128,7 +128,7 @@ export interface PQStatus {
   validation_scopes: ("portable" | "installed")[];
 }
 
-export interface Preset {
+interface Preset {
   id: string;
   name: string;
   description: string;

@@ -11,10 +11,10 @@ import uvicorn
 
 from . import __version__
 from .executable import discover_pq
-from .input_writer import validate_input_file
 from .models import DoctorReport
 from .pq_validation import PQValidationError, validate_pq_input
 from .runners import apply_pq_capabilities, detect_runners
+from .validation import validate_input_file
 
 
 def build_parser() -> argparse.ArgumentParser:

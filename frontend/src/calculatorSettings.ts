@@ -169,7 +169,7 @@ export function usesConstraints(setup: SimulationSetup): boolean {
 }
 
 /** Constraint keys that apply to every MD job (M-SHAKE stays MM-only). */
-export const CONSTRAINT_KEYS = [
+const CONSTRAINT_KEYS = [
   "shake",
   "shake-tolerance",
   "shake-iter",
@@ -179,7 +179,7 @@ export const CONSTRAINT_KEYS = [
 ] as const;
 
 /** Keys the settings dialog owns; anything else in extra_settings is kept. */
-export const QM_KEYS = [
+const QM_KEYS = [
   "xtb_method",
   "slakos",
   "slakos_path",
@@ -194,7 +194,7 @@ export const QM_KEYS = [
   "qm_script_full_path",
 ] as const;
 
-export const MM_KEYS = [
+const MM_KEYS = [
   "noncoulomb",
   "long_range",
   "wolf_param",
@@ -217,15 +217,15 @@ export const MM_KEYS = [
  * whatever the calculator. They are edited under Run › Steps, not with the
  * method. Temperature rescaling needs a target temperature (NVT / NPT).
  */
-export const TEMPERATURE_RESET_KEYS = ["nscale", "fscale"] as const;
-export const MOMENTUM_RESET_KEYS = [
+const TEMPERATURE_RESET_KEYS = ["nscale", "fscale"] as const;
+const MOMENTUM_RESET_KEYS = [
   "nreset",
   "freset",
   "nreset_angular",
   "freset_angular",
   "freset_forces",
 ] as const;
-export const RESET_KEYS = [
+const RESET_KEYS = [
   ...TEMPERATURE_RESET_KEYS,
   ...MOMENTUM_RESET_KEYS,
 ] as const;
@@ -235,7 +235,7 @@ export function isThermalEnsemble(setup: SimulationSetup): boolean {
 }
 
 /** Reset keys the Run section may write for this ensemble. */
-export function applicableResetKeys(setup: SimulationSetup): Set<string> {
+function applicableResetKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.ensemble === "OPT") return keys;
   for (const key of MOMENTUM_RESET_KEYS) keys.add(key);
@@ -250,7 +250,7 @@ export function applicableResetKeys(setup: SimulationSetup): Set<string> {
  * settings dialogs but not in this set is stale (e.g. `shake` after switching
  * to QM) and must be dropped before rendering.
  */
-export function applicableSettingKeys(setup: SimulationSetup): Set<string> {
+function applicableSettingKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.job_type === "mm-md") {
     for (const key of [
@@ -337,63 +337,4 @@ export function runSettingsLines(setup: SimulationSetup): string[] {
     .filter((key) => allowed.has(key))
     .sort()
     .map((key) => `${key} = ${String(setup.extra_settings[key])};`);
-}
-
-function label(options: ChoiceOption[], value: string): string {
-  return options.find((option) => option.value === value)?.label ?? value;
-}
-
-/** Short "what differs from defaults" line for the settings chip. */
-export function qmSettingsSummary(setup: SimulationSetup): string[] {
-  const extra = setup.extra_settings;
-  const parts: string[] = [];
-  const runner = setup.runner;
-  if (runner === "ase_xtb" && extra.xtb_method) {
-    parts.push(label(XTB_METHODS, String(extra.xtb_method)));
-  }
-  if (runner === "ase_dftbplus") {
-    if (extra.slakos) parts.push(`slakos ${String(extra.slakos)}`);
-    if (extraBool(extra, "third_order", false)) parts.push("3rd order");
-  }
-  if ((runner === "mace_mp" || runner === "mace_off") && extra.mace_model) {
-    parts.push(`MACE ${String(extra.mace_model)}`);
-  }
-  if (extra.mace_mode === "fast") parts.push("fast kernels");
-  if (supportsDispersion(runner) && "dispersion" in extra) {
-    parts.push(
-      extraBool(extra, "dispersion", dispersionDefault(runner))
-        ? "dispersion on"
-        : "dispersion off",
-    );
-  }
-  if (extraBool(extra, "remove_net_force", false)) parts.push("net force removed");
-  const limit = extraNumber(extra, "qm_loop_time_limit");
-  if (limit != null) parts.push(limit <= 0 ? "no time limit" : `${limit} s limit`);
-  if (extra.shake && extra.shake !== MM_DEFAULTS.shake) parts.push("SHAKE");
-  if (extraBool(extra, "distance-constraints", false)) {
-    parts.push("distance constraints");
-  }
-  return parts;
-}
-
-export function mmSettingsSummary(setup: SimulationSetup): string[] {
-  const extra = setup.extra_settings;
-  const parts: string[] = [];
-  if (extra.noncoulomb && extra.noncoulomb !== MM_DEFAULTS.noncoulomb) {
-    parts.push(label(NONCOULOMB_KINDS, String(extra.noncoulomb)));
-  }
-  if (extra.long_range && extra.long_range !== MM_DEFAULTS.long_range) {
-    parts.push(label(LONG_RANGE_KINDS, String(extra.long_range)));
-  }
-  if (extra.virial && extra.virial !== MM_DEFAULTS.virial) {
-    parts.push("atomic virial");
-  }
-  if (extraBool(extra, "cell-list", false)) parts.push("cell list");
-  if (extra.shake && extra.shake !== MM_DEFAULTS.shake) {
-    parts.push(extra.shake === "mshake" ? "M-SHAKE" : label(SHAKE_MODES, String(extra.shake)));
-  }
-  if (extraBool(extra, "distance-constraints", false)) {
-    parts.push("distance constraints");
-  }
-  return parts;
 }
