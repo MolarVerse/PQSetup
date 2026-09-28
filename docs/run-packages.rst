@@ -70,7 +70,8 @@ Project manifest
   export;
 * warnings and the result of each PQ validation layer.
 
-The manifest records preparation details independently of the PQ input files.
+The manifest makes it possible to inspect what was prepared without parsing
+the decorative input header.
 
 Move to another machine
 -----------------------
