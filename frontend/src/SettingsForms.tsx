@@ -10,7 +10,6 @@ import {
   SHAKE_MODES,
   SLAKOS_SETS,
   VIRIAL_KINDS,
-  XTB_METHODS,
   dispersionDefault,
   extraBool,
   extraNumber,
@@ -303,7 +302,6 @@ export function QMSettingsForm({
   // PQ switches third order on for 3ob when the key is absent, off otherwise.
   const thirdOrder = extraBool(extra, "third_order", slakos === "3ob");
   const hasCalculatorGroup =
-    runner === "ase_xtb" ||
     runner === "ase_dftbplus" ||
     isMace ||
     usesExternalScript(runner);
@@ -317,20 +315,6 @@ export function QMSettingsForm({
     <div className="settings-form">
       {hasCalculatorGroup && (
         <Group title="Calculator" info={calculatorInfo}>
-          {runner === "ase_xtb" && (
-            <Choice
-              label="xTB method"
-              value={extraString(extra, "xtb_method", QM_DEFAULTS.xtb_method)}
-              options={XTB_METHODS}
-              onChange={(value) =>
-                setExtra(
-                  "xtb_method",
-                  value === QM_DEFAULTS.xtb_method ? null : value,
-                )
-              }
-            />
-          )}
-
           {runner === "ase_dftbplus" && (
             <>
               <Choice

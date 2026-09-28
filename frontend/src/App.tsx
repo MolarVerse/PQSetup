@@ -64,6 +64,9 @@ import {
   RunSettingsForm,
 } from "./SettingsForms";
 import {
+  QM_DEFAULTS,
+  XTB_METHODS,
+  extraString,
   isThermalEnsemble,
   runSettingsLines,
   settingsLines,
@@ -73,6 +76,7 @@ import {
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
+import { compactInputPreview } from "./inputPreview";
 import {
   MANOSTATS,
   THERMOSTATS,
@@ -160,8 +164,7 @@ function runnerAvailabilityLabel(
   }
 }
 
-// Scroll targets on the single setup page. "review" points at the generated
-// input preview in the output pane.
+// Scroll targets on the single setup page.
 const SECTIONS = [
   {
     id: "system",
@@ -183,9 +186,9 @@ const SECTIONS = [
   },
   {
     id: "review",
-    label: "Inputs",
-    anchor: "generated-input-preview",
-    keywords: "inputs files preview package output",
+    label: "Output",
+    anchor: "section-output",
+    keywords: "review inputs files preview package output",
   },
 ] as const;
 
@@ -231,7 +234,9 @@ const EXAMPLE: StructureAnalysis = {
     source_name: "water-example.rst",
     source_format: "pq-restart",
     wrapped_centered: true,
-    cell_generated: false,
+    // This built-in single-molecule box is a vacuum example, not a measured
+    // periodic cell suitable for pressure coupling.
+    cell_generated: true,
     cell_padding_angstrom: null,
   },
   summary: {
@@ -286,7 +291,7 @@ const INITIAL_SETUP: SimulationSetup = {
   dftb_template_file: null,
   turbomole_define_template_file: null,
   overwrite_output: false,
-  extra_settings: {},
+  extra_settings: { output_freq: 1 },
 };
 
 const INITIAL_EQUILIBRATION: EquilibrationStage = {
@@ -306,6 +311,13 @@ const INITIAL_EQUILIBRATION: EquilibrationStage = {
 
 function formatCompact(value: number): string {
   return Number(value.toPrecision(4)).toString();
+}
+
+function formatDuration(totalFs: number): string {
+  if (!Number.isFinite(totalFs) || totalFs <= 0) return "invalid duration";
+  if (totalFs >= 1e6) return `${formatCompact(totalFs / 1e6)} ns`;
+  if (totalFs >= 1e3) return `${formatCompact(totalFs / 1e3)} ps`;
+  return `${formatCompact(totalFs)} fs`;
 }
 
 function isMolecularMechanics(setup: SimulationSetup): boolean {
@@ -420,12 +432,14 @@ export default function App() {
   const [samplingRunCountDraft, setSamplingRunCountDraft] = useState("1");
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
+  const [showInputHeader, setShowInputHeader] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [jitter, setJitter] = useState(false);
   const [sigma, setSigma] = useState(0.01);
+  const [jitterSeed, setJitterSeed] = useState(238917);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [modal, setModal] = useState<
     "structure" | "input" | "calculator" | "run" | null
@@ -459,21 +473,15 @@ export default function App() {
     const dt = setup.timestep_fs;
     if (steps == null || dt == null || steps <= 0 || dt <= 0) return undefined;
     const totalFs = samplingRunCount * steps * dt;
-    const total =
-      totalFs >= 1e6
-        ? `${formatCompact(totalFs / 1e6)} ns`
-        : totalFs >= 1e3
-          ? `${formatCompact(totalFs / 1e3)} ps`
-          : `${formatCompact(totalFs)} fs`;
     const runs = samplingRunCount > 1 ? `${samplingRunCount} × ` : "";
-    return `${runs}${steps} × ${formatCompact(dt)} fs = ${total}`;
+    return `${runs}${steps} × ${formatCompact(dt)} fs = ${formatDuration(totalFs)}`;
   }, [samplingRunCount, setup.steps, setup.timestep_fs]);
   // Editing σ / seed never touches the structure above; Apply is the only
   // action that does, so until then the applied line just reports drift.
   const preparationStale =
     preparation != null &&
     (preparation.sigma_angstrom !== sigma ||
-      preparation.seed !== setup.random_seed);
+      preparation.seed !== jitterSeed);
   // Hydrogen moves fast: above 0.5 fs its bonds need constraints.
   const hasHydrogen = analysis.structure.atoms.some(
     (atom) => atom.symbol.toUpperCase() === "H",
@@ -685,15 +693,25 @@ export default function App() {
   );
   const selectedFileIndex =
     rendered?.files.findIndex((file) => file.name === selectedFile?.name) ?? -1;
-  const stageInputText =
-    selectedFile?.input_text ||
-    rendered?.diagnostics[0]?.message ||
-    "…";
-  const deferredStageInputText = useDeferredValue(stageInputText);
+  const stageInputText = selectedFile?.input_text ?? "";
+  const preview = useMemo(
+    () => compactInputPreview(stageInputText, showInputHeader),
+    [stageInputText, showInputHeader],
+  );
+  const deferredPreview = useDeferredValue(preview);
+  const deferredFullInputText = useDeferredValue(stageInputText);
   useEffect(() => {
-    document
-      .querySelector('.input-tab-list [role="tab"][aria-selected="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const list = document.querySelector<HTMLElement>(".input-tab-list");
+    const selected = list?.querySelector<HTMLElement>(
+      '[role="tab"][aria-selected="true"]',
+    );
+    if (!list || !selected) return;
+    // Keep the selected tab visible within its own strip. scrollIntoView also
+    // scrolls the page, which skipped Structure on the first render.
+    const strip = list.getBoundingClientRect();
+    const tab = selected.getBoundingClientRect();
+    if (tab.left < strip.left) list.scrollLeft -= strip.left - tab.left;
+    if (tab.right > strip.right) list.scrollLeft += tab.right - strip.right;
   }, [selectedFile?.name]);
 
   const equilibrationFiles = useMemo(
@@ -791,10 +809,15 @@ export default function App() {
     for (const item of diagnostics) {
       if (item.severity !== "error") continue;
       if (issues.some((issue) => issue.message === item.message)) continue;
+      const outputFrequencyIssue =
+        item.code === "input.extra_value" &&
+        item.message.includes("'output_freq'");
       issues.push({
         message: item.message,
-        section: diagnosticStep(item.code),
-        controlId: diagnosticControl(item.code),
+        section: outputFrequencyIssue ? "review" : diagnosticStep(item.code),
+        controlId: outputFrequencyIssue
+          ? "output-freq"
+          : diagnosticControl(item.code),
       });
     }
     if (issues.length === 0 && rendered && !rendered.valid) {
@@ -817,6 +840,68 @@ export default function App() {
     setup.runner,
   ]);
   const firstBlockingIssue = blockingIssues[0] ?? null;
+  const initialVelocitiesMissing = analysis.structure.atoms.every(
+    (atom) =>
+      atom.velocity == null || atom.velocity.every((value) => value === 0),
+  );
+  const warningDiagnostics = useMemo(() => {
+    const seen = new Set<string>();
+    const candidates = [
+      ...displayedDiagnostics,
+      ...(!setup.initialize_velocities && initialVelocitiesMissing
+        ? [
+            {
+              code: "run.initial_velocities_missing",
+              severity: "warning" as const,
+              message:
+                "The structure has no nonzero velocities. With initialization off, the run starts from zero velocities.",
+              atom_indices: [],
+            },
+          ]
+        : []),
+    ];
+    return candidates.filter((item) => {
+      if (item.severity !== "warning") return false;
+      const key = `${item.code}:${item.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [displayedDiagnostics, initialVelocitiesMissing, setup.initialize_velocities]);
+  const outputFrequency =
+    typeof effective.extra_settings.output_freq === "number"
+      ? effective.extra_settings.output_freq
+      : 1;
+  const validOutputFrequency =
+    Number.isInteger(outputFrequency) && outputFrequency >= 1;
+  const outputFrameCount =
+    validOutputFrequency && setup.steps != null && setup.steps > 0
+      ? Math.floor(setup.steps / outputFrequency)
+      : null;
+  const methodSummary = molecularMechanics
+    ? MM_MODES.find((option) => option.value === setup.mm_force_field)?.label ??
+      "Molecular mechanics"
+    : `${selectedRunnerStatus?.label ?? setup.runner ?? "Choose a calculator"}${
+        setup.runner === "ase_xtb"
+          ? ` · ${
+              XTB_METHODS.find(
+                (option) =>
+                  option.value ===
+                  extraString(
+                    setup.extra_settings,
+                    "xtb_method",
+                    QM_DEFAULTS.xtb_method,
+                  ),
+              )?.label ?? "GFN2-xTB"
+            }`
+          : electronicProgram
+            ? ` · ${
+                scriptFullPath
+                  ? "Custom script"
+                  : selectedElectronicMethod?.label ?? "Choose a method"
+              }`
+            : ""
+      }`;
 
   const openFilePicker = useCallback(() => fileInput.current?.click(), []);
 
@@ -844,7 +929,13 @@ export default function App() {
           : null;
         const target = control ?? document.getElementById(anchor);
         target?.scrollIntoView({
-          block: control ? "center" : "start",
+          block:
+            control instanceof HTMLInputElement ||
+            control instanceof HTMLSelectElement ||
+            control instanceof HTMLButtonElement ||
+            control instanceof HTMLTextAreaElement
+              ? "center"
+              : "start",
           behavior: "smooth",
         });
         if (
@@ -853,6 +944,8 @@ export default function App() {
           control instanceof HTMLButtonElement ||
           control instanceof HTMLTextAreaElement
         ) {
+          control.focus({ preventScroll: true });
+        } else if (control instanceof HTMLElement && control.tabIndex === -1) {
           control.focus({ preventScroll: true });
         }
       });
@@ -1577,7 +1670,7 @@ export default function App() {
     setPerturbing(true);
     setNotice(null);
     try {
-      const result = await perturbFile(sourceFile, sigma, setup.random_seed);
+      const result = await perturbFile(sourceFile, sigma, jitterSeed);
       if (sequence !== perturbSequence.current) return;
       setAnalysis(result);
       setPreparation({
@@ -1594,7 +1687,7 @@ export default function App() {
       setNotice({
         kind: result.valid ? "success" : "info",
         message: result.valid
-          ? `Prepared with σ = ${sigma} Å and seed ${setup.random_seed}.`
+          ? `Prepared with σ = ${sigma} Å and seed ${jitterSeed}.`
           : "Prepared coordinates still need attention.",
       });
     } catch (error) {
@@ -1761,10 +1854,19 @@ export default function App() {
   function chooseSamplingEnsemble(ensemble: Exclude<Ensemble, "OPT">) {
     // Only fill gaps; a thermostat or pressure chosen earlier survives a
     // detour through NVE / NVT and comes back unchanged.
+    const previousDerived = derivedRunName.current;
+    const nextDerived = sourceFile
+      ? previousDerived
+      : `water-${ensemble.toLowerCase()}`;
+    derivedRunName.current = nextDerived;
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
       ensemble,
+      file_prefix:
+        existing.file_prefix === previousDerived
+          ? nextDerived
+          : existing.file_prefix,
       thermostat: existing.thermostat ?? "velocity_rescaling",
       manostat: existing.manostat ?? "stochastic_rescaling",
       pressure_bar: existing.pressure_bar ?? 1.01325,
@@ -1774,22 +1876,20 @@ export default function App() {
   function chooseThermostat(
     thermostat: (typeof THERMOSTATS)[number]["value"],
   ) {
+    if (setup.ensemble === "NVE") chooseSamplingEnsemble("NVT");
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
-      ensemble: existing.ensemble === "NVE" ? "NVT" : existing.ensemble,
       thermostat,
     }));
   }
 
   function chooseManostat(manostat: (typeof MANOSTATS)[number]["value"]) {
+    chooseSamplingEnsemble("NPT");
     setSetup((existing) => ({
       ...existing,
       preset_id: null,
-      ensemble: "NPT",
-      thermostat: existing.thermostat ?? "velocity_rescaling",
       manostat,
-      pressure_bar: existing.pressure_bar ?? 1.01325,
     }));
   }
 
@@ -1827,18 +1927,23 @@ export default function App() {
           </a>
           {bootstrap ? (
             <span
-              className={`pq-tag ${bootstrap.pq.found ? "ok" : "missing"}`}
+              className={`pq-tag ${bootstrap.pq.found ? "ok" : "portable"}`}
               title={
                 bootstrap.pq.found
                   ? `PQ ${bootstrap.pq.version ?? "detected"}`
-                  : "PQ not found"
+                  : "PQ is not installed locally. Packaging is available; run and validate with PQ on the target machine."
+              }
+              aria-label={
+                bootstrap.pq.found
+                  ? `Local PQ ${bootstrap.pq.version ?? "detected"}`
+                  : "No local PQ. Packages can still be created."
               }
             >
               <span className="pq-tag-label">PQ</span>
               <span className="pq-tag-value">
                 {bootstrap.pq.found
-                  ? (bootstrap.pq.version ?? "PQ").split("-")[0]
-                  : "no PQ"}
+                  ? `PQ ${(bootstrap.pq.version ?? "detected").split("-")[0]}`
+                  : "PQ not local"}
               </span>
             </span>
           ) : bootstrapError ? (
@@ -1922,6 +2027,16 @@ export default function App() {
                       {" · "}
                       {analysis.summary.atom_count}{" "}
                       {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
+                    </small>
+                    <small className="structure-context">
+                      {!sourceFile && "Example · "}
+                      {analysis.structure.cell_generated
+                        ? "vacuum cell"
+                        : analysis.structure.cell
+                          ? "periodic cell"
+                          : "no cell"}
+                      {analysis.summary.density_g_cm3 != null &&
+                        ` · ${formatCompact(analysis.summary.density_g_cm3)} g/cm³`}
                     </small>
                   </div>
                   {!analysis.valid && (
@@ -2013,12 +2128,9 @@ export default function App() {
                         min="0"
                         max="4294967295"
                         step="1"
-                        value={setup.random_seed}
+                        value={jitterSeed}
                         onChange={(event) =>
-                          setSetup((existing) => ({
-                            ...existing,
-                            random_seed: Number(event.target.value),
-                          }))
+                          setJitterSeed(Number(event.target.value))
                         }
                       />
                     </Field>
@@ -2168,6 +2280,31 @@ export default function App() {
                           </select>
                         </Field>
                       )}
+                    {setup.runner === "ase_xtb" && (
+                      <Field label="Electronic model" controlId="xtb-model">
+                        <select
+                          value={extraString(
+                            setup.extra_settings,
+                            "xtb_method",
+                            QM_DEFAULTS.xtb_method,
+                          )}
+                          onChange={(event) =>
+                            setExtra(
+                              "xtb_method",
+                              event.target.value === QM_DEFAULTS.xtb_method
+                                ? null
+                                : event.target.value,
+                            )
+                          }
+                        >
+                          {XTB_METHODS.map((option) => (
+                            <option value={option.value} key={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
                     {setup.runner && (
                       <SettingsLine
                         parts={settingsLines(effective)}
@@ -2269,7 +2406,9 @@ export default function App() {
                       {molecularMechanics && !hasTypedMolecules && (
                         <div className="inline-warning" role="alert">
                           <CircleAlert size={15} aria-hidden="true" />
-                          Needs molecule type IDs — import a PQ restart (.rst)
+                          {sourceFile
+                            ? "This structure has no molecule type IDs. Import a typed PQ restart (.rst)."
+                            : "The built-in water example has no molecule type IDs. Import a typed PQ restart (.rst) for MM."}
                         </div>
                       )}
                       <SetupFileList
@@ -2330,10 +2469,55 @@ export default function App() {
                   ))}
                 </div>
               </fieldset>
+              {setup.ensemble === "NPT" &&
+                !molecularMechanics &&
+                analysis.structure.cell_generated && (
+                  <div className="inline-warning" role="alert">
+                    <CircleAlert size={15} aria-hidden="true" />
+                    NPT needs an imported physical periodic cell. This is a
+                    generated vacuum cell.
+                  </div>
+                )}
+
+              <ConditionRow
+                icon={Zap}
+                title="Initial velocities"
+                info="PQ keeps velocities already present in the start restart. When enabled, it generates velocities at the chosen temperature only if they are absent."
+                toggle={{
+                  label: "Generate if absent",
+                  controlId: "initial-velocities-control",
+                  checked: setup.initialize_velocities,
+                  onChange: (value) =>
+                    setSetup((existing) => ({
+                      ...existing,
+                      initialize_velocities: value,
+                    })),
+                }}
+              >
+                <Field
+                  label="Random seed"
+                  controlId="run-random-seed"
+                  info="Used for all random events in the PQ simulation, including generated velocities and stochastic coupling. Keep this value for a reproducible run."
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    max="4294967295"
+                    step="1"
+                    value={setup.random_seed}
+                    onChange={(event) =>
+                      setSetup((existing) => ({
+                        ...existing,
+                        random_seed: Number(event.target.value),
+                      }))
+                    }
+                  />
+                </Field>
+              </ConditionRow>
 
               {/* Each condition is its own row: value + the coupling that
                   controls it. Nothing here depends on another row. */}
-              <ConditionRow
+              {(thermalEnsemble || setup.initialize_velocities) && <ConditionRow
                 icon={Thermometer}
                 title="Temperature"
                 info={
@@ -2343,9 +2527,14 @@ export default function App() {
                 }
               >
                 <Field
-                  label="Target"
+                  label={thermalEnsemble ? "Target" : "Initial"}
                   unit="K"
                   controlId="sampling-temperature"
+                  info={
+                    thermalEnsemble
+                      ? undefined
+                      : "Used to generate initial velocities if the restart has none. NVE has no thermostat."
+                  }
                 >
                   <input
                     type="number"
@@ -2427,6 +2616,7 @@ export default function App() {
                   </Field>
                 )}
               </ConditionRow>
+              }
 
               {setup.ensemble === "NPT" && (
                 <ConditionRow icon={Gauge} title="Pressure">
@@ -2680,18 +2870,170 @@ export default function App() {
                 </ConditionRow>
 
                 <ConditionRow
+                  icon={ready ? CheckCircle2 : CircleAlert}
+                  title="Review"
+                  hint={
+                    rendering
+                      ? "Checking inputs…"
+                      : ready
+                        ? "Ready to package"
+                        : `${blockingIssues.length} ${
+                            blockingIssues.length === 1 ? "issue" : "issues"
+                          } to resolve`
+                  }
+                >
+                  <div
+                    className="condition-full setup-review"
+                    id="setup-checks"
+                    tabIndex={-1}
+                  >
+                    <dl className="review-facts">
+                      <div>
+                        <dt>Structure</dt>
+                        <dd>
+                          <ChemicalFormula formula={analysis.summary.formula} />
+                          {` · ${analysis.summary.atom_count} atoms · `}
+                          {analysis.structure.cell_generated
+                            ? "vacuum cell"
+                            : analysis.structure.cell
+                              ? "periodic cell"
+                              : "no cell"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Method</dt>
+                        <dd>{methodSummary}</dd>
+                      </div>
+                      <div>
+                        <dt>Sampling</dt>
+                        <dd>
+                          {setup.ensemble} · {samplingSpan ?? "set steps and timestep"}
+                          {equilibration
+                            ? ` · NVT equilibration ${formatDuration(
+                                equilibration.steps * equilibration.timestep_fs,
+                              )} first`
+                            : ""}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Velocities</dt>
+                        <dd>
+                          {setup.initialize_velocities
+                            ? "Keep restart velocities; generate if absent"
+                            : "Use restart velocities without initialization"}
+                          {` · random seed ${setup.random_seed}`}
+                        </dd>
+                      </div>
+                      {(thermalEnsemble || setup.initialize_velocities) && (
+                        <div>
+                          <dt>Temperature</dt>
+                          <dd>
+                            {setup.temperature_k == null
+                              ? "Not set"
+                              : `${setup.temperature_k} K`}
+                            {setup.ensemble === "NVE"
+                              ? " for initial velocities only"
+                              : ` · ${
+                                  THERMOSTATS.find(
+                                    (option) => option.value === setup.thermostat,
+                                  )?.label ?? "choose a thermostat"
+                                }`}
+                            {setup.ensemble === "NPT" &&
+                              ` · ${setup.pressure_bar ?? 1.01325} bar`}
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt>Output</dt>
+                        <dd>
+                          {validOutputFrequency
+                            ? `Every ${outputFrequency} ${outputFrequency === 1 ? "step" : "steps"}`
+                            : `Write frequency ${outputFrequency} is invalid`}
+                          {outputFrameCount != null &&
+                            ` · ${outputFrameCount.toLocaleString()} frames per sampling input`}
+                        </dd>
+                      </div>
+                    </dl>
+                    {blockingIssues.length > 0 && (
+                      <div className="review-check-list review-errors">
+                        <h3>Fix before packaging</h3>
+                        <ul>
+                          {blockingIssues.map((issue, index) => (
+                            <li key={`${issue.message}-${index}`}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goToControl(issue.section, issue.controlId)
+                                }
+                              >
+                                <CircleAlert size={14} aria-hidden="true" />
+                                <span>{issue.message}</span>
+                                <ChevronRight size={14} aria-hidden="true" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {warningDiagnostics.length > 0 && (
+                      <div className="review-check-list review-warnings">
+                        <h3>Check before running</h3>
+                        <ul>
+                          {warningDiagnostics.map((warning) => (
+                            <li key={`${warning.code}:${warning.message}`}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goToControl(
+                                    diagnosticStep(warning.code),
+                                    diagnosticControl(warning.code),
+                                  )
+                                }
+                              >
+                                <CircleAlert size={14} aria-hidden="true" />
+                                <span>{warning.message}</span>
+                                <ChevronRight size={14} aria-hidden="true" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {!sourceFile && (
+                      <p className="review-example">
+                        Example only: one water molecule in a vacuum cell and a
+                        short run. Choose a suitable structure, model and run
+                        length for research use.
+                      </p>
+                    )}
+                    <p className="review-scope">
+                      {bootstrap &&
+                        (!bootstrap.pq.validation_available ||
+                          !bootstrap.pq.validation_scopes.includes("portable")) &&
+                        "PQ parser check unavailable locally. "}
+                      Local checks cover input validity. Confirm the physical
+                      setup and validate on the machine that will run PQ.
+                    </p>
+                  </div>
+                </ConditionRow>
+
+                <ConditionRow
                   icon={FileCode2}
                   title="Inputs"
                   hint={
-                    rendered
-                      ? `${rendered.files.length} ${
-                          rendered.files.length === 1 ? "file" : "files"
-                        }`
-                      : undefined
+                    rendering
+                      ? "Checking…"
+                      : rendered && ready
+                        ? `${rendered.files.length} ${
+                            rendered.files.length === 1 ? "file" : "files"
+                          }`
+                        : rendered
+                          ? "unavailable"
+                          : undefined
                   }
                 >
                   <div className="condition-full">
-                    {rendered ? (
+                    {rendered && ready && !rendering && selectedFile?.input_text ? (
                       <div
                         className="input-preview page-input-preview"
                         id="generated-input-preview"
@@ -2742,6 +3084,16 @@ export default function App() {
                             {rendering && (
                               <LoaderCircle className="spin" size={15} />
                             )}
+                            {preview.headerHidden || showInputHeader ? (
+                              <button
+                                type="button"
+                                className="preview-header-toggle"
+                                aria-pressed={showInputHeader}
+                                onClick={() => setShowInputHeader((value) => !value)}
+                              >
+                                {showInputHeader ? "Hide header" : "Show header"}
+                              </button>
+                            ) : null}
                             <button
                               type="button"
                               className="preview-expand"
@@ -2772,9 +3124,23 @@ export default function App() {
                           className="input-preview-body"
                           id="generated-input-body"
                           role="tabpanel"
+                          key={`${selectedFile?.name ?? "none"}:${showInputHeader}`}
                         >
-                          <InputSource text={deferredStageInputText} />
+                          <InputSource
+                            text={deferredPreview.text}
+                            firstLine={deferredPreview.firstLine}
+                          />
                         </pre>
+                      </div>
+                    ) : rendered ? (
+                      <div
+                        className="output-empty page-input-preview"
+                        id="generated-input-preview"
+                        role="status"
+                      >
+                        <CircleAlert size={18} aria-hidden="true" />
+                        <strong>{rendering ? "Checking inputs…" : "Input preview unavailable"}</strong>
+                        {!rendering && <span>Resolve the issues in Review to generate inputs.</span>}
                       </div>
                     ) : (
                       <div
@@ -2793,7 +3159,7 @@ export default function App() {
                       </div>
                     )}
 
-                    <div className="footer-run" aria-label="Run command">
+                    {ready && <div className="footer-run" aria-label="Run command">
                       <Terminal size={14} aria-hidden="true" />
                       <code title={runLauncher.command}>
                         {runLauncher.command}
@@ -2811,7 +3177,7 @@ export default function App() {
                       >
                         <Copy size={14} aria-hidden="true" />
                       </button>
-                    </div>
+                    </div>}
                   </div>
                 </ConditionRow>
               </div>
@@ -2842,11 +3208,12 @@ export default function App() {
                 <button
                   type="button"
                   className="footer-status attention"
-                  title={firstBlockingIssue.message}
+                  title="Review all issues"
+                  aria-controls="setup-checks"
                   onClick={() =>
                     goToControl(
-                      firstBlockingIssue.section,
-                      firstBlockingIssue.controlId,
+                      "review",
+                      "setup-checks",
                     )
                   }
                 >
@@ -2942,7 +3309,7 @@ export default function App() {
               </div>
             </div>
             <pre className="input-preview-body">
-              <InputSource text={deferredStageInputText} />
+              <InputSource text={deferredFullInputText} />
             </pre>
           </div>
         ) : (

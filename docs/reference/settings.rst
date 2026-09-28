@@ -1,17 +1,22 @@
 Advanced settings
 =================
 
-The **Advanced** dialog in the Method section exposes the optional PQ keywords
+The **Advanced** dialog in the Method section exposes optional PQ keywords
 that apply to the selected calculator or force field. Every value is written
 verbatim as ``keyword = value;``; leaving a field blank keeps PQ's default and
 writes nothing. The keywords in force are echoed next to the button so the
 Method section reads like the input file.
 
-The dialog offers exactly what the PQ v0.7.x input parsers accept
+ASE · xTB's electronic model is a primary Method control. Other advanced
+settings in the dialog offer PQ v0.7.x input keywords
 (``src/input/inputFileParser/*.cpp`` and ``inputValidation.cpp`` at the
 targeted release). The same table lives in ``pqsetup/keywords.py`` and drives
 validation: values PQ would refuse are reported as errors before anything is
 written, with the same wording PQ's parser uses for its option lists.
+
+PQSetup requires ``output_freq >= 1`` because it packages output and restart
+files for the selected run sequence. PQ itself also accepts ``0`` for a dry
+run that writes no output files.
 
 QM calculators
 --------------
@@ -25,7 +30,7 @@ QM calculators
      - Notes
    * - ASE · xTB
      - ``xtb_method``
-     - GFN2-xTB (default), GFN1-xTB, IPEA1-xTB
+     - GFN2-xTB (default), GFN1-xTB, IPEA1-xTB; selected in Method
    * - ASE · DFTB+
      - ``slakos``, ``slakos_path``, ``third_order``, ``hubbard_derivs``,
        ``dispersion``

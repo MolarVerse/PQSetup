@@ -10,7 +10,7 @@ export interface ConditionRowProps {
   /** Tooltip text behind the ⓘ affordance. */
   info?: string;
   /** Switch in the head that enables the whole row. */
-  toggle?: { label?: string; checked: boolean; onChange: (on: boolean) => void };
+  toggle?: { label?: string; controlId?: string; checked: boolean; onChange: (on: boolean) => void };
   /** Extra control at the far right of the head. */
   action?: ReactNode;
   /** Class for the fields grid. */
@@ -44,6 +44,7 @@ export default function ConditionRow({
             {toggle.label && <span>{toggle.label}</span>}
             <input
               type="checkbox"
+              id={toggle.controlId}
               aria-label={toggle.label ?? title}
               checked={toggle.checked}
               onChange={(event) => toggle.onChange(event.target.checked)}

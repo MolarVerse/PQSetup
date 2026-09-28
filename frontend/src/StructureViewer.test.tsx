@@ -64,6 +64,9 @@ describe("StructureViewer cell presentation", () => {
 
     expect(markup).not.toContain('class="cell-edge');
     expect(markup).toContain('title="Preview box"');
+    expect(markup).toContain('aria-pressed="true"><svg');
+    expect(markup).toContain("Fit atoms");
+    expect(markup).toContain("Fit cell");
     expect(markup).not.toContain("No cell");
   });
 
