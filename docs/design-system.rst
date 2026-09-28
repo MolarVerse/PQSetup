@@ -19,15 +19,31 @@ Commit ``package.json`` and ``package-lock.json``. ``npm ci`` then installs the
 same package version in CI and on another machine. React 19 and Lucide are peer
 dependencies; the consuming app supplies them.
 
+Choose the import that matches the UI:
+
+* For shared React controls, import ``styles.css`` before the app's layout CSS.
+  It includes tokens, base styles, and component rules.
+* For an app with its own controls, import only ``tokens.css``. For example,
+  PQViewer keeps its viewer dialogs and toolbars while using the common palette.
+  The full stylesheet has unscoped class selectors such as
+  ``.command-palette`` and ``.notice`` that can affect unrelated components
+  with the same names.
+
 .. code-block:: tsx
 
+   // App using shared controls, such as PQEnalyzer Web
    import "@molarverse/pq-design/styles.css";
    import { Field, Modal } from "@molarverse/pq-design";
 
-Import the shared CSS before the app's layout CSS. The package sets the
-palette, font, focus treatment and common control styles. Keep product-specific
-layout rules in the consuming app. ``tokens.css`` and ``tokens.json`` are also
-exported for consumers that only need the palette.
+.. code-block:: tsx
+
+   // App using its own controls, such as PQViewer
+   import "@molarverse/pq-design/tokens.css";
+   import "./viewer.css";
+
+Keep product-specific layout rules in the consuming app. ``tokens.json`` is
+also exported for non-CSS consumers. The CSS font stack prefers IBM Plex Mono;
+apps that need that exact face must supply its font files.
 
 Change the shared design
 ------------------------

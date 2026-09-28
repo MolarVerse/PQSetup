@@ -21,9 +21,12 @@ import "@molarverse/pq-design/styles.css";
 import { ConditionRow, Field, Info, Modal, Toggle } from "@molarverse/pq-design";
 ```
 
-Import the shared stylesheet before app-specific layout rules. Consumers that
-only need the palette can import `@molarverse/pq-design/tokens.css` or read
-`@molarverse/pq-design/tokens.json`.
+Import the shared stylesheet before app-specific layout rules when using the
+shared React controls. Its component selectors are global (including
+`.command-palette` and `.notice`), so an app with its own components should
+import only `@molarverse/pq-design/tokens.css` and keep its own component CSS.
+`tokens.json` is available for non-CSS consumers. The CSS font stack prefers
+IBM Plex Mono; apps requiring that exact face must supply its font files.
 
 ## Package contents
 
