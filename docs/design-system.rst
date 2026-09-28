@@ -13,7 +13,7 @@ From the consumer's frontend directory:
 
 .. code-block:: bash
 
-   npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.0/molarverse-pq-design-0.1.0.tgz"
+   npm install "https://github.com/MolarVerse/PQSetup/releases/download/pq-design-v0.1.1/molarverse-pq-design-0.1.1.tgz"
 
 Commit ``package.json`` and ``package-lock.json``. ``npm ci`` then installs the
 same package version in CI and on another machine. React 19 and Lucide are peer
