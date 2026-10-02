@@ -5,6 +5,17 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-02
+
+### Changed
+
+- Consume the standalone `@molarverse/pq-design` 0.1.2 release and keep its
+  source, tests, and release workflow in the PQDesign repository.
+
+### Fixed
+
+- Reject ports outside the usable TCP range before starting the local server.
+
 ## [0.2.3] - 2026-09-28
 
 ### Fixed

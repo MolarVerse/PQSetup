@@ -179,14 +179,14 @@ def test_non_finite_ase_coordinates_are_rejected() -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
 
     for value in ("nan", "inf", "-inf"):
-        content = f"1\\ninvalid\\nH {value} 0 0\\n".encode()
+        content = f"1\ninvalid\nH {value} 0 0\n".encode()
         response = client.post(
             "/api/structure/analyze",
             files={"file": ("invalid.xyz", content, "text/plain")},
         )
 
         assert response.status_code == 400
-        assert isinstance(response.json()["detail"], str)
+        assert response.json()["detail"] == "All coordinates must be finite."
 
 
 def test_ase_format_named_without_an_extension_is_supported() -> None:
@@ -463,6 +463,17 @@ def test_pq_executable_option_works_before_or_after_serve() -> None:
 def test_serve_rejects_network_bind_addresses() -> None:
     with pytest.raises(SystemExit):
         build_parser().parse_args(["serve", "--host", "0.0.0.0"])
+
+
+@pytest.mark.parametrize("port", ["0", "-1", "65536"])
+def test_serve_rejects_ports_without_a_usable_browser_address(
+    port: str,
+    capsys,
+) -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["serve", "--port", port])
+
+    assert "port must be between 1 and 65535" in capsys.readouterr().err
 
 
 def test_cli_import_does_not_probe_the_web_application() -> None:
