@@ -17,6 +17,18 @@ from .runners import apply_pq_capabilities, detect_runners
 from .validation import validate_input_file
 
 
+def _port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "port must be an integer between 1 and 65535"
+        ) from error
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return port
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pqsetup",
@@ -40,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("127.0.0.1", "localhost"),
         default="127.0.0.1",
     )
-    serve.add_argument("--port", default=8888, type=int)
+    serve.add_argument("--port", default=8888, type=_port)
     serve.add_argument("--no-browser", action="store_true")
     serve.add_argument(
         "--pq-executable",
