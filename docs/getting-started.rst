@@ -46,6 +46,10 @@ avoid opening a browser:
 
    pqsetup serve --port 8890 --no-browser
 
+To run PQSetup on a server or cluster and use it from your desktop, keep the
+server on loopback and connect through SSH. See :doc:`remote-access` for direct,
+institutional VPN and compute-node workflows.
+
 Create the first package
 ------------------------
 
@@ -112,6 +116,7 @@ Next
 ----
 
 * :doc:`Build a run <workflow>`
+* :doc:`Use PQSetup remotely <remote-access>`
 * :doc:`Understand validation <validation>`
 * :doc:`Inspect the package format <run-packages>`
 * :doc:`Resolve a setup problem <troubleshooting>`
