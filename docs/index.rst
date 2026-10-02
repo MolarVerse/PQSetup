@@ -7,8 +7,9 @@ PQSetup prepares and validates simulation inputs for PQ in a local browser
 interface. It turns a structure and simulation plan into a portable run package
 whose inputs can be inspected before execution.
 
-:doc:`Get started <getting-started>` · :doc:`Build a run <workflow>` ·
-:doc:`Validation <validation>` · :doc:`Command line <reference/cli>`
+:doc:`Get started <getting-started>` · :doc:`Remote access <remote-access>` ·
+:doc:`Build a run <workflow>` · :doc:`Validation <validation>` ·
+:doc:`Command line <reference/cli>`
 
 .. note::
 
@@ -53,6 +54,12 @@ Documentation
       :link-type: doc
 
       Structure, method, run conditions, output, and shortcuts.
+
+   .. grid-item-card:: Remote access
+      :link: remote-access
+      :link-type: doc
+
+      Use PQSetup on a server or cluster through SSH and VPN.
 
    .. grid-item-card:: Validation
       :link: validation
@@ -108,6 +115,7 @@ Documentation
    :caption: Contents
 
    getting-started
+   remote-access
    workflow
    validation
    run-packages

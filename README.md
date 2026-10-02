@@ -60,10 +60,32 @@ pqsetup validate run.in
 PQSetup does not submit jobs or run the simulation. It writes inputs for the
 stable PQ v0.7.0 release.
 
+## Remote access
+
+Run PQSetup on the remote machine while keeping its server on loopback:
+
+```bash
+pqsetup serve --no-browser --port 8888
+```
+
+From your desktop, open an SSH tunnel and then visit
+`http://localhost:8888`:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:8888:127.0.0.1:8888 user@server
+```
+
+When working from home, connect to the institutional VPN first and confirm
+that `ssh user@server` works. See [Remote access](https://molarverse.github.io/PQSetup/remote-access.html)
+for VPN, login-node and compute-node workflows.
+
 ## Documentation
 
 - [Getting started](https://molarverse.github.io/PQSetup/getting-started.html) —
   install, environment checks, and the first run package
+- [Remote access](https://molarverse.github.io/PQSetup/remote-access.html) —
+  use PQSetup on a server or cluster through SSH and an institutional VPN
 - [Build a run](https://molarverse.github.io/PQSetup/workflow.html) —
   Structure, Method, Run, Output, and keyboard shortcuts
 - [Validation](https://molarverse.github.io/PQSetup/validation.html) — local
