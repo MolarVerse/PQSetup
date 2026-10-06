@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import tempfile
 import zipfile
+from collections.abc import Awaitable, Callable
 from hashlib import sha256
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -65,7 +67,15 @@ _MAX_SETUP_FILE_BYTES = 100 * 1024 * 1024
 _TRUSTED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "testserver"]
 
 
-def create_app(*, pq_executable: str | None = None) -> FastAPI:
+def create_app(
+    *,
+    pq_executable: str | None = None,
+    logger: logging.Logger | None = None,
+) -> FastAPI:
+    event_log = logger if logger is not None else logging.Logger("PQSetup.api")
+    if logger is None:
+        event_log.addHandler(logging.NullHandler())
+        event_log.propagate = False
     app = FastAPI(
         title="PQSetup",
         version=__version__,
@@ -84,6 +94,41 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
         ),
         pq.capabilities,
     )
+    app.state.pq = pq
+    app.state.runners = runners
+
+    @app.middleware("http")
+    async def log_request(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        try:
+            response = await call_next(request)
+        except Exception:
+            event_log.exception("Request failed · %s %s", request.method, request.url.path)
+            raise
+        if response.status_code >= 500:
+            event_log.error(
+                "Request failed · %s %s · HTTP %d",
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        elif response.status_code >= 400:
+            event_log.warning(
+                "Request rejected · %s %s · HTTP %d",
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        else:
+            event_log.debug(
+                "%s %s · HTTP %d",
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        return response
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -108,7 +153,13 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             structure = parse_structure_bytes(
                 file.filename or "structure", await _read_structure(file)
             )
-            return analyze_structure(structure)
+            result = analyze_structure(structure)
+            event_log.info(
+                "Structure loaded · %d atoms · %s",
+                result.summary.atom_count,
+                structure.source_format,
+            )
+            return result
         except (UnicodeDecodeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -129,7 +180,14 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             structure = parse_structure_bytes(
                 file.filename or "structure", await _read_structure(file)
             )
-            return perturb_structure(structure, width, seed)
+            result = perturb_structure(structure, width, seed)
+            event_log.info(
+                "Structure perturbed · %d atoms · σ=%g Å · seed=%d",
+                result.summary.atom_count,
+                result.sigma_angstrom,
+                result.seed,
+            )
+            return result
         except (UnicodeDecodeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -145,8 +203,7 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             runners=runners,
         )
 
-    @app.post("/api/project/export")
-    def export_project(request: ExportRequest) -> Response:
+    def export_archive(request: ExportRequest) -> Response:
         request = _with_seeded_companions(
             request,
             pq_executable=pq.executable if pq.found else None,
@@ -274,6 +331,16 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
             },
         )
 
+    @app.post("/api/project/export")
+    def export_project(request: ExportRequest) -> Response:
+        response = export_archive(request)
+        event_log.info(
+            "Project exported · %s.zip · %d bytes",
+            _safe_name(request.project_name),
+            len(response.body),
+        )
+        return response
+
     frontend_candidates = (
         Path(__file__).resolve().parents[1] / "frontend" / "dist",
         Path(__file__).resolve().parent / "static",
@@ -284,6 +351,8 @@ def create_app(*, pq_executable: str | None = None) -> FastAPI:
     )
     if frontend:
         app.mount("/", StaticFiles(directory=frontend, html=True), name="ui")
+    else:
+        event_log.warning("Web interface assets were not found")
     return app
 
 

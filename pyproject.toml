@@ -33,6 +33,8 @@ dependencies = [
   "numpy>=2.0",
   "pydantic>=2.10",
   "python-multipart>=0.0.18",
+  "rich>=13.9",
+  "rich-argparse>=1.7",
   "scipy>=1.13",
   "uvicorn>=0.34",
 ]
@@ -66,6 +68,7 @@ path = "pqsetup/__init__.py"
 packages = ["pqsetup"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"pqsetup/design/tokens.json" = "pqsetup/design/tokens.json"
 "pqsetup/examples/water_moldescriptor.dat" = "pqsetup/examples/water_moldescriptor.dat"
 "pqsetup/examples/water_dftb_in.template" = "pqsetup/examples/water_dftb_in.template"
 

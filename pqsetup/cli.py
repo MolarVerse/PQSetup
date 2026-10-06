@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import socket
 import sys
 import threading
 import webbrowser
@@ -10,11 +12,11 @@ from pathlib import Path
 import uvicorn
 
 from . import __version__
+from ._terminal import terminal
 from .executable import discover_pq
 from .models import DoctorReport
 from .pq_validation import PQValidationError, validate_pq_input
 from .runners import apply_pq_capabilities, detect_runners
-from .validation import validate_input_file
 
 
 def _port(value: str) -> int:
@@ -30,7 +32,7 @@ def _port(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = terminal.argument_parser(
         prog="pqsetup",
         description="Prepare and validate PQ simulation inputs.",
     )
@@ -44,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
         dest="pq_executable",
         help="Use this PQ executable.",
     )
+    parser.add_argument(
+        "--log-level",
+        choices=("debug", "info", "warning", "error"),
+        default="info",
+        help="Server event logging (default: info).",
+    )
     subcommands = parser.add_subparsers(dest="command")
 
     serve = subcommands.add_parser("serve", help="Open the local interface.")
@@ -54,6 +62,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--port", default=8888, type=_port)
     serve.add_argument("--no-browser", action="store_true")
+    serve.add_argument(
+        "--log-level",
+        dest="command_log_level",
+        choices=("debug", "info", "warning", "error"),
+        help="Server event logging (default: info).",
+    )
     serve.add_argument(
         "--pq-executable",
         dest="command_pq_executable",
@@ -84,24 +98,7 @@ def main(arguments: list[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     command = args.command or "serve"
     if command == "serve":
-        from .api import create_app
-
-        host = getattr(args, "host", "127.0.0.1")
-        port = getattr(args, "port", 8888)
-        no_browser = getattr(args, "no_browser", False)
-        pq_executable = (
-            getattr(args, "command_pq_executable", None) or args.pq_executable
-        )
-        if not no_browser:
-            threading.Timer(
-                0.8, lambda: webbrowser.open(f"http://{host}:{port}")
-            ).start()
-        uvicorn.run(
-            create_app(pq_executable=pq_executable),
-            host=host,
-            port=port,
-        )
-        return 0
+        return _serve(args)
     if command == "doctor":
         pq = discover_pq(
             getattr(args, "command_pq_executable", None) or args.pq_executable
@@ -127,6 +124,8 @@ def main(arguments: list[str] | None = None) -> int:
             _print_doctor(report)
         return 0 if report.pq.found else 1
     if command == "validate":
+        from .validation import validate_input_file
+
         diagnostics = validate_input_file(args.input_file)
         core_diagnostics = []
         core_valid = True
@@ -210,6 +209,102 @@ def main(arguments: list[str] | None = None) -> int:
         return 1 if has_local_error or not core_valid else 0
     parser.print_help()
     return 2
+
+
+def _serve(args: argparse.Namespace) -> int:
+    from .api import create_app
+
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 8888)
+    no_browser = getattr(args, "no_browser", False)
+    level = getattr(args, "command_log_level", None) or args.log_level
+    terminal.configure_logging(level)
+    url = f"http://{host}:{port}"
+
+    # Bind before probing the environment or opening a browser. Passing this
+    # socket to Uvicorn also avoids a gap between checking and using the port.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind((host, port))
+        except OSError as error:
+            terminal.log.error("Could not listen on %s: %s", url, error)
+            return 1
+
+        app = create_app(
+            pq_executable=(
+                getattr(args, "command_pq_executable", None) or args.pq_executable
+            ),
+            logger=terminal.log,
+        )
+
+        class BrowserServer(uvicorn.Server):
+            async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+                await super().startup(sockets=sockets)
+                if not self.started:
+                    return
+                pq = app.state.pq
+                ready = [
+                    runner.label
+                    for runner in app.state.runners
+                    if runner.ready and runner.available_in_pq is not False
+                ]
+                terminal.startup(
+                    url,
+                    details=[
+                        (
+                            "PQ",
+                            (pq.version or "detected") if pq.found else "not detected",
+                        ),
+                        ("Runners", ", ".join(ready) or "none ready"),
+                    ],
+                )
+                terminal.log.info("Ready at %s", url)
+                if not no_browser:
+                    threading.Thread(
+                        target=_open_browser,
+                        args=(url,),
+                        daemon=True,
+                        name="pqsetup-browser",
+                    ).start()
+
+            async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+                terminal.log.info("Stopping server")
+                await super().shutdown(sockets=sockets)
+                terminal.log.info("Server stopped")
+
+        config = uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_config=None,
+            access_log=level == "debug",
+        )
+        # Uvicorn owns these named loggers. Forward its warnings and errors
+        # through our handler; normal lifecycle events already have app logs.
+        dependency_level = (
+            "DEBUG" if level == "debug" else "ERROR" if level == "error" else "WARNING"
+        )
+        for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+            dependency_logger = logging.getLogger(name)
+            dependency_logger.handlers = list(terminal.log.handlers)
+            dependency_logger.propagate = False
+            dependency_logger.setLevel(dependency_level)
+        try:
+            BrowserServer(config).run(sockets=[listener])
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
+def _open_browser(url: str) -> None:
+    try:
+        opened = webbrowser.open(url)
+    except (OSError, webbrowser.Error) as error:
+        terminal.log.warning("Browser could not open: %s; open %s", error, url)
+        return
+    if not opened:
+        terminal.log.warning("Browser could not open; open %s", url)
 
 
 def _print_doctor(report: DoctorReport) -> None:
