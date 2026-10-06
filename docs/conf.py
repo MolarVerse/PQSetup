@@ -30,18 +30,10 @@ html_title = "PQSetup"
 html_logo = "assets/pq-logo.png"
 html_favicon = "assets/pq-logo.png"
 html_static_path = ["_static"]
-html_css_files = ["custom.css"]
+html_css_files = ["pq-tokens.css", "pq-docs.css"]
 
 html_theme_options = {
     "sidebar_hide_name": False,
-    "light_css_variables": {
-        "color-brand-primary": "#1f718f",
-        "color-brand-content": "#176c8c",
-    },
-    "dark_css_variables": {
-        "color-brand-primary": "#65bddb",
-        "color-brand-content": "#65bddb",
-    },
     "source_repository": "https://github.com/MolarVerse/PQSetup/",
     "source_branch": "main",
     "source_directory": "docs/",

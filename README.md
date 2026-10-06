@@ -7,112 +7,60 @@
 
 # PQSetup
 
-Prepare and validate PQ simulation inputs in a local browser interface.
+Prepare and inspect portable input packages for
+[PQ](https://github.com/MolarVerse/PQ) in a local browser. PQSetup writes
+inputs for the stable PQ v0.7.0 release; PQ performs the simulation.
 
-PQSetup builds the input package. [PQ](https://github.com/MolarVerse/PQ) runs it.
+## Install and open
 
-[Documentation](https://molarverse.github.io/PQSetup/)
-
-## Install
-
-Python 3.11 or newer. The UI ships inside the package; Node.js is not required.
+PQSetup requires Python 3.11 or newer. The browser interface is included in
+the package.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install MolarVerse-PQSetup
-```
-
-From a local clone (contributors):
-
-```bash
-python -m pip install .
-```
-
-## Quick Start
-
-```bash
 pqsetup
 ```
 
-Keep the water example, choose a method, review the inputs, download the
-package, then run it where PQ is installed:
+## First package
 
-```bash
-unzip water-nvt.zip -d water-nvt
-cd water-nvt
-./run.sh /path/to/PQ
-```
+| Stage | Check before continuing |
+| --- | --- |
+| Structure | Import the intended structure and confirm atom count, formula, and cell type. |
+| Method | Choose QM or MM, then supply the calculator or force-field files it needs. |
+| Run | Set the ensemble, coupling, timestep, length, and optional equilibration stage. |
+| Output | Resolve every error and inspect each generated PQ input before packaging. |
 
-Check what this machine can see:
+![PQSetup structure, method, and run controls](docs/assets/screenshots/workspace.png)
+
+The bundled water structure is a short vacuum example. Replace its structure,
+method, and run length with values suitable for the scientific question.
+
+On the machine that will run PQ, inspect the environment, unpack the download,
+validate an input when parser validation is available, and run the package:
 
 ```bash
 pqsetup doctor
-pqsetup --pq-executable /path/to/PQ doctor
+unzip water-nvt.zip -d water-nvt
+cd water-nvt
+pqsetup validate run-01.in
+./run.sh /path/to/PQ
 ```
 
-Validate an existing input:
+PQ execution and scheduler submission remain separate. Validation checks
+inputs and the available software environment; model choice, stability,
+equilibration, sampling, and convergence require scientific review.
 
-```bash
-pqsetup validate run.in
-```
+## Manual
 
-PQSetup does not submit jobs or run the simulation. It writes inputs for the
-stable PQ v0.7.0 release.
+- [Getting started](https://molarverse.github.io/PQSetup/getting-started.html)
+- [Build a run](https://molarverse.github.io/PQSetup/workflow.html)
+- [Validation and its limits](https://molarverse.github.io/PQSetup/validation.html)
+- [PQ, calculator, and structure compatibility](https://molarverse.github.io/PQSetup/reference/compatibility.html)
+- [Run-package contents and execution order](https://molarverse.github.io/PQSetup/run-packages.html)
+- [Remote access through VPN and SSH](https://molarverse.github.io/PQSetup/remote-access.html)
 
-## Remote access
-
-Run PQSetup on the remote machine while keeping its server on loopback:
-
-```bash
-pqsetup serve --no-browser --port 8888
-```
-
-From your desktop, open an SSH tunnel and then visit
-`http://localhost:8888`:
-
-```bash
-ssh -N -o ExitOnForwardFailure=yes \
-  -L 127.0.0.1:8888:127.0.0.1:8888 user@server
-```
-
-When working from home, connect to the institutional VPN first and confirm
-that `ssh user@server` works. See [Remote access](https://molarverse.github.io/PQSetup/remote-access.html)
-for VPN, login-node and compute-node workflows.
-
-## Documentation
-
-- [Getting started](https://molarverse.github.io/PQSetup/getting-started.html) —
-  install, environment checks, and the first run package
-- [Remote access](https://molarverse.github.io/PQSetup/remote-access.html) —
-  use PQSetup on a server or cluster through SSH and an institutional VPN
-- [Build a run](https://molarverse.github.io/PQSetup/workflow.html) —
-  Structure, Method, Run, Output, and keyboard shortcuts
-- [Validation](https://molarverse.github.io/PQSetup/validation.html) — local
-  preflight, environment discovery, and PQ parser checks
-- [Run packages](https://molarverse.github.io/PQSetup/run-packages.html) —
-  package layout, restart order, and the project manifest
-- [Command line](https://molarverse.github.io/PQSetup/reference/cli.html) —
-  `serve`, `doctor`, and `validate`
-- [Compatibility](https://molarverse.github.io/PQSetup/reference/compatibility.html)
-  — supported structure formats, cells, and calculators
-- [Advanced settings](https://molarverse.github.io/PQSetup/reference/settings.html)
-  — the optional PQ keywords per calculator and force field
-- [Troubleshooting](https://molarverse.github.io/PQSetup/troubleshooting.html)
-  — blocked packages, missing PQ and runtime failures
-- [Shared design package](https://molarverse.github.io/PQSetup/design-system.html)
-  — versioned tokens, CSS and React controls for other PQ web tools
-
-## Development
-
-```bash
-python -m pip install -e ".[test]"
-npm --prefix frontend ci
-python -m pytest
-npm --prefix frontend test
-npm --prefix frontend run build
-```
-
-The interface uses [`@molarverse/pq-design`](https://github.com/MolarVerse/PQDesign),
-the shared design package for the PQ web tools. The frontend locks a public
-release archive in `package-lock.json` and needs no sibling checkout.
+The [complete manual](https://molarverse.github.io/PQSetup/) also covers the
+command line, advanced settings, troubleshooting, shared PQDesign components,
+and [contributor setup](https://molarverse.github.io/PQSetup/development.html).

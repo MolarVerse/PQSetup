@@ -28,7 +28,7 @@ unreleased keywords merely because they exist on a development branch (see
 
 Calculator availability is reported separately from PQ parser support.
 
-The guided QM methods are DFTB+, ASE–DFTB+, ASE–xTB, PySCF, Turbomole,
+The guided QM methods are DFTB+, ASE · DFTB+, ASE · xTB, PySCF, Turbomole,
 MACE-MP, and MACE-OFF. PQ 0.7.0 also accepts FeNNol inputs, but PQSetup does
 not yet package its binary model file and therefore does not present a partial
 FeNNol workflow.

@@ -89,10 +89,10 @@ Molecular mechanics
        ``rattle-iter``, ``mshake-tolerance``, ``mshake-iter``,
        ``distance-constraints``
      - Same as for QM, plus M-SHAKE. ``shake``: off, SHAKE + RATTLE (``on``),
-       or M-SHAKE rigid bodies plus SHAKE (``mshake``). Choosing M-SHAKE adds a required *M-SHAKE
-       geometries* file (``mshake_file``) to the Files row below, one
-       reference geometry per molecule type. Bond and distance constraints
-       themselves come from the topology file.
+       or M-SHAKE rigid bodies plus SHAKE (``mshake``). Choosing M-SHAKE adds
+       a required *M-SHAKE geometries* file (``mshake_file``) to the Files row
+       below, one reference geometry per molecule type. Bond and distance
+       constraints themselves come from the topology file.
 
 Run › Steps › Resets
 --------------------
@@ -102,13 +102,16 @@ These keywords are not calculator settings: PQ applies them in its MD engine
 runner. They therefore live under **Run › Steps** behind the *Resets* button,
 next to the step count they refer to, and are echoed there.
 
-* **Temperature rescaling** — ``nscale`` (first *n* steps), ``fscale`` (every
-  *n* steps): hard velocity scaling to the target temperature. Offered for
-  NVT and NPT only; PQ would scale an NVE run to 0 K, so the keys are refused
-  there.
-* **Drift removal** — ``nreset`` / ``freset`` (total momentum),
-  ``nreset_angular`` / ``freset_angular`` (angular momentum),
-  ``freset_forces`` (net force): as a number of initial steps or an interval.
+Temperature rescaling
+   ``nscale`` applies hard velocity scaling for the first *n* steps;
+   ``fscale`` repeats it every *n* steps. These controls are available for NVT
+   and NPT. PQ would scale an NVE run to 0 K, so the keys are refused there.
+
+Drift removal
+   ``nreset`` / ``freset`` remove total momentum,
+   ``nreset_angular`` / ``freset_angular`` remove angular momentum, and
+   ``freset_forces`` removes net force. Each value is a number of initial
+   steps or an interval.
 
 Blank means never. Optimisations ignore all of them.
 
@@ -133,7 +136,7 @@ What validation checks
 Keywords that do not apply to the current job (MM keywords in a QM run, a
 calculator-specific keyword for another calculator) raise a warning; the
 page strips them from the input regardless. Keywords PQSetup does not know
-pass through with a warning — PQ has the final say.
+pass through with a warning; PQ has the final say.
 
 Keywords PQSetup manages itself
 -------------------------------

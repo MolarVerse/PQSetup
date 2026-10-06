@@ -1,12 +1,12 @@
 Getting started
 ===============
 
-PQSetup prepares PQ input packages in a local browser. It does not install or
-run PQ. Install `PQ <https://github.com/MolarVerse/PQ>`_ separately to validate
-deeply and to execute ``run.sh``.
+PQSetup prepares PQ input packages in a local browser. Install
+`PQ <https://github.com/MolarVerse/PQ>`_ separately for parser validation and
+execution.
 
-You can design and export packages without a detected calculator or PQ
-executable. Missing checks are reported instead of silently passed.
+You can prepare packages without a detected calculator or PQ executable. The
+interface reports which validation layers ran.
 
 Requirements
 ------------
@@ -53,14 +53,15 @@ institutional VPN and compute-node workflows.
 Create the first package
 ------------------------
 
-#. **Structure** — keep the water example, or import a structure (or a whole
-   run folder).
-#. **Method** — choose QM with one calculator, or MM with a force-field mode
+#. In **Structure**, keep the water example or import a structure or run
+   folder.
+#. In **Method**, choose QM with one calculator or MM with a force-field mode
    and its files.
-#. **Run** — pick NVE, NVT or NPT, set temperature, pressure, steps and the
-   number of chained runs; switch on equilibration if needed.
-#. **Output** — check the Review summary and every generated input, then press
-   **Package** to download the ZIP.
+#. In **Run**, choose NVE, NVT or NPT; set the thermodynamic conditions,
+   timestep, length, and number of chained runs; then add equilibration if
+   needed.
+#. In **Output**, check the Review summary and every generated input, then
+   press **Package** to download the ZIP.
 
 The defaults are editable starting points, not validated production
 protocols. The water example is one molecule in a vacuum cell; use an
@@ -105,12 +106,9 @@ Unpack the download on the machine where PQ and the calculator are available:
    ./run.sh /opt/pq/bin/PQ
 
 The launcher follows the recorded input order, writes output to ``run-logs/``,
-and stops after the first failed or incomplete PQ run. It does not install PQ
-or a calculator. See :doc:`run-packages` for the archive contents and restart
-chain.
-
-PQSetup does not submit a scheduler job. Transfer and submission remain under
-the user's control.
+and stops after the first failed or incomplete PQ run. Software installation,
+file transfer, and scheduler submission remain under the user's control. See
+:doc:`run-packages` for the archive contents and restart chain.
 
 Next
 ----
