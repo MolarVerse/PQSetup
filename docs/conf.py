@@ -26,11 +26,12 @@ copybutton_prompt_is_regexp = True
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
 html_theme = "furo"
+html_logo = "_static/pq-logo.png"
+html_favicon = "_static/pq-logo.png"
 html_title = "PQSetup"
-html_logo = "assets/pq-logo.png"
-html_favicon = "assets/pq-logo.png"
 html_static_path = ["_static"]
 html_css_files = ["pq-tokens.css", "pq-docs.css"]
+html_js_files = ["pq-docs.js"]
 
 html_theme_options = {
     "sidebar_hide_name": False,
