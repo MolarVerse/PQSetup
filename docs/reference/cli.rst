@@ -13,6 +13,37 @@ Running ``pqsetup`` without a subcommand starts the local interface.
    pqsetup serve --no-browser
 
 The server only accepts ``127.0.0.1`` or ``localhost``.
+The startup screen shows the browser address and detected PQ environment.
+The browser opens after the server is ready. Stop with :kbd:`Ctrl+C`.
+
+Server logs
+-----------
+
+Structure loading, perturbation, exports, errors and shutdown appear in the
+terminal. Routine polling and static requests are quiet at ``info``.
+
+.. code-block:: bash
+
+   pqsetup serve --log-level debug --no-browser
+   pqsetup serve --no-browser 2> pqsetup.log
+
+Logs go to standard error; the startup address goes to standard output.
+Redirected output is plain text. ``NO_COLOR=1`` disables terminal colors.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Level
+     - Events
+   * - ``debug``
+     - Actions, requests and server details
+   * - ``info`` (default)
+     - Actions, readiness and shutdown
+   * - ``warning``
+     - Rejected requests and errors
+   * - ``error``
+     - Failed requests and server errors
 
 Inspect the environment
 -----------------------

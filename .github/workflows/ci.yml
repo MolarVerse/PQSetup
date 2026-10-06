@@ -67,6 +67,11 @@ jobs:
       - name: Install
         run: npm --prefix frontend ci
 
+      - name: Verify shared terminal assets
+        run: |
+          cmp frontend/node_modules/@molarverse/pq-design/python/pq_terminal.py pqsetup/_design_terminal.py
+          cmp frontend/node_modules/@molarverse/pq-design/tokens.json pqsetup/design/tokens.json
+
       - name: Test
         run: npm --prefix frontend test
 

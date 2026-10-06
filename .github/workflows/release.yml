@@ -94,6 +94,10 @@ jobs:
           npm run build
       - name: Verify bundled interface
         run: git diff --exit-code -- pqsetup/static
+      - name: Verify shared terminal assets
+        run: |
+          cmp frontend/node_modules/@molarverse/pq-design/python/pq_terminal.py pqsetup/_design_terminal.py
+          cmp frontend/node_modules/@molarverse/pq-design/tokens.json pqsetup/design/tokens.json
       - name: Build Python distributions
         run: |
           python -m build
@@ -142,6 +146,7 @@ jobs:
           import pqsetup
 
           assert (files("pqsetup") / "static" / "index.html").is_file()
+          assert (files("pqsetup") / "design" / "tokens.json").is_file()
           assert pqsetup.__version__ == os.environ["RELEASE_TAG"].removeprefix("v")
           PY
           pqsetup --version

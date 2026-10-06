@@ -458,6 +458,8 @@ def test_pq_executable_option_works_before_or_after_serve() -> None:
     assert default_serve.pq_executable == "/tmp/PQ-custom"
     assert explicit_serve.command_pq_executable == "/tmp/PQ-other"
     assert parser.parse_args(["serve"]).port == 8888
+    assert parser.parse_args(["--log-level", "debug", "serve"]).log_level == "debug"
+    assert parser.parse_args(["serve", "--log-level", "warning"]).command_log_level == "warning"
 
 
 def test_serve_rejects_network_bind_addresses() -> None:
@@ -476,14 +478,15 @@ def test_serve_rejects_ports_without_a_usable_browser_address(
     assert "port must be between 1 and 65535" in capsys.readouterr().err
 
 
-def test_cli_import_does_not_probe_the_web_application() -> None:
+def test_cli_import_keeps_web_and_structure_processing_lazy() -> None:
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             (
                 "import sys; import pqsetup.cli; "
-                "raise SystemExit('pqsetup.api' in sys.modules)"
+                "raise SystemExit(any(name in sys.modules for name in "
+                "('pqsetup.api', 'ase', 'numpy', 'scipy')))"
             ),
         ],
         capture_output=True,

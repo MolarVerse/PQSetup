@@ -13,7 +13,7 @@ From the consumer's frontend directory:
 
 .. code-block:: bash
 
-   npm install "https://github.com/MolarVerse/PQDesign/releases/download/v0.1.2/molarverse-pq-design-0.1.2.tgz"
+   npm install "https://github.com/MolarVerse/PQDesign/releases/download/v0.1.3/molarverse-pq-design-0.1.3.tgz"
 
 Commit ``package.json`` and ``package-lock.json``. ``npm ci`` then installs the
 same package version in CI and on another machine. React 19 and Lucide are peer
@@ -44,6 +44,18 @@ Choose the import that matches the UI:
 Keep product-specific layout rules in the consuming app. ``tokens.json`` is
 also exported for non-CSS consumers. The CSS font stack prefers IBM Plex Mono;
 apps that need that exact face must supply its font files.
+
+Terminal
+--------
+
+The Python application bundles unchanged copies of ``python/pq_terminal.py``
+and ``tokens.json`` from the same archive. ``pqsetup/_terminal.py`` supplies
+the app name, version and palette. Rich and rich-argparse provide terminal
+rendering and help; server actions use standard Python logging.
+
+CI compares these assets with the installed design package. Change the shared
+renderer in PQDesign, then update the archive URL, lockfile and Python copies
+together.
 
 Change the shared design
 ------------------------

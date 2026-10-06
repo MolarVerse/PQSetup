@@ -5,6 +5,22 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-06
+
+### Changed
+
+- Consume PQDesign 0.1.3 for shared terminal help, startup identity and colors.
+- Report structure loading, perturbation, project exports, request errors and
+  shutdown; keep polling and static requests quiet at the default log level.
+- Add `--log-level` for server events.
+- Keep scientific data processing imports out of help, version and environment
+  checks.
+
+### Fixed
+
+- Open the browser only after the application and listener are ready. Report
+  occupied ports without opening a browser.
+
 ## [0.2.4] - 2026-10-02
 
 ### Changed
