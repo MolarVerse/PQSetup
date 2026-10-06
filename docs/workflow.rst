@@ -65,9 +65,9 @@ MM
    set the Coulomb cutoff and, for a generated cell, the density.
 
 **Advanced** opens the optional PQ keywords for the selected calculator or
-force field (see :doc:`reference/settings`); run-level extras such as
-kinetic resets live under Run › Steps › *Resets* instead. Keywords in force are listed
-under the button exactly as they will appear in the input file, e.g.
+force field (see :doc:`reference/settings`). Run-level extras such as kinetic
+resets live under Run › Steps › *Resets*. Keywords in force are listed under
+the button exactly as they will appear in the input file, e.g.
 ``xtb_method = gfn1-xtb;``. Switching program or interaction model keeps your
 choices in memory, but only the keywords that apply to the current selection
 reach the input.
