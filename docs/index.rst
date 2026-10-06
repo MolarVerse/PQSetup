@@ -3,19 +3,18 @@
 PQSetup
 ========
 
-PQSetup prepares and validates simulation inputs for PQ in a local browser
-interface. It turns a structure and simulation plan into a portable run package
-whose inputs can be inspected before execution.
+Prepare, inspect, and package PQ simulation inputs in a local browser.
 
-.. note::
+.. figure:: assets/screenshots/workspace.png
+   :alt: PQSetup workspace showing structure, method, and run controls
+   :class: pq-workspace
+   :align: center
 
-   PQSetup is a pre-release project. File and Python interfaces may change
-   before 1.0.
+   Structure, method, run conditions, and output follow one top-to-bottom
+   workflow.
 
-Quick start
------------
-
-PQSetup requires Python 3.11 or newer.
+Start
+-----
 
 .. code-block:: bash
 
@@ -24,86 +23,47 @@ PQSetup requires Python 3.11 or newer.
    python -m pip install MolarVerse-PQSetup
    pqsetup
 
-The interface is included in the Python package. Node.js is not required.
+Python 3.11 or newer is required. The interface is included in the package.
 
-.. figure:: assets/screenshots/workspace.png
-   :alt: PQSetup structure import and preflight workspace
-   :class: pq-workspace
-   :align: center
+Three steps
+-----------
 
-   Structure, Method and Run on one page; the generated inputs follow below.
+#. Import a structure, choose QM or MM, and add the required method files.
+#. Set the ensemble, coupling, timestep, length, and optional equilibration.
+#. Review the scientific plan and generated PQ inputs, then package the run.
 
-Documentation
--------------
+The bundled water system is a short vacuum example. Replace its structure,
+model, cell, and run length before research use.
 
-.. grid:: 1 1 3 3
-   :gutter: 2
+Manual
+------
 
-   .. grid-item-card:: Getting started
-      :link: getting-started
-      :link-type: doc
+.. list-table::
+   :header-rows: 1
+   :widths: 38 62
 
-      Installation, environment checks, and the first run package.
+   * - Task
+     - Page
+   * - Install and create a first package
+     - :doc:`getting-started`
+   * - Find a control in the interface
+     - :doc:`workflow`
+   * - Understand which checks ran
+     - :doc:`validation`
+   * - Check supported files, cells, and calculators
+     - :doc:`reference/compatibility`
+   * - Inspect advanced PQ keywords
+     - :doc:`reference/settings`
+   * - Run or transfer a package
+     - :doc:`run-packages`
+   * - Use PQSetup through SSH or VPN
+     - :doc:`remote-access`
+   * - Resolve a blocked package or runtime problem
+     - :doc:`troubleshooting`
 
-   .. grid-item-card:: Remote access
-      :link: remote-access
-      :link-type: doc
+.. note::
 
-      Use PQSetup on a server or cluster through SSH and VPN.
-
-   .. grid-item-card:: Build a run
-      :link: workflow
-      :link-type: doc
-
-      Structure, method, run conditions, output, and shortcuts.
-
-   .. grid-item-card:: Validation
-      :link: validation
-      :link-type: doc
-
-      Local preflight, environment discovery, and PQ parser checks.
-
-   .. grid-item-card:: Run packages
-      :link: run-packages
-      :link-type: doc
-
-      Restart order, launch scripts, provenance, and transfer.
-
-   .. grid-item-card:: Command line
-      :link: reference/cli
-      :link-type: doc
-
-      Start the interface, inspect the environment, and validate inputs.
-
-   .. grid-item-card:: Compatibility
-      :link: reference/compatibility
-      :link-type: doc
-
-      PQ schema support, structure formats, cells, and platform notes.
-
-   .. grid-item-card:: Advanced settings
-      :link: reference/settings
-      :link-type: doc
-
-      The optional PQ keywords per calculator and force field.
-
-   .. grid-item-card:: Development
-      :link: development
-      :link-type: doc
-
-      Architecture, the shared design language, and how to contribute.
-
-   .. grid-item-card:: Troubleshooting
-      :link: troubleshooting
-      :link-type: doc
-
-      Resolve blocked packages, missing PQ and runtime failures.
-
-   .. grid-item-card:: Shared design package
-      :link: design-system
-      :link-type: doc
-
-      Install versioned tokens, CSS and controls in other PQ web tools.
+   PQSetup is pre-1.0. File and Python interfaces may change.
 
 .. toctree::
    :hidden:

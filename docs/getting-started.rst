@@ -1,120 +1,93 @@
 Getting started
 ===============
 
-PQSetup prepares PQ input packages in a local browser. Install
-`PQ <https://github.com/MolarVerse/PQ>`_ separately for parser validation and
-execution.
-
-You can prepare packages without a detected calculator or PQ executable. The
-interface reports which validation layers ran.
-
-Requirements
-------------
-
-* Python 3.11 or newer
-* A PQ executable to validate and run the generated inputs
-* The calculator and supporting files required by the chosen method
-
-Install
--------
+Install and open
+----------------
 
 .. code-block:: bash
 
    python3 -m venv .venv
    source .venv/bin/activate
    python -m pip install MolarVerse-PQSetup
-
-From a local clone:
-
-.. code-block:: bash
-
-   python -m pip install .
-
-Node.js is only needed when changing the interface.
-
-Open the interface
-------------------
-
-.. code-block:: bash
-
    pqsetup
 
-PQSetup opens a local page at ``127.0.0.1:8888``. To choose another port or
-avoid opening a browser:
+PQSetup opens at ``http://127.0.0.1:8888``. Python 3.11 or newer is required.
+PQ and the selected calculator are needed on the execution machine.
+
+To choose another local port or suppress automatic browser opening:
 
 .. code-block:: bash
 
    pqsetup serve --port 8890 --no-browser
 
-To run PQSetup on a server or cluster and use it from your desktop, keep the
-server on loopback and connect through SSH. See :doc:`remote-access` for direct,
-institutional VPN and compute-node workflows.
+Keep remote servers on loopback and use an SSH tunnel. The direct, VPN, and
+compute-node commands are in :doc:`remote-access`.
 
-Create the first package
-------------------------
+1. Choose the structure and method
+----------------------------------
 
-#. In **Structure**, keep the water example or import a structure or run
-   folder.
-#. In **Method**, choose QM with one calculator or MM with a force-field mode
-   and its files.
-#. In **Run**, choose NVE, NVT or NPT; set the thermodynamic conditions,
-   timestep, length, and number of chained runs; then add equilibration if
-   needed.
-#. In **Output**, check the Review summary and every generated input, then
-   press **Package** to download the ZIP.
+Import a structure or run folder, confirm its formula, atom count, and cell,
+then choose QM or MM and add the method files.
 
-The defaults are editable starting points, not validated production
-protocols. The water example is one molecule in a vacuum cell; use an
-appropriate structure and run length for research work.
+.. figure:: assets/screenshots/workspace.png
+   :alt: PQSetup structure, method, and run controls
+   :class: pq-workspace
+   :align: center
 
-Before downloading, confirm the intended calculator, ensemble, temperature or
-pressure, timestep, run length, output frequency and restart order in Review.
-Errors block packaging. Warnings remain visible and are written to the project
-manifest. The input preview opens at the first PQ setting; **Show header**
-reveals the complete run card, including the method, duration and file names.
+   The included water system uses ASE · xTB in a generated vacuum cell.
 
-PQSetup can export when PQ is not installed locally. In that case it reports
-that PQ parser validation was unavailable. Validate on the execution machine
-before a long run; see :doc:`validation`.
+2. Define the run plan
+----------------------
 
-Check the environment
+Choose the ensemble and set the thermodynamic conditions, timestep, sampling
+length, chained runs, and optional equilibration.
+
+.. figure:: assets/screenshots/run-plan.png
+   :alt: PQSetup NVT controls with equilibration and three sampling runs
+   :class: pq-shot
+   :align: center
+
+   This example writes one equilibration input followed by three sampling
+   inputs.
+
+3. Review and package
 ---------------------
 
-.. code-block:: bash
+Check the summary and every input. Errors block **Package**; warnings remain in
+**Review** and in ``pqproject.json``.
 
-   pqsetup doctor
+.. figure:: assets/screenshots/input-review.jpg
+   :alt: PQSetup review summary and four generated input tabs
+   :class: pq-shot
+   :align: center
 
-``doctor`` reports the selected PQ executable and the external calculators
-that PQSetup can detect. To use a different executable:
+   The preview exposes the exact PQ settings before download.
 
-.. code-block:: bash
-
-   pqsetup --pq-executable /opt/pq/bin/PQ doctor
-
-The same path can be supplied through ``PQ_EXECUTABLE``.
+The bundled water system is a short demonstration. A valid package does not
+establish model suitability, stability, equilibration, sampling quality, or
+convergence. See :doc:`validation` before a research run.
 
 Run the package
 ---------------
 
-Unpack the download on the machine where PQ and the calculator are available:
+On the machine that has PQ and the selected calculator:
 
 .. code-block:: bash
 
-   mkdir water-nvt
+   pqsetup doctor
    unzip water-nvt.zip -d water-nvt
    cd water-nvt
+   pqsetup validate run-01.in
    ./run.sh /opt/pq/bin/PQ
 
-The launcher follows the recorded input order, writes output to ``run-logs/``,
-and stops after the first failed or incomplete PQ run. Software installation,
-file transfer, and scheduler submission remain under the user's control. See
-:doc:`run-packages` for the archive contents and restart chain.
+The launcher follows the recorded input order and stops at the first failed or
+incomplete run. File transfer and scheduler submission remain under the user's
+control; see :doc:`run-packages`.
 
 Next
 ----
 
-* :doc:`Build a run <workflow>`
-* :doc:`Use PQSetup remotely <remote-access>`
-* :doc:`Understand validation <validation>`
-* :doc:`Inspect the package format <run-packages>`
-* :doc:`Resolve a setup problem <troubleshooting>`
+* :doc:`Control map <workflow>`
+* :doc:`Validation and scientific limits <validation>`
+* :doc:`Compatibility <reference/compatibility>`
+* :doc:`Advanced settings <reference/settings>`
