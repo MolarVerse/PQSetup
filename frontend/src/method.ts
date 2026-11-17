@@ -168,6 +168,7 @@ export function mmModeLabel(mode: MMForceFieldMode): string {
 export function setupFileSpecs(
   mode: MMForceFieldMode,
   mshake = false,
+  constrained = mshake,
 ): SetupFileSpec[] {
   const required: SetupFileRole[] =
     mode === "off"
@@ -175,7 +176,9 @@ export function setupFileSpecs(
       : mode === "bonded"
         ? ["moldescriptor", "guff", "topology", "parameter"]
         : ["moldescriptor", "topology", "parameter"];
-  if (mode !== "off" && mshake) required.push("mshake");
+  // PQ reads the topology whenever constraints are on, also with GUFF only.
+  if (mode === "off" && (constrained || mshake)) required.push("topology");
+  if (mshake) required.push("mshake");
 
   return [
     ...required.map((role) => ({ ...FILE_SPECS[role], optional: false })),
@@ -255,7 +258,7 @@ export function companionRoleForFileName(name: string): SetupFileRole | null {
   }
   if (base.includes("mshake")) return "mshake";
   if (base.includes("guff")) return "guff";
-  if (base.includes("topolog")) return "topology";
+  if (base.includes("topolog") || base.endsWith(".top")) return "topology";
   if (base.includes("param")) return "parameter";
   return null;
 }
@@ -323,7 +326,12 @@ export function missingFilesForSpecs(
 ): SetupFileRole[] {
   const populated = new Set(
     files
-      .filter((file) => file.name.trim() && file.content.length > 0)
+      .filter(
+        (file) =>
+          file.name.trim() &&
+          // PQ accepts an empty topology (M-SHAKE alone has no bonds).
+          (file.content.length > 0 || file.role === "topology"),
+      )
       .map((file) => file.role),
   );
   return specs

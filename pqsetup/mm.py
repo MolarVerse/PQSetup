@@ -6,6 +6,7 @@ from typing import Iterable
 import numpy as np
 from ase.data import atomic_masses, atomic_numbers
 
+from .keywords import uses_constraints
 from .models import (
     Diagnostic,
     MMForceFieldMode,
@@ -64,9 +65,14 @@ def required_mm_file_roles(
     mode: MMForceFieldMode,
     setup: SimulationSetup | None = None,
 ) -> tuple[SetupFileRole, ...]:
-    """Files PQ must find for this mode; M-SHAKE adds its geometry file."""
+    """Files PQ must find for this mode; constraints add their files."""
     roles = _REQUIRED_ROLES[mode]
-    if setup is not None and mode in {"on", "bonded"} and uses_mshake(setup):
+    if setup is None:
+        return roles
+    # PQ reads the topology whenever constraints are on, also in GUFF-only mode.
+    if "topology" not in roles and uses_constraints(setup):
+        roles = (*roles, "topology")
+    if uses_mshake(setup):
         roles = (*roles, "mshake")
     return roles
 
