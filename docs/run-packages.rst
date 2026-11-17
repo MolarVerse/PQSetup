@@ -51,11 +51,34 @@ You can also set it once:
 The script:
 
 #. resolves and checks the executable;
+#. checks that the Python modules the calculator imports are found
+   (``ase`` for the ASE calculators, ``ase`` and ``mace`` for MACE through
+   ``python3``, ``pyscf`` through ``python``);
+#. stops if outputs of an earlier attempt are in the folder;
 #. runs each input in order;
 #. writes one log per input under ``run-logs/``;
 #. stops at the first non-zero exit or missing ``PQ ended normally`` marker.
 
-It does not submit a scheduler job.
+It does not submit a scheduler job. Nothing is run when a check fails.
+
+PQ starts its embedded Python from the ``python3`` on ``PATH`` and reads
+``PYTHONPATH``, so activate the calculator environment before ``./run.sh``.
+If PQ is built against a different Python, skip the module check with
+``./run.sh --skip-check``.
+
+Retry after a failure
+---------------------
+
+PQ does not overwrite the outputs of an earlier attempt. After fixing the
+cause, start again in the same folder with:
+
+.. code-block:: bash
+
+   ./run.sh --fresh /opt/pq/bin/PQ
+
+``--fresh`` moves the earlier logs and PQ outputs into ``attempt-1/``
+(``attempt-2/`` next time) and runs the plan from the start. It deletes
+nothing.
 
 Project manifest
 ----------------
