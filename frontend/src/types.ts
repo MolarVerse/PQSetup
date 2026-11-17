@@ -123,6 +123,7 @@ export interface PQStatus {
   version: string | null;
   source: string | null;
   detail: string;
+  capabilities_issue?: string | null;
   external_qm: ExternalQMCapabilities | null;
   validation_available: boolean;
   validation_scopes: ("portable" | "installed")[];

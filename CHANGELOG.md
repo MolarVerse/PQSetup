@@ -5,6 +5,13 @@ user-visible changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Read the capability report of PQ 1.0 and later (schema 2), so parser
+  validation works again with an installed PQ 1.x. A PQ with a newer, unknown
+  schema is still used, and the setup page, `pqsetup doctor` and
+  `pqsetup validate` say why its parser check is off.
+
 ## [0.2.5] - 2026-10-06
 
 ### Changed

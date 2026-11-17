@@ -365,6 +365,42 @@ def test_validate_cli_checks_input_and_structure(
     ]
 
 
+def test_validate_cli_names_an_unsupported_capability_schema(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+) -> None:
+    (tmp_path / "structure.rst").write_bytes((DATA / "water.rst").read_bytes())
+    input_file = tmp_path / "run.in"
+    input_file.write_text(
+        "jobtype = qm-md; nstep = 5; timestep = 0.5; start_file = structure.rst;\n",
+        encoding="utf-8",
+    )
+    issue = "PQ v9.0.0 reports capability schema 3; update PQSetup."
+    monkeypatch.setattr(
+        pqsetup.cli,
+        "discover_pq",
+        lambda _: PQStatus(
+            found=True,
+            executable="/tools/PQ",
+            version="v9.0.0",
+            detail=issue,
+            capabilities_issue=issue,
+        ),
+    )
+
+    exit_code = main(["validate", str(input_file), "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert payload[0]["message"] == f"PQ validation was not run: {issue}"
+
+    _print_doctor(
+        DoctorReport(pq=pqsetup.cli.discover_pq(None), runners=[], diagnostics=[])
+    )
+    assert issue in capsys.readouterr().out
+
+
 def test_validate_cli_rejects_an_explicitly_missing_pq(
     tmp_path: Path,
     capsys,
