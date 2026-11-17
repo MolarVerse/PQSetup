@@ -9,6 +9,7 @@ import {
   FileCode2,
   FolderOpen,
   Flame,
+  Info,
   Gauge,
   LoaderCircle,
   Maximize2,
@@ -108,6 +109,16 @@ import {
 } from "./runPlan";
 import { packageRunLauncher } from "./runCommand";
 import { filesFromDrop } from "./droppedFiles";
+import {
+  browserStorage,
+  clearSavedSetup,
+  differsFromInitial,
+  loadSavedSetup,
+  manifestImport,
+  manifestSummary,
+  saveSetup,
+  type ManifestImport,
+} from "./savedSetup";
 import {
   EXAMPLE,
   INITIAL_SETUP,
@@ -232,21 +243,52 @@ function thermostatDescription(value: string | null): string {
 }
 
 export default function App() {
+  // The last page state of this browser; Reset clears it.
+  const [restored] = useState(() => {
+    const saved = loadSavedSetup(browserStorage());
+    return saved && differsFromInitial(saved) ? saved : null;
+  });
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [analysis, setAnalysis] = useState<StructureAnalysis>(EXAMPLE);
-  const [originalAnalysis, setOriginalAnalysis] =
-    useState<StructureAnalysis>(EXAMPLE);
+  const [analysis, setAnalysis] = useState<StructureAnalysis>(
+    restored?.structure?.analysis ?? EXAMPLE,
+  );
+  const [originalAnalysis, setOriginalAnalysis] = useState<StructureAnalysis>(
+    restored?.structure?.originalAnalysis ??
+      restored?.structure?.analysis ??
+      EXAMPLE,
+  );
   const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [baseStartFile, setBaseStartFile] = useState("water-example.rst");
-  const [preparation, setPreparation] =
-    useState<PreparationMetadata | null>(null);
-  const [setup, setSetup] = useState<SimulationSetup>(INITIAL_SETUP);
-  const [setupFiles, setSetupFiles] = useState<SetupFile[]>([]);
+  // A structure restored from the browser has no File to perturb again.
+  const structureImported = sourceFile != null || restored?.structure != null;
+  const [baseStartFile, setBaseStartFile] = useState(
+    restored?.form.baseStartFile ?? "water-example.rst",
+  );
+  const [preparation, setPreparation] = useState<PreparationMetadata | null>(
+    restored?.structure?.preparation ?? null,
+  );
+  const [setup, setSetup] = useState<SimulationSetup>(
+    restored?.form.setup ?? INITIAL_SETUP,
+  );
+  const [setupFiles, setSetupFiles] = useState<SetupFile[]>(
+    restored?.form.setupFiles ?? [],
+  );
   const [equilibration, setEquilibration] =
-    useState<EquilibrationStage | null>(null);
-  const [samplingRunCount, setSamplingRunCount] = useState(1);
-  const [samplingRunCountDraft, setSamplingRunCountDraft] = useState("1");
+    useState<EquilibrationStage | null>(restored?.form.equilibration ?? null);
+  const [samplingRunCount, setSamplingRunCount] = useState(
+    restored?.form.samplingRunCount ?? 1,
+  );
+  const [samplingRunCountDraft, setSamplingRunCountDraft] = useState(
+    String(restored?.form.samplingRunCount ?? 1),
+  );
+  const [restoreNote, setRestoreNote] = useState<string | null>(() =>
+    restored
+      ? restored.structure == null &&
+        restored.form.baseStartFile !== EXAMPLE.structure.source_name
+        ? "Restored your last settings from this browser. The structure was too large to keep; import it again."
+        : "Restored your last setup from this browser."
+      : null,
+  );
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
   const [showInputHeader, setShowInputHeader] = useState(false);
@@ -254,9 +296,11 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [jitter, setJitter] = useState(false);
-  const [sigma, setSigma] = useState(0.01);
-  const [jitterSeed, setJitterSeed] = useState(238917);
+  const [jitter, setJitter] = useState(restored?.structure?.jitter ?? false);
+  const [sigma, setSigma] = useState(restored?.structure?.sigma ?? 0.01);
+  const [jitterSeed, setJitterSeed] = useState(
+    restored?.structure?.jitterSeed ?? 238917,
+  );
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [modal, setModal] = useState<
     "structure" | "input" | "calculator" | "run" | null
@@ -279,7 +323,12 @@ export default function App() {
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
   const firstGeneratedFileName = useRef<string | null>(null);
-  const derivedRunName = useRef(INITIAL_SETUP.file_prefix);
+  const derivedRunName = useRef(
+    restored?.form.derivedRunName ?? INITIAL_SETUP.file_prefix,
+  );
+  // A restored or imported calculator stays chosen even when not detected here.
+  const keepRunner = useRef(restored != null);
+  const resetting = useRef(false);
   const molecularMechanics = isMolecularMechanics(setup);
   const externalQM = bootstrap?.pq.external_qm ?? null;
   const thermalEnsemble =
@@ -407,7 +456,7 @@ export default function App() {
         if (!current) return;
         setBootstrap(value);
         const preferred = preferredRunner(value.runners);
-        if (preferred) {
+        if (preferred && !keepRunner.current) {
           setSetup((existing) => {
             if (isMolecularMechanics(existing)) {
               return existing;
@@ -495,6 +544,59 @@ export default function App() {
     samplingRunCount,
     setupFileReferences,
   ]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      if (resetting.current) return;
+      saveSetup(browserStorage(), {
+        form: {
+          setup,
+          equilibration,
+          samplingRunCount,
+          setupFiles,
+          baseStartFile,
+          derivedRunName: derivedRunName.current,
+        },
+        structure: structureImported
+          ? {
+              analysis,
+              originalAnalysis: preparation ? originalAnalysis : null,
+              preparation,
+              jitter,
+              sigma,
+              jitterSeed,
+            }
+          : null,
+      });
+    }, 400);
+    return () => window.clearTimeout(timeout);
+  }, [
+    analysis,
+    baseStartFile,
+    equilibration,
+    jitter,
+    jitterSeed,
+    originalAnalysis,
+    preparation,
+    samplingRunCount,
+    setup,
+    setupFiles,
+    sigma,
+    structureImported,
+  ]);
+
+  function startNewSetup() {
+    if (
+      !window.confirm(
+        "Start a new setup? The settings and structure remembered in this browser are cleared.",
+      )
+    ) {
+      return;
+    }
+    resetting.current = true;
+    clearSavedSetup(browserStorage());
+    window.location.reload();
+  }
 
   const selectedRunnerStatus = useMemo(
     () =>
@@ -1302,6 +1404,14 @@ export default function App() {
         run: () => void createRun(),
       },
       {
+        id: "reset",
+        group: "Actions",
+        label: "Reset setup",
+        detail: "Start clean; forget the setup remembered in this browser",
+        keywords: ["new", "clear", "start over", "forget", "restore"],
+        run: startNewSetup,
+      },
+      {
         id: "documentation",
         group: "Actions",
         label: "Open documentation",
@@ -1372,14 +1482,28 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [createRun, goToControl, paletteOpen]);
 
-  async function useFile(file: File) {
+  async function useFile(file: File, manifest: ManifestImport | null = null) {
     const sequence = ++uploadSequence.current;
     perturbSequence.current += 1;
     setUploading(true);
     setNotice(null);
     try {
-      const result = await analyzeFile(file);
+      const analysed = await analyzeFile(file);
       if (sequence !== uploadSequence.current) return;
+      // A package's restart always has a box; the manifest says whether it
+      // was generated around a molecule.
+      const result =
+        manifest?.cellGenerated != null &&
+        manifest.atomCount === analysed.summary.atom_count
+          ? {
+              ...analysed,
+              structure: {
+                ...analysed.structure,
+                cell_generated: manifest.cellGenerated,
+                cell_padding_angstrom: manifest.cellPaddingAngstrom,
+              },
+            }
+          : analysed;
       setAnalysis(result);
       setOriginalAnalysis(result);
       setSourceFile(file);
@@ -1440,11 +1564,31 @@ export default function App() {
    * Companions are sorted by name; the structure (an .rst wins) is analysed.
    */
   async function importFiles(files: File[]) {
+    const manifestFile = files.find((file) => file.name === "pqproject.json");
+    let manifest: ManifestImport | null = null;
+    try {
+      manifest = manifestFile ? manifestImport(await manifestFile.text()) : null;
+    } catch {
+      manifest = null;
+    }
     const structures = files.filter((file) => isStructureFileName(file.name));
     const structure =
+      (manifest?.structureName != null
+        ? structures.find((file) => file.name === manifest?.structureName)
+        : undefined) ??
       structures.find((file) => file.name.toLowerCase().endsWith(".rst")) ??
       structures[0] ??
       null;
+    setRestoreNote(null);
+    if (manifest) {
+      keepRunner.current = true;
+      // The package name came from the manifest; a new structure keeps it.
+      derivedRunName.current = "";
+      setSetup(manifest.setup);
+      setSetupFiles([]);
+      setEquilibration(manifest.equilibration);
+      setRunCount(manifest.samplingRunCount);
+    }
     const companions = new Map<SetupFileRole, File>();
     for (const file of files) {
       if (file === structure) continue;
@@ -1460,7 +1604,20 @@ export default function App() {
       return;
     }
     if (structure) {
-      await useFile(structure);
+      await useFile(structure, manifest);
+    }
+    if (manifest) {
+      const found = new Set(files.map((file) => file.name));
+      const missing = [
+        ...(manifest.structureName ? [manifest.structureName] : []),
+        ...manifest.setupFiles.map((file) => file.name),
+      ].filter((name) => !found.has(name));
+      setRestoreNote(
+        `Imported the run plan from pqproject.json: ${manifestSummary(manifest)}.` +
+          (missing.length > 0
+            ? ` Not in the folder: ${missing.join(", ")}.`
+            : ""),
+      );
     }
     if (companions.size > 0) {
       const roles = [...companions.keys()]
@@ -1672,7 +1829,7 @@ export default function App() {
     // Only fill gaps; a thermostat or pressure chosen earlier survives a
     // detour through NVE / NVT and comes back unchanged.
     const previousDerived = derivedRunName.current;
-    const nextDerived = sourceFile
+    const nextDerived = structureImported
       ? previousDerived
       : `water-${ensemble.toLowerCase()}`;
     derivedRunName.current = nextDerived;
@@ -1732,6 +1889,15 @@ export default function App() {
           </button>
         </div>
         <div className="header-status">
+          <button
+            type="button"
+            className="header-reset"
+            onClick={startNewSetup}
+            title="Start a new setup"
+          >
+            <RotateCcw size={14} aria-hidden="true" />
+            <span>Reset</span>
+          </button>
           <a
             className="header-docs-link"
             href={DOCUMENTATION_URL}
@@ -1793,6 +1959,21 @@ export default function App() {
             </div>
           )}
 
+          {restoreNote && (
+            <div className="notice restore-note" role="status">
+              <Info size={15} aria-hidden="true" />
+              <span>{restoreNote}</span>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                title="Dismiss"
+                onClick={() => setRestoreNote(null)}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
           <div className="setup-page">
             <section
               className="setup-section"
@@ -1846,7 +2027,7 @@ export default function App() {
                       {analysis.summary.atom_count === 1 ? "atom" : "atoms"}
                     </small>
                     <small className="structure-context">
-                      {!sourceFile && "Example · "}
+                      {!structureImported && "Example · "}
                       {analysis.structure.cell_generated
                         ? "vacuum cell"
                         : analysis.structure.cell
@@ -1903,7 +2084,9 @@ export default function App() {
                     title={
                       sourceFile
                         ? "Nudge atoms to break symmetry"
-                        : "Import a structure first"
+                        : structureImported
+                          ? "Import the structure file again to perturb it"
+                          : "Import a structure first"
                     }
                   >
                     <label className="switch-row">
@@ -2223,7 +2406,7 @@ export default function App() {
                       {molecularMechanics && !hasTypedMolecules && (
                         <div className="inline-warning" role="alert">
                           <CircleAlert size={15} aria-hidden="true" />
-                          {sourceFile
+                          {structureImported
                             ? "This structure has no molecule type IDs. Import a typed PQ restart (.rst)."
                             : "The built-in water example has no molecule type IDs. Import a typed PQ restart (.rst) for MM."}
                         </div>
@@ -2816,7 +2999,7 @@ export default function App() {
                         </ul>
                       </div>
                     )}
-                    {!sourceFile && (
+                    {!structureImported && (
                       <p className="review-example">
                         Example only: one water molecule in a vacuum cell and a
                         short run. Choose a suitable structure, model and run

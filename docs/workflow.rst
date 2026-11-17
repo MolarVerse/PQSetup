@@ -36,6 +36,19 @@ Control map
        tab under **Inputs**.
      - Errors block packaging. Warnings are recorded in ``pqproject.json``.
 
+Resume a setup
+--------------
+
+The page remembers the current setup in this browser, so a refresh or a new
+tab on the same address brings it back with a note. **Reset** in the header
+starts clean and forgets it. A very large structure is not kept; the note then
+asks to import it again.
+
+Importing an exported run folder reads ``pqproject.json`` and restores the
+calculator, ensemble, steps, timestep, run count, equilibration, seed and
+package name, together with the packaged structure and method files. The note
+lists what was imported and names files missing from the folder.
+
 Scientific checks
 -----------------
 

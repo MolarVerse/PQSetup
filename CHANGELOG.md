@@ -5,6 +5,14 @@ user-visible changes.
 
 ## [Unreleased]
 
+### Added
+
+- The setup page remembers the current setup in the browser and restores it
+  after a refresh; **Reset** starts clean.
+- Importing an exported run folder restores the run plan from
+  `pqproject.json` (calculator, ensemble, steps, run count, equilibration,
+  seed, name) and states what was imported.
+
 ## [0.2.5] - 2026-10-06
 
 ### Changed

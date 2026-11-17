@@ -91,9 +91,31 @@
   text-decoration: none;
 }
 
-.header-docs-link:hover {
+.header-docs-link:hover,
+.header-reset:hover {
   background: var(--surface-subtle);
   color: var(--ink);
+}
+
+/* PQDesign's .info is the tooltip icon, so this notice has its own class. */
+.notice.restore-note {
+  border-color: var(--accent);
+  color: var(--accent-dark);
+}
+
+.header-reset {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
 }
 
 kbd {
