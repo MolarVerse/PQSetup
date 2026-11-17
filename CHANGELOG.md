@@ -7,6 +7,11 @@ user-visible changes.
 
 ### Added
 
+- The setup page remembers the current setup in the browser and restores it
+  after a refresh; **Reset** starts clean.
+- Importing an exported run folder restores the run plan from
+  `pqproject.json` (calculator, ensemble, steps, run count, equilibration,
+  seed, name) and states what was imported.
 - `run.sh` checks that the calculator's Python modules (ASE, MACE, PySCF) are
   found before PQ starts and names the missing module; `--skip-check` skips
   this.

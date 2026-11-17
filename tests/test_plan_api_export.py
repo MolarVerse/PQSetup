@@ -463,3 +463,35 @@ def test_export_explicitly_rejects_legacy_calculators(monkeypatch) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"][0]["loc"][-1] == "calculators"
+
+
+def test_manifest_records_what_folder_import_restores(monkeypatch) -> None:
+    """The setup page reads these fields back from a run folder."""
+    response = _client(monkeypatch).post(
+        "/api/project/export",
+        json=_project_payload(),
+    )
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        manifest = json.loads(archive.read("pqproject.json"))
+        names = set(archive.namelist())
+
+    plan = manifest["plan"]
+    assert {
+        key: plan["setup"][key]
+        for key in ("runner", "ensemble", "steps", "random_seed", "file_prefix")
+    } == {
+        "runner": "ase_xtb",
+        "ensemble": "NVT",
+        "steps": 2000,
+        "random_seed": 200,
+        "file_prefix": "water",
+    }
+    assert set(plan["setup"]) == set(SimulationSetup.model_fields)
+    assert plan["sampling_run_count"] == 3
+    assert plan["equilibration"]["enabled"] is True
+    assert plan["equilibration"]["steps"] == 5000
+    assert manifest["files"]["structure"]["name"] in names
+    assert manifest["structure"]["atom_count"] > 0
+    assert isinstance(manifest["structure"]["cell_generated"], bool)
+    assert manifest["method"]["label"].startswith("ASE · xTB")
