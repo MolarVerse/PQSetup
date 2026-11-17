@@ -95,7 +95,6 @@ MACE_RUNNERS = ("mace_mp", "mace_off")
 SCRIPTED_RUNNERS = ("dftbplus", "pyscf", "turbomole")
 DISPERSION_RUNNERS = ("ase_dftbplus", "mace_mp", "mace_off")
 GUFF_MODES = ("off", "bonded")
-TOPOLOGY_MODES = ("on", "bonded")
 
 
 @dataclass(frozen=True)
@@ -278,7 +277,6 @@ KEYWORDS: tuple[Keyword, ...] = (
         "md",
         "choice",
         choices=SHAKE_MODES,
-        ff_modes=TOPOLOGY_MODES,
         note="Bond constraints from the topology; mshake adds rigid bodies (MM).",
     ),
     Keyword("shake-tolerance", "md", "float", minimum=0.0, exclusive=True),
@@ -291,7 +289,6 @@ KEYWORDS: tuple[Keyword, ...] = (
         "distance-constraints",
         "md",
         "bool",
-        ff_modes=TOPOLOGY_MODES,
         note="Distance constraints defined in the topology.",
     ),
     # --- any MD job: kinetic resets from MDEngine::takeStepAfterForces -----

@@ -159,6 +159,10 @@ def main(arguments: list[str] | None = None) -> int:
                     "config",
                     "environment",
                 }
+            elif pq.capabilities_issue:
+                validation_note = (
+                    f"PQ validation was not run: {pq.capabilities_issue}"
+                )
             else:
                 validation_note = (
                     "PQ validation was not run: installed PQ does not "
@@ -311,6 +315,8 @@ def _print_doctor(report: DoctorReport) -> None:
     marker = "detected" if report.pq.found else "not detected"
     executable = f" · {report.pq.executable}" if report.pq.executable else ""
     print(f"PQ             {marker}{executable}")
+    if report.pq.capabilities_issue:
+        print(f"{'':14} {report.pq.capabilities_issue}")
     for runner in report.runners:
         if not runner.supported:
             state = "unsupported"

@@ -150,11 +150,7 @@ export function usesTopology(mode: MMForceFieldMode): boolean {
 
 /** True when the Advanced dialog asked for M-SHAKE (which needs a file). */
 export function usesMShake(setup: SimulationSetup): boolean {
-  return (
-    setup.job_type === "mm-md" &&
-    usesTopology(setup.mm_force_field) &&
-    setup.extra_settings.shake === "mshake"
-  );
+  return setup.job_type === "mm-md" && setup.extra_settings.shake === "mshake";
 }
 
 /**
@@ -266,12 +262,10 @@ function applicableSettingKeys(setup: SimulationSetup): Set<string> {
     if (usesGuff(setup.mm_force_field)) {
       keys.add("noncoulomb");
     }
-    if (usesTopology(setup.mm_force_field)) {
-      for (const key of CONSTRAINT_KEYS) keys.add(key);
-      if (setup.extra_settings.shake === "mshake") {
-        keys.add("mshake-tolerance");
-        keys.add("mshake-iter");
-      }
+    for (const key of CONSTRAINT_KEYS) keys.add(key);
+    if (setup.extra_settings.shake === "mshake") {
+      keys.add("mshake-tolerance");
+      keys.add("mshake-iter");
     }
     return keys;
   }

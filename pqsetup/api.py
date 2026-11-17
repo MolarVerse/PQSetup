@@ -812,7 +812,7 @@ def _validate_setup_file_contents(request: ExportRequest) -> None:
                 status_code=422,
                 detail=f"Setup file '{item.name}' has a filename that is too long.",
             )
-        if not item.content.strip():
+        if not item.content.strip() and item.role != "topology":
             raise HTTPException(
                 status_code=422,
                 detail=f"Setup file '{item.name}' is empty.",
