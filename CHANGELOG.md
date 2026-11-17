@@ -5,6 +5,8 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-17
+
 ### Added
 
 - The setup page remembers the current setup in the browser and restores it
