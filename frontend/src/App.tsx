@@ -2827,7 +2827,9 @@ export default function App() {
                       {bootstrap &&
                         (!bootstrap.pq.validation_available ||
                           !bootstrap.pq.validation_scopes.includes("portable")) &&
-                        "PQ parser check unavailable locally. "}
+                        (bootstrap.pq.capabilities_issue
+                          ? `${bootstrap.pq.capabilities_issue} `
+                          : "PQ parser check unavailable locally. ")}
                       Local checks cover input validity. Confirm the physical
                       setup and validate on the machine that will run PQ.
                     </p>

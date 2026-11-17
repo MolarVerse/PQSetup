@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from pqsetup.executable import discover_pq
 
 
@@ -181,3 +183,65 @@ def test_invalid_explicit_executable_is_not_silently_replaced() -> None:
     assert status.executable == "/missing/custom-pq"
     assert status.source == "option"
     assert "not executable" in status.detail
+
+
+DATA = Path(__file__).parent / "data"
+
+
+def make_pq_from_payload(path: Path, payload: dict) -> Path:
+    path.write_text(
+        f"#!/bin/sh\ncat <<'JSON'\n{json.dumps(payload)}\nJSON\n",
+        encoding="utf-8",
+    )
+    path.chmod(0o755)
+    return path
+
+
+@pytest.mark.parametrize(
+    ("fixture", "version"),
+    [
+        ("pq_capabilities_v1.json", "v0.7.1"),
+        ("pq_capabilities_v2.json", "v1.0.2"),
+    ],
+)
+def test_supported_capability_schemas_enable_validation(
+    tmp_path: Path,
+    fixture: str,
+    version: str,
+) -> None:
+    payload = json.loads((DATA / fixture).read_text(encoding="utf-8"))
+    executable = make_pq_from_payload(tmp_path / "PQ", payload)
+
+    status = discover_pq(str(executable))
+
+    assert status.version == version
+    assert status.capabilities == payload
+    assert status.capabilities_issue is None
+    assert status.detail == f"PQ {version} is ready."
+    assert status.validation_available
+    assert status.validation_scopes == ["portable", "installed"]
+    assert status.external_qm is not None
+    assert status.external_qm.programs["dftbplus"].recommended_script == (
+        "dftbplus_periodic_stress"
+    )
+
+
+def test_newer_capability_schema_degrades_with_a_message(tmp_path: Path) -> None:
+    payload = json.loads(
+        (DATA / "pq_capabilities_v2.json").read_text(encoding="utf-8")
+    )
+    payload["schema_version"] = 3
+    payload["version"] = "v9.0.0"
+    executable = make_pq_from_payload(tmp_path / "PQ", payload)
+
+    status = discover_pq(str(executable))
+
+    assert status.found
+    assert status.version == "v9.0.0"
+    assert status.capabilities is None
+    assert not status.validation_available
+    assert status.capabilities_issue == (
+        "PQ v9.0.0 reports capability schema 3; this PQSetup reads schema "
+        "1, 2. Parser validation and build checks are off; update PQSetup."
+    )
+    assert status.detail == status.capabilities_issue

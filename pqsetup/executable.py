@@ -15,6 +15,9 @@ from .models import PQStatus, PQValidationScope
 
 _VERSION_LINE = re.compile(r"^\s*Version:\s*(\S+)", re.MULTILINE)
 
+# v2 (PQ 1.0) only dropped build.kokkos; PQSetup reads neither.
+SUPPORTED_CAPABILITY_SCHEMAS = frozenset({1, 2})
+
 
 def default_config_path() -> Path:
     config_root = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
@@ -37,21 +40,33 @@ def _candidate_status(candidate: str, source: str) -> PQStatus | None:
     path = Path(resolved or candidate).expanduser()
     if not path.is_file() or not os.access(path, os.X_OK):
         return None
-    version, capabilities = _probe_capabilities(path)
+    version, capabilities, schema_version = _probe_capabilities(path)
     if version is None:
         version = _probe_banner(path)
     validation_scopes = _validation_scopes(capabilities)
+    detail = (
+        f"PQ {version} is ready."
+        if version
+        else "PQ executable found; version unavailable."
+    )
+    capabilities_issue = None
+    if schema_version is not None:
+        supported = ", ".join(map(str, sorted(SUPPORTED_CAPABILITY_SCHEMAS)))
+        label = f"PQ {version}" if version else "PQ"
+        capabilities_issue = (
+            f"{label} reports capability schema {schema_version}; "
+            f"this PQSetup reads schema {supported}. Parser validation and "
+            "build checks are off; update PQSetup."
+        )
+        detail = capabilities_issue
     return PQStatus(
         found=True,
         executable=str(path.resolve()),
         version=version,
         source=source,
-        detail=(
-            f"PQ {version} is ready."
-            if version
-            else "PQ executable found; version unavailable."
-        ),
+        detail=detail,
         capabilities=capabilities,
+        capabilities_issue=capabilities_issue,
         external_qm=parse_external_qm(capabilities),
         validation_available=bool(validation_scopes),
         validation_scopes=validation_scopes,
@@ -60,7 +75,8 @@ def _candidate_status(candidate: str, source: str) -> PQStatus | None:
 
 def _probe_capabilities(
     path: Path,
-) -> tuple[str | None, dict[str, Any] | None]:
+) -> tuple[str | None, dict[str, Any] | None, int | None]:
+    """Return version, accepted capabilities and an unsupported schema version."""
     try:
         result = subprocess.run(
             [str(path), "--capabilities=json"],
@@ -70,24 +86,22 @@ def _probe_capabilities(
             check=False,
         )
     except (OSError, UnicodeError, subprocess.SubprocessError):
-        return None, None
-    if result.returncode == 0:
-        try:
-            payload = json.loads(result.stdout)
-        except ValueError:
-            return None, None
-        if not isinstance(payload, dict):
-            return None, None
-        version = payload.get("version")
-        capabilities = (
-            payload
-            if payload.get("schema") == "pq.capabilities"
-            and type(payload.get("schema_version")) is int
-            and payload["schema_version"] == 1
-            else None
-        )
-        return (str(version) if version else None), capabilities
-    return None, None
+        return None, None, None
+    if result.returncode != 0:
+        return None, None, None
+    try:
+        payload = json.loads(result.stdout)
+    except ValueError:
+        return None, None, None
+    if not isinstance(payload, dict):
+        return None, None, None
+    version = str(payload["version"]) if payload.get("version") else None
+    schema_version = payload.get("schema_version")
+    if payload.get("schema") != "pq.capabilities" or type(schema_version) is not int:
+        return version, None, None
+    if schema_version not in SUPPORTED_CAPABILITY_SCHEMAS:
+        return version, None, schema_version
+    return version, payload, None
 
 
 def _validation_scopes(
