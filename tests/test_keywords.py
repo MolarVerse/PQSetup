@@ -215,7 +215,13 @@ def test_mshake_adds_a_required_file_and_its_keyword() -> None:
         "mshake",
     )
     assert required_mm_file_roles("on") == ("moldescriptor", "topology", "parameter")
-    assert required_mm_file_roles("off", setup) == ("moldescriptor", "guff")
+    # GUFF-only M-SHAKE: PQ still reads a (possibly empty) topology.
+    assert required_mm_file_roles("off", setup) == (
+        "moldescriptor",
+        "guff",
+        "topology",
+        "mshake",
+    )
 
     text = render_input(setup).input_text
     assert "mshake_file = mshake.dat;" in text

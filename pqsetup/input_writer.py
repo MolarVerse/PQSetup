@@ -176,13 +176,11 @@ def _mm_lines(setup: SimulationSetup) -> list[str]:
                     f"parameter_file = {setup.parameter_file};",
                 ]
             )
+        elif uses_constraints(setup) and setup.topology_file:
+            lines.append(f"topology_file = {setup.topology_file};")
         if setup.mm_force_field in {"bonded", "on"} and setup.intra_nonbonded_file:
             lines.append(f"intra-nonbonded_file = {setup.intra_nonbonded_file};")
-        if (
-            setup.mm_force_field in {"bonded", "on"}
-            and uses_mshake(setup)
-            and setup.mshake_file
-        ):
+        if uses_mshake(setup) and setup.mshake_file:
             lines.append(f"mshake_file = {setup.mshake_file};")
 
     return lines

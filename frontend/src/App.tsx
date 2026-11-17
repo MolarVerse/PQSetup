@@ -70,7 +70,6 @@ import {
   settingsLines,
   usesConstraints,
   usesMShake,
-  usesTopology,
 } from "./calculatorSettings";
 import ChemicalFormula from "./ChemicalFormula";
 import InputSource from "./InputSource";
@@ -354,14 +353,13 @@ export default function App() {
   );
   const constrainedBonds =
     molecularMechanics &&
-    usesTopology(setup.mm_force_field) &&
-    setup.extra_settings.shake === "on";
+    ["on", "shake", "mshake"].includes(String(setup.extra_settings.shake));
   const timestepWarning =
     hasHydrogen &&
     !constrainedBonds &&
     setup.timestep_fs != null &&
     setup.timestep_fs > 0.5
-      ? molecularMechanics && usesTopology(setup.mm_force_field)
+      ? molecularMechanics
         ? "H present: use ≤ 0.5 fs or turn on SHAKE in Advanced"
         : "H present: use ≤ 0.5 fs"
       : undefined;
@@ -394,7 +392,7 @@ export default function App() {
   const methodFileSpecs = useMemo(
     () =>
       molecularMechanics
-        ? setupFileSpecs(setup.mm_force_field, mshake)
+        ? setupFileSpecs(setup.mm_force_field, mshake, constrained)
         : qmSetupFileSpecs(
             setup.runner,
             setup.runner_script,
@@ -3010,7 +3008,9 @@ export default function App() {
                       {bootstrap &&
                         (!bootstrap.pq.validation_available ||
                           !bootstrap.pq.validation_scopes.includes("portable")) &&
-                        "PQ parser check unavailable locally. "}
+                        (bootstrap.pq.capabilities_issue
+                          ? `${bootstrap.pq.capabilities_issue} `
+                          : "PQ parser check unavailable locally. ")}
                       Local checks cover input validity. Confirm the physical
                       setup and validate on the machine that will run PQ.
                     </p>

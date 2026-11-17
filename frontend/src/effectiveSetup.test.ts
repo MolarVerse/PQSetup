@@ -131,6 +131,24 @@ describe("effectiveSetup", () => {
     ).toEqual({});
   });
 
+  it("keeps GUFF-only M-SHAKE and its files (PQ examples/h2o_mm-mshake)", () => {
+    const guff = {
+      ...base,
+      job_type: "mm-md" as const,
+      mm_force_field: "off" as const,
+      topology_file: "shake.top",
+      mshake_file: "mshake.top",
+      extra_settings: { shake: "mshake", "mshake-iter": 100 },
+    };
+    const effective = effectiveSetup(guff, false);
+    expect(effective.extra_settings).toEqual({
+      shake: "mshake",
+      "mshake-iter": 100,
+    });
+    expect(effective.topology_file).toBe("shake.top");
+    expect(effective.mshake_file).toBe("mshake.top");
+  });
+
   it("keeps temperature rescaling only for a thermal ensemble, drift removal for any MD", () => {
     const resets = {
       ...base,

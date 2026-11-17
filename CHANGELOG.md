@@ -13,6 +13,17 @@ user-visible changes.
   `pqproject.json` (calculator, ensemble, steps, run count, equilibration,
   seed, name) and states what was imported.
 
+### Fixed
+
+- Read the capability report of PQ 1.0 and later (schema 2), so parser
+  validation works again with an installed PQ 1.x. A PQ with a newer, unknown
+  schema is still used, and the setup page, `pqsetup doctor` and
+  `pqsetup validate` say why its parser check is off.
+- Set up rigid GUFF water as in PQ's `h2o_mm-mshake` example: constraints and
+  M-SHAKE are offered with `force-field = off`, the topology and M-SHAKE files
+  are packed and named in the input, and an empty topology file is accepted.
+  Dropped `*.top` files are recognised as topologies.
+
 ## [0.2.5] - 2026-10-06
 
 ### Changed
