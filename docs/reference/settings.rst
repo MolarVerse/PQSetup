@@ -84,7 +84,7 @@ Molecular mechanics
      - ``cell-list``, ``cell-number``
      - Cell list replaces the brute-force pair loop; needs ``rcoulomb > 0``
        and is refused by PQ for pure QM runs
-   * - Constraints (topology modes)
+   * - Constraints (all modes)
      - ``shake``, ``shake-tolerance``, ``shake-iter``, ``rattle-tolerance``,
        ``rattle-iter``, ``mshake-tolerance``, ``mshake-iter``,
        ``distance-constraints``
@@ -92,7 +92,10 @@ Molecular mechanics
        or M-SHAKE rigid bodies plus SHAKE (``mshake``). Choosing M-SHAKE adds
        a required *M-SHAKE geometries* file (``mshake_file``) to the Files row
        below, one reference geometry per molecule type. Bond and distance
-       constraints themselves come from the topology file.
+       constraints themselves come from the topology file. With GUFF only
+       (``force-field = off``) constraints add a *Topology* slot; it may be
+       empty when M-SHAKE alone keeps the molecules rigid, as in PQ's
+       ``h2o_mm-mshake`` example.
 
 Run › Steps › Resets
 --------------------

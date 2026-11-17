@@ -17,7 +17,6 @@ import {
   supportsDispersion,
   usesExternalScript,
   usesGuff,
-  usesTopology,
   type ExtraSettings,
   type ExtraValue,
 } from "./calculatorSettings";
@@ -541,14 +540,12 @@ export function MMSettingsForm({
         )}
       </Group>
 
-      {usesTopology(mode) && (
-        <ConstraintsGroup
-          extra={extra}
-          setExtra={setExtra}
-          mshake
-          info="Definitions come from the topology file"
-        />
-      )}
+      <ConstraintsGroup
+        extra={extra}
+        setExtra={setExtra}
+        mshake
+        info="Definitions come from the topology file"
+      />
     </div>
   );
 }

@@ -5,6 +5,13 @@ user-visible changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Set up rigid GUFF water as in PQ's `h2o_mm-mshake` example: constraints and
+  M-SHAKE are offered with `force-field = off`, the topology and M-SHAKE files
+  are packed and named in the input, and an empty topology file is accepted.
+  Dropped `*.top` files are recognised as topologies.
+
 ## [0.2.5] - 2026-10-06
 
 ### Changed

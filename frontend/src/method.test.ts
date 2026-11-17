@@ -3,6 +3,7 @@ import {
   activeSetupFiles,
   defaultSetupFileName,
   electronicMethodOptions,
+  missingFilesForSpecs,
   missingSetupFileRoles,
   mmModeLabel,
   packagedSetupFileName,
@@ -101,8 +102,32 @@ describe("molecular mechanics method", () => {
     expect(setupFileSpecs("off", true).map((file) => file.role)).toEqual([
       "moldescriptor",
       "guff",
+      "topology",
+      "mshake",
     ]);
+    expect(
+      setupFileSpecs("off", false, true).map((file) => file.role),
+    ).toEqual(["moldescriptor", "guff", "topology"]);
     expect(companionRoleForFileName("water_mshake.dat")).toBe("mshake");
+    expect(companionRoleForFileName("mshake.top")).toBe("mshake");
+    expect(companionRoleForFileName("shake.top")).toBe("topology");
+  });
+
+  it("accepts the empty topology that GUFF + M-SHAKE ships", () => {
+    const specs = setupFileSpecs("off", true);
+    const recipe: SetupFile[] = [
+      files[0],
+      files[1],
+      { role: "topology", name: "shake.top", content: "" },
+      { role: "mshake", name: "mshake.top", content: "3" },
+    ];
+    expect(missingFilesForSpecs(specs, recipe)).toEqual([]);
+    expect(
+      missingFilesForSpecs(specs, [
+        ...recipe.slice(0, 3),
+        { role: "mshake", name: "mshake.top", content: "" },
+      ]),
+    ).toEqual(["mshake"]);
   });
 
   it("keeps optional intramolecular data out of readiness", () => {
