@@ -12,6 +12,11 @@ user-visible changes.
 - Importing an exported run folder restores the run plan from
   `pqproject.json` (calculator, ensemble, steps, run count, equilibration,
   seed, name) and states what was imported.
+- `run.sh` checks that the calculator's Python modules (ASE, MACE, PySCF) are
+  found before PQ starts and names the missing module; `--skip-check` skips
+  this.
+- `run.sh` stops when outputs of an earlier attempt are present and lists
+  them; `./run.sh --fresh` moves them into `attempt-N/` and starts again.
 
 ### Fixed
 

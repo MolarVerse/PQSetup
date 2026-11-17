@@ -5,6 +5,7 @@ import io
 import json
 import os
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 import pqsetup.api
 from pqsetup.api import create_app
 from pqsetup.models import PQStatus, RunnerStatus, SimulationSetup
+from pqsetup.run_script import python_requirements, render_run_script
 from pqsetup.structures import parse_structure_bytes
 
 
@@ -39,8 +41,22 @@ case "${FAKE_PQ_MODE:-success}:$input_file" in
         ;;
 esac
 
+prefix=$(sed -n 's/^file_prefix = \\([^;]*\\);.*/\\1/p' "$input_file")
+: > "$prefix.en"
 printf '*                          PQ ended normally                            *\\n'
 """
+
+
+@pytest.fixture(autouse=True)
+def _python_with_ase(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Put a python3 that has ASE (this interpreter) first on PATH."""
+    directory = tmp_path / "python bin"
+    directory.mkdir()
+    shim = directory / "python3"
+    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{directory}{os.pathsep}{os.environ['PATH']}")
+    return shim
 
 
 def _client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
@@ -247,3 +263,123 @@ def test_run_script_stops_before_later_inputs_after_failure(
     assert error in completed.stderr
     assert "Completed" not in completed.stdout
     assert not (bundle_directory / "run-logs" / "run-03.log").exists()
+
+
+def test_python_requirements_follow_the_calculator() -> None:
+    assert python_requirements(["mace_off", "mace_off"]) == [
+        ("python3", "ase"),
+        ("python3", "mace"),
+    ]
+    assert python_requirements(["ase_xtb"]) == [("python3", "ase")]
+    assert python_requirements(["pyscf"]) == [("python", "pyscf")]
+    assert python_requirements(["molecular_mechanics", "dftbplus"]) == []
+
+
+def test_run_script_text_lists_outputs_and_modules() -> None:
+    script = render_run_script(
+        ["run-01.in"],
+        output_prefixes=["human ethanol-01"],
+        python_modules=[("python3", "mace")],
+    )
+
+    assert "output_prefixes=('human ethanol-01')" in script
+    assert "output_suffixes=(.rst .log " in script
+    assert "    python3 mace mace-torch" in script
+    assert "--fresh" in script
+    assert "overwrite" not in script.replace("does not overwrite", "")
+
+
+def _bundle(archive_content: bytes, tmp_path: Path) -> tuple[Path, Path, dict]:
+    bundle_directory = tmp_path / "run package"
+    with zipfile.ZipFile(io.BytesIO(archive_content)) as archive:
+        archive.extractall(bundle_directory)
+    executable = tmp_path / "PQ"
+    executable.write_text(_FAKE_PQ)
+    executable.chmod(0o755)
+    environment = os.environ.copy()
+    environment["FAKE_PQ_RECORD"] = str(tmp_path / "executed-inputs.txt")
+    return bundle_directory, executable, environment
+
+
+def _launch(
+    bundle_directory: Path,
+    executable: Path,
+    environment: dict,
+    *options: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(bundle_directory / "run.sh"), *options, str(executable)],
+        cwd=bundle_directory,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_missing_calculator_module_stops_before_pq_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    _python_with_ase: Path,
+) -> None:
+    bundle_directory, executable, environment = _bundle(
+        _export(_client(monkeypatch)), tmp_path
+    )
+    _python_with_ase.write_text("#!/bin/sh\nexit 1\n")
+
+    completed = _launch(bundle_directory, executable, environment)
+
+    assert completed.returncode == 3
+    assert "Python module ase not found by python3" in completed.stderr
+    assert "python -m pip install ase" in completed.stderr
+    assert not (tmp_path / "executed-inputs.txt").exists()
+    assert not (bundle_directory / "run-logs").exists()
+
+    skipped = _launch(bundle_directory, executable, environment, "--skip-check")
+    assert skipped.returncode == 0, skipped.stderr
+
+
+def test_retry_refuses_earlier_outputs_and_fresh_keeps_them(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    bundle_directory, executable, environment = _bundle(
+        _export(_client(monkeypatch)), tmp_path
+    )
+    environment["FAKE_PQ_MODE"] = "nonzero"
+    failed = _launch(bundle_directory, executable, environment)
+    assert failed.returncode == 23
+    assert "--fresh" in failed.stderr
+
+    environment["FAKE_PQ_MODE"] = "success"
+    record = tmp_path / "executed-inputs.txt"
+    record.unlink()
+    refused = _launch(bundle_directory, executable, environment)
+
+    assert refused.returncode == 4
+    assert "water-eq.en" in refused.stderr
+    assert "run-logs" in refused.stderr
+    assert not record.exists()
+
+    retried = _launch(bundle_directory, executable, environment, "--fresh")
+
+    assert retried.returncode == 0, retried.stderr
+    assert "Moved 3 earlier outputs to attempt-1/" in retried.stdout
+    kept = bundle_directory / "attempt-1"
+    assert sorted(path.name for path in kept.iterdir()) == [
+        "run-logs",
+        "water-01.en",
+        "water-eq.en",
+    ]
+    assert sorted(path.name for path in (kept / "run-logs").iterdir()) == [
+        "run-01.log",
+        "run-02.log",
+        "run-eq.log",
+    ]
+    assert (bundle_directory / "water-03.en").exists()
+    assert (bundle_directory / "structure.rst").exists()
+
+    again = _launch(bundle_directory, executable, environment, "--fresh")
+    assert again.returncode == 0, again.stderr
+    assert (bundle_directory / "attempt-2" / "water-03.en").exists()
+    assert (bundle_directory / "attempt-1" / "water-01.en").exists()

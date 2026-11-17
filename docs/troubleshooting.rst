@@ -54,7 +54,10 @@ inspect the log for the first failed input in ``run-logs/``:
    ./run.sh /path/to/PQ
 
 The launcher stops at the first non-zero PQ exit or when PQ does not print its
-normal completion marker. It does not install PQ or the selected calculator.
+normal completion marker. It does not install PQ or the selected calculator;
+when a calculator module such as ``ase`` or ``mace`` is missing it names the
+module and runs nothing. After fixing a failed run, ``./run.sh --fresh``
+moves the earlier outputs into ``attempt-N/`` and starts again.
 See :doc:`run-packages` for the input order and archive contents.
 
 If a problem persists, include the PQSetup version, the selected PQ build,
