@@ -147,6 +147,7 @@ class PQStatus(BaseModel):
     source: str | None = None
     detail: str
     capabilities: JsonObject | None = None
+    capabilities_issue: str | None = None
     external_qm: ExternalQMCapabilities | None = None
     validation_available: bool = False
     validation_scopes: list[PQValidationScope] = Field(default_factory=list)
