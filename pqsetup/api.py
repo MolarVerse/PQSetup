@@ -53,7 +53,7 @@ from .presets import list_presets
 from .release import TARGET_PQ_RELEASE
 from .runners import apply_pq_capabilities, detect_runners
 from .run_plan import plan_requested, render_run_plan
-from .run_script import RUN_SCRIPT_NAME, render_run_script
+from .run_script import RUN_SCRIPT_NAME, python_requirements, render_run_script
 from .setup_files import required_qm_file_roles
 from .structures import (
     analyze_structure,
@@ -547,7 +547,15 @@ def _export_plan(
         }
         for item in request.setup_files
     ]
-    run_script = render_run_script(execution_order)
+    run_script = render_run_script(
+        execution_order,
+        output_prefixes=[
+            item.restart_file.removesuffix(".rst") for item in rendered.files
+        ],
+        python_modules=python_requirements(
+            item.calculator_id for item in rendered.files
+        ),
+    )
     run_script_hash = sha256(run_script.encode("utf-8")).hexdigest()
     validation_results = _validate_export_inputs(
         pq,

@@ -5,6 +5,14 @@ user-visible changes.
 
 ## [Unreleased]
 
+### Added
+
+- `run.sh` checks that the calculator's Python modules (ASE, MACE, PySCF) are
+  found before PQ starts and names the missing module; `--skip-check` skips
+  this.
+- `run.sh` stops when outputs of an earlier attempt are present and lists
+  them; `./run.sh --fresh` moves them into `attempt-N/` and starts again.
+
 ## [0.2.5] - 2026-10-06
 
 ### Changed
