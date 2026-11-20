@@ -1,4 +1,4 @@
-TARGET_PQ_RELEASE = "v0.7.0"
+TARGET_PQ_RELEASE = "v1.1.0"
 
 PQ_QM_PROGRAMS = frozenset(
     {

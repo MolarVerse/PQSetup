@@ -200,7 +200,7 @@ def test_turbomole_export_packages_its_define_template(monkeypatch) -> None:
         json={
             "setup": setup.model_dump(mode="json"),
             "structure": structure.model_dump(mode="json"),
-            "project_name": "water-rimp2",
+            "project_name": "water-ricc2",
             "sampling_run_count": 1,
             "setup_files": [
                 {
@@ -219,7 +219,7 @@ def test_turbomole_export_packages_its_define_template(monkeypatch) -> None:
     assert response.status_code == 200, response.text
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         assert "tm_define.template" in archive.namelist()
-        assert "qm_script = turbomole_rimp2;" in archive.read("run-01.in").decode()
+        assert "qm_script = turbomole_ricc2;" in archive.read("run-01.in").decode()
 
 
 def test_turbomole_rejects_a_renamed_define_template(monkeypatch) -> None:
@@ -252,7 +252,7 @@ def test_turbomole_rejects_a_renamed_define_template(monkeypatch) -> None:
         json={
             "setup": setup.model_dump(mode="json"),
             "structure": structure.model_dump(mode="json"),
-            "project_name": "water-rimp2",
+            "project_name": "water-ricc2",
             "sampling_run_count": 1,
             "setup_files": [
                 {

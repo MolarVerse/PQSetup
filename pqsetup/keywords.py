@@ -90,6 +90,23 @@ NONCOULOMB_KINDS = ("guff", "lj", "buck", "morse")
 LONG_RANGE_KINDS = ("none", "shifted", "reaction-field", "wolf")
 VIRIAL_KINDS = ("molecular", "atomic")
 SHAKE_MODES = ("off", "on", "shake", "mshake")
+WATER_MODELS = (
+    "none",
+    "spc",
+    "spc_e",
+    "spc_fw",
+    "qspc_fw",
+    "spc_dc",
+    "h2o_dc",
+    "tip3p",
+    "opc3",
+    "spc_mtr",
+    "tip3p_mtr",
+)
+# all/xyz is refused by PQ while a manostat runs
+FIXED_AXES = ("none", "x", "y", "z", "xy", "xz", "yz")
+# semi-isotropic coupling may only fix its out-of-plane axis
+_SEMI_ISOTROPIC_AXIS = {"xy": "z", "xz": "y", "yz": "x"}
 
 MACE_RUNNERS = ("mace_mp", "mace_off")
 SCRIPTED_RUNNERS = ("dftbplus", "pyscf", "turbomole")
@@ -218,7 +235,7 @@ KEYWORDS: tuple[Keyword, ...] = (
         "rpmd_n_replica",
         "qm",
         "int",
-        minimum=1,
+        minimum=2,
         note="Ring-polymer beads (qm-rpmd).",
     ),
     # --- molecular mechanics --------------------------------------------
@@ -263,6 +280,28 @@ KEYWORDS: tuple[Keyword, ...] = (
         "mm",
         "bool",
         note="Cell-list neighbour search; needs rcoulomb > 0.",
+    ),
+    Keyword(
+        "water_intra",
+        "mm",
+        "choice",
+        choices=WATER_MODELS,
+        note="Intramolecular water model; needs water_type in the descriptor.",
+    ),
+    Keyword(
+        "water_inter",
+        "mm",
+        "choice",
+        choices=WATER_MODELS,
+        note="Intermolecular water model; needs water_type in the descriptor.",
+    ),
+    Keyword(
+        "rnoncoulomb",
+        "mm",
+        "float",
+        minimum=0.0,
+        exclusive=True,
+        note="Water–water non-Coulomb cutoff in Å (water_inter); default rcoulomb.",
     ),
     Keyword(
         "cell-number",
@@ -312,6 +351,19 @@ KEYWORDS: tuple[Keyword, ...] = (
     Keyword("freset_angular", "md", "int", minimum=0),
     Keyword("freset_forces", "md", "int", minimum=0),
     Keyword("output_freq", "md", "int", minimum=1),
+    Keyword(
+        "async_output",
+        "md",
+        "bool",
+        note="Write MD trajectory and restart files on a separate thread.",
+    ),
+    Keyword(
+        "fixed_axis",
+        "md",
+        "choice",
+        choices=FIXED_AXES,
+        note="Cell axes the manostat leaves unscaled (NPT).",
+    ),
 )
 
 def normalize_key(key: str) -> str:
@@ -350,6 +402,15 @@ def uses_constraints(setup: SimulationSetup) -> bool:
         return True
     distance = extra_value(setup, "distance-constraints")
     return distance is not None and is_on(distance)
+
+
+def uses_water_model(setup: SimulationSetup) -> bool:
+    """True when water_intra or water_inter selects a model other than none."""
+    return any(
+        (value := extra_value(setup, key)) is not None
+        and normalize_value(value) != "none"
+        for key in ("water_intra", "water_inter")
+    )
 
 
 def is_off(value: object) -> bool:
@@ -503,6 +564,11 @@ def _scope_diagnostic(
             "input.extra_scope",
             "Cell lists are not available for pure QM runs; PQ rejects them.",
         )
+    if keyword.name in {"water_intra", "water_inter"} and not mm:
+        return _error(
+            "input.extra_scope",
+            "Water models are not available for pure QM runs; PQ rejects them.",
+        )
     if keyword.scope == "qm" and mm:
         where = "MM runs"
     elif keyword.scope == "mm" and not mm:
@@ -544,6 +610,14 @@ def _combination_diagnostics(
                     "input.extra_value",
                     "Hubbard derivatives need third-order DFTB; PQ rejects them "
                     "with third_order off.",
+                )
+            )
+        if effective_third and slakos != "3ob" and not hubbard:
+            diagnostics.append(
+                _error(
+                    "input.extra_value",
+                    "Third-order DFTB with matsci or custom parameters needs "
+                    "hubbard_derivs; only 3ob has built-in values.",
                 )
             )
         if hubbard and not _hubbard_format_ok(str(hubbard)):
@@ -609,7 +683,36 @@ def _combination_diagnostics(
             )
         )
 
+    fixed_axis = normalize_value(extras.get("fixed_axis", "none"))
+    if fixed_axis != "none" and fixed_axis in FIXED_AXES:
+        if setup.ensemble != "NPT":
+            diagnostics.append(
+                _warning(
+                    "input.extra_scope",
+                    "'fixed_axis' is only read with a manostat (NPT).",
+                )
+            )
+        else:
+            allowed = _SEMI_ISOTROPIC_AXIS.get(setup.pressure_isotropy)
+            if allowed is not None and fixed_axis != allowed:
+                diagnostics.append(
+                    _error(
+                        "input.extra_value",
+                        f"Semi-isotropic coupling ({setup.pressure_isotropy}) "
+                        f"can only fix the {allowed} axis.",
+                    )
+                )
+
     if mm:
+        water_inter = normalize_value(extras.get("water_inter", "none"))
+        if extras.get("rnoncoulomb") is not None and water_inter == "none":
+            diagnostics.append(
+                _warning(
+                    "input.extra_scope",
+                    "'rnoncoulomb' is only read with an intermolecular water "
+                    "model (water_inter).",
+                )
+            )
         long_range = normalize_value(extras.get("long_range", "none"))
         if long_range == "reaction_field" and extras.get("rf_epsilon") is None:
             diagnostics.append(

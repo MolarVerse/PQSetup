@@ -8,7 +8,7 @@ writes nothing. The keywords in force are echoed next to the button so the
 Method section reads like the input file.
 
 ASE · xTB's electronic model is a primary Method control. Other advanced
-settings in the dialog offer PQ v0.7.x input keywords
+settings in the dialog offer PQ v1.1.0 input keywords
 (``src/input/inputFileParser/*.cpp`` and ``inputValidation.cpp`` at the
 targeted release). The same table lives in ``pqsetup/keywords.py`` and drives
 validation: values PQ would refuse are reported as errors before anything is
@@ -80,6 +80,15 @@ Molecular mechanics
        (``wolf_param ≥ 0`` Å⁻¹), reaction field (``rf_epsilon ≥ 1``).
        ``virial``: molecular (intramolecular correction from the molecule
        descriptor, default) or atomic.
+   * - Water models
+     - ``water_intra``, ``water_inter``, ``rnoncoulomb``
+     - SPC, SPC/E, SPC/Fw, qSPC/Fw, SPC/DC, H2O-DC, TIP3P, OPC3, SPC-mTR,
+       TIP3P-mTR for the water molecule type. The molecule descriptor needs a
+       ``water_type`` line naming an O, H, H molecule type; with an
+       intramolecular model, water must not appear in the topology bonds or
+       angles. ``rnoncoulomb`` (> 0 Å, default ``rcoulomb``) is the
+       water–water non-Coulomb cutoff and is read only with ``water_inter``.
+       PQ refuses water models in pure QM runs.
    * - Neighbour search
      - ``cell-list``, ``cell-number``
      - Cell list replaces the brute-force pair loop; needs ``rcoulomb > 0``
@@ -118,20 +127,40 @@ Drift removal
 
 Blank means never. Optimisations ignore all of them.
 
+Pressure coupling and output
+----------------------------
+
+``fixed_axis``
+   *Fixed axes* under the NPT pressure coupling keeps cell axes unscaled:
+   ``x``, ``y``, ``z``, ``xy``, ``xz`` or ``yz``. Semi-isotropic coupling
+   (``isotropy = xy``, ``xz``, ``yz``) only allows the out-of-plane axis.
+   Fixing all axes is refused by PQ while a manostat runs, so it is not
+   offered.
+
+``async_output``
+   *File writing* in Output. PQ writes the MD trajectory and restart files on
+   a separate thread by default; *Before the next step* writes
+   ``async_output = false`` so a crash cannot lose the last frames.
+
 What validation checks
 ----------------------
 
 * Option lists (``xtb_method``, ``slakos``, ``mace_model``, ``mace_mode``,
-  ``noncoulomb``, ``long_range``, ``virial``, ``shake``) and boolean tokens
+  ``noncoulomb``, ``long_range``, ``virial``, ``shake``, ``water_intra``,
+  ``water_inter``, ``fixed_axis``) and boolean tokens
   (``on``/``off``, ``true``/``false``, ``yes``/``no``).
 * Ranges: tolerances > 0, iteration counts ≥ 1, ``cell-number ≥ 1``,
-  ``wolf_param ≥ 0``, ``rf_epsilon ≥ 1``, reset counters ≥ 0.
+  ``wolf_param ≥ 0``, ``rf_epsilon ≥ 1``, ``rnoncoulomb > 0``,
+  ``rpmd_n_replica ≥ 2``, reset counters ≥ 0.
 * Combinations PQ's ``inputValidation.cpp`` rejects: custom Slater–Koster set
-  without a path, Hubbard derivatives without third order, custom MACE model
+  without a path, Hubbard derivatives without third order, third order with
+  matsci or custom parameters but no Hubbard derivatives, custom MACE model
   without a path (and a path without ``custom``), MACE-OFF with a MACE-MP-only
   model, reaction field without ``rf_epsilon``, constraints without a
   topology file, M-SHAKE without its file (or in a QM run), a cell list
-  without a Coulomb cutoff or in a QM run, temperature rescaling without a
+  without a Coulomb cutoff or in a QM run, water models in a QM run or
+  without ``water_type`` in the molecule descriptor, a fixed axis that
+  semi-isotropic coupling does not allow, temperature rescaling without a
   target temperature.
 * Spelling: ``cell-list`` and ``cell_list`` are the same keyword to PQ, so
   setting both is refused; a keyword PQSetup writes itself is refused too.
@@ -159,9 +188,13 @@ Not exposed
 -----------
 
 PQ also accepts, and PQSetup does not present: FeNNol as a calculator
-(``fennol_model_path``, ``gpu_preprocessing``), the ``integrator`` choice (PQ
-has only velocity Verlet), per-file output names, ``dim`` and
-``floating_point_type``, ring-polymer MD (``rpmd_n_replica``), the ``mm-opt``
-optimizer and ``mm-hessian`` controls, and the hybrid QM/MM keywords, whose
-names changed after v0.7.1. Water models and ``rnoncoulomb`` exist only on
-PQ's development branch.
+(``fennol_model_path``, ``gpu_preprocessing``), ORCA as a calculator
+(``orca_file``), ``turbomole_file`` (PQSetup packs ``tm_define.template``
+under its default name), the ``integrator`` choice (PQ has only velocity
+Verlet), per-file output names (including ``hybrid_center_file``), ``dim``
+and ``floating_point_type``, ring-polymer MD (``rpmd_n_replica``), the
+``mm-opt`` optimizer and ``mm-hessian`` controls, and the hybrid QM/MM
+keywords (``inner_region_center``, ``forced_core_list``,
+``forced_layer_list``, ``forced_outer_list``, ``smoothing_method``,
+``smoothing_region_thickness``, ``point_charge_thickness``,
+``qm_force_distribution``).

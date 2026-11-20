@@ -216,7 +216,7 @@ def test_plan_owns_restart_filenames() -> None:
     ("runner_id", "script"),
     [
         ("dftbplus", "dftbplus_periodic_stress"),
-        ("turbomole", "turbomole_rimp2"),
+        ("turbomole", "turbomole_ricc2"),
     ],
 )
 def test_external_calculators_use_canonical_release_scripts(

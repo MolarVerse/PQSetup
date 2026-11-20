@@ -1,4 +1,4 @@
-"""Advanced keywords: what PQ v0.7.x accepts, mirrored by ``pqsetup.keywords``."""
+"""Advanced keywords: what PQ v1.1.0 accepts, mirrored by ``pqsetup.keywords``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,12 @@ import pytest
 
 from pqsetup.input_writer import render_input, validate_setup
 from pqsetup.keywords import KEYWORDS, GENERATED_KEYS, lookup
-from pqsetup.mm import required_mm_file_roles, validate_mm_setup_files
-from pqsetup.models import SetupFileReference, SimulationSetup
+from pqsetup.mm import (
+    required_mm_file_roles,
+    validate_mm_setup_contents,
+    validate_mm_setup_files,
+)
+from pqsetup.models import SetupFile, SetupFileReference, SimulationSetup, Structure
 
 
 def _codes(setup: SimulationSetup, prefix: str = "input.extra") -> list[str]:
@@ -99,6 +103,33 @@ def test_keyword_table_is_consistent() -> None:
             SimulationSetup(runner="ase_xtb", extra_settings={"cell-list": "on"}),
             "pure QM",
         ),
+        (
+            SimulationSetup(
+                runner="ase_dftbplus",
+                extra_settings={"slakos": "matsci", "third_order": "on"},
+            ),
+            "hubbard_derivs",
+        ),
+        (_mm(extra_settings={"water_intra": "tip4p"}), "spc_e"),
+        (_mm(extra_settings={"rnoncoulomb": 0}), "greater than 0"),
+        (
+            SimulationSetup(runner="ase_xtb", extra_settings={"water_inter": "spc"}),
+            "Water models",
+        ),
+        (
+            SimulationSetup(runner="ase_xtb", extra_settings={"rpmd_n_replica": 1}),
+            "at least 2",
+        ),
+        (SimulationSetup(extra_settings={"fixed_axis": "xyz"}), "none, x, y"),
+        (
+            SimulationSetup(
+                ensemble="NPT",
+                pressure_isotropy="xy",
+                extra_settings={"fixed_axis": "x"},
+            ),
+            "only fix the z axis",
+        ),
+        (SimulationSetup(extra_settings={"async_output": "later"}), "on/off"),
     ],
 )
 def test_values_pq_rejects_are_errors(setup: SimulationSetup, fragment: str) -> None:
@@ -130,9 +161,18 @@ def test_accepted_values_pass_in_either_spelling() -> None:
             "shake": "shake",
             "rattle-tolerance": 1e4,
             "virial": "atomic",
+            "water-intra": "SPC-Fw",
+            "water_inter": "tip3p_mtr",
+            "rnoncoulomb": 9.0,
         }
     )
     assert _codes(mm) == []
+    npt = SimulationSetup(
+        ensemble="NPT",
+        pressure_isotropy="xy",
+        extra_settings={"fixed-axis": "Z", "async_output": False},
+    )
+    assert _codes(npt) == []
 
 
 def test_out_of_scope_keys_warn_and_unknown_keys_are_left_to_pq() -> None:
@@ -239,3 +279,45 @@ def test_mshake_adds_a_required_file_and_its_keyword() -> None:
         SetupFileReference(role="mshake", name="mshake.dat")
     ])
     assert any(item.code == "mm.file_unused" for item in without)
+
+
+def test_new_run_keywords_warn_when_pq_would_ignore_them() -> None:
+    nvt = SimulationSetup(extra_settings={"fixed_axis": "z"})
+    assert any(
+        item.code == "input.extra_scope" and "NPT" in item.message
+        for item in validate_setup(nvt)
+    )
+    lone = _mm(extra_settings={"rnoncoulomb": 9.0})
+    assert any(
+        item.code == "input.extra_scope" and "water_inter" in item.message
+        for item in validate_setup(lone)
+    )
+    text = render_input(
+        _mm(extra_settings={"water_inter": "spc_e", "async_output": False})
+    ).input_text
+    assert "water_inter = spc_e;" in text
+    assert "async_output = false;" in text
+
+
+def test_water_models_need_a_water_type_in_the_descriptor() -> None:
+    structure = Structure(
+        atoms=[
+            {"symbol": "O", "position": (0.0, 0.0, 0.0), "molecule_type": 1},
+            {"symbol": "H", "position": (0.96, 0.0, 0.0), "molecule_type": 1},
+            {"symbol": "H", "position": (-0.24, 0.93, 0.0), "molecule_type": 1},
+        ],
+        cell=((12.0, 0.0, 0.0), (0.0, 12.0, 0.0), (0.0, 0.0, 12.0)),
+        periodic=(True, True, True),
+    )
+    descriptor = "H2O 3 0.0\nO 1 -0.82 1\nH 2 0.41 2\nH 2 0.41 2\n"
+    setup = _mm(extra_settings={"water_intra": "spc_fw"})
+
+    def codes(content: str, current: SimulationSetup) -> list[str]:
+        files = [SetupFile(role="moldescriptor", name="moldescriptor.dat", content=content)]
+        return [
+            item.code for item in validate_mm_setup_contents(current, structure, files)
+        ]
+
+    assert codes(descriptor, setup) == ["mm.moldescriptor_content"]
+    assert codes("water_type 1\n" + descriptor, setup) == []
+    assert codes(descriptor, _mm(extra_settings={"water_intra": "none"})) == []

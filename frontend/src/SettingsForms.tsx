@@ -10,6 +10,7 @@ import {
   SHAKE_MODES,
   SLAKOS_SETS,
   VIRIAL_KINDS,
+  WATER_MODELS,
   dispersionDefault,
   extraBool,
   extraNumber,
@@ -337,7 +338,7 @@ export function QMSettingsForm({
               )}
               <Toggle
                 label="Third-order expansion"
-                info="PQ turns it on for 3ob unless set here"
+                info="PQ turns it on for 3ob unless set here · other sets need Hubbard derivatives"
                 checked={thirdOrder}
                 onChange={(value) => {
                   setExtra("third_order", value);
@@ -455,6 +456,7 @@ export function MMSettingsForm({
   setExtra: SetExtra;
 }) {
   const longRange = extraString(extra, "long_range", MM_DEFAULTS.long_range);
+  const waterInter = extraString(extra, "water_inter", MM_DEFAULTS.water_inter);
   return (
     <div className="settings-form">
       <Group title="Potentials">
@@ -516,6 +518,47 @@ export function MMSettingsForm({
             setExtra("virial", value === MM_DEFAULTS.virial ? null : value)
           }
         />
+      </Group>
+
+      <Group
+        title="Water models"
+        info="Needs a water_type line in the molecule descriptor"
+      >
+        <Choice
+          label="Intramolecular"
+          value={extraString(extra, "water_intra", MM_DEFAULTS.water_intra)}
+          options={WATER_MODELS}
+          info="Water must then be absent from the topology bonds and angles"
+          onChange={(value) =>
+            setExtra(
+              "water_intra",
+              value === MM_DEFAULTS.water_intra ? null : value,
+            )
+          }
+        />
+        <Choice
+          label="Intermolecular"
+          value={waterInter}
+          options={WATER_MODELS}
+          onChange={(value) => {
+            setExtra(
+              "water_inter",
+              value === MM_DEFAULTS.water_inter ? null : value,
+            );
+            if (value === "none") setExtra("rnoncoulomb", null);
+          }}
+        />
+        {waterInter !== "none" && (
+          <NumberRow
+            label="Water non-Coulomb cutoff"
+            keyName="rnoncoulomb"
+            unit="Å"
+            step="0.5"
+            placeholder="rcoulomb"
+            extra={extra}
+            setExtra={setExtra}
+          />
+        )}
       </Group>
 
       <Group title="Neighbour search">
