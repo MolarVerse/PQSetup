@@ -228,10 +228,10 @@ describe("QM companion files", () => {
           ],
         },
         turbomole: {
-          recommended_script: "turbomole_rimp2",
+          recommended_script: "turbomole_ricc2",
           scripts: [
             {
-              name: "turbomole_rimp2",
+              name: "turbomole_ricc2",
               label: "RI-MP2",
               required_file_keywords: [],
               required_working_files: ["tm_define.template"],
@@ -249,7 +249,7 @@ describe("QM companion files", () => {
     expect(recommendedRunnerScript(capabilities, "pyscf")).toBeNull();
     expect(selectedExternalQMScript(capabilities, "pyscf", null)).toBeNull();
     expect(
-      qmSetupFileSpecs("turbomole", "turbomole_rimp2", capabilities).map(
+      qmSetupFileSpecs("turbomole", "turbomole_ricc2", capabilities).map(
         (file) => file.role,
       ),
     ).toEqual(["turbomole_define_template"]);

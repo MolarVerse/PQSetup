@@ -131,11 +131,17 @@ const FALLBACK_EXTERNAL_QM: ExternalQMCapabilities = {
       ],
     },
     turbomole: {
-      recommended_script: "turbomole_rimp2",
+      recommended_script: "turbomole_ricc2",
       scripts: [
         {
-          name: "turbomole_rimp2",
+          name: "turbomole_ricc2",
           label: "RI-MP2",
+          required_file_keywords: [],
+          required_working_files: ["tm_define.template"],
+        },
+        {
+          name: "turbomole_ricc2.py",
+          label: "RI-MP2 (Python)",
           required_file_keywords: [],
           required_working_files: ["tm_define.template"],
         },

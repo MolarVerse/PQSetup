@@ -5,6 +5,29 @@ user-visible changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Target the stable PQ v1.1.0 input format (was v0.7.0). Advanced settings
+  are checked against the v1.1.0 parsers.
+- Turbomole runs use PQ's `turbomole_ricc2` script (renamed from
+  `turbomole_rimp2`); `turbomole_ricc2.py` is offered as well.
+
+### Added
+
+- Water models for MM runs (`water_intra`, `water_inter`, `rnoncoulomb`) in
+  the Advanced dialog; a water model needs a `water_type` line in the
+  molecule descriptor.
+- *Fixed axes* (`fixed_axis`) under NPT pressure coupling, limited to the
+  out-of-plane axis for semi-isotropic coupling.
+- *File writing* (`async_output`) in Output to write MD files before the next
+  step instead of on a background thread.
+
+### Fixed
+
+- Third-order ASE DFTB+ with matsci or custom parameters now needs Hubbard
+  derivatives, as PQ 1.1 requires.
+- `rpmd_n_replica` must be at least 2, matching PQ.
+
 ## [0.3.0] - 2026-11-17
 
 ### Added

@@ -6,7 +6,7 @@ from typing import Iterable
 import numpy as np
 from ase.data import atomic_masses, atomic_numbers
 
-from .keywords import uses_constraints
+from .keywords import uses_constraints, uses_water_model
 from .models import (
     Diagnostic,
     MMForceFieldMode,
@@ -210,6 +210,13 @@ def validate_mm_setup_contents(
         return [_error("mm.moldescriptor_content", str(error))]
 
     diagnostics: list[Diagnostic] = []
+    if uses_water_model(setup) and not _declares_water_type(content):
+        diagnostics.append(
+            _error(
+                "mm.moldescriptor_content",
+                f"A water model needs a 'water_type' line in '{descriptor.name}'.",
+            )
+        )
     atom_index = 0
     atoms = structure.atoms
     while atom_index < len(atoms):
@@ -427,6 +434,14 @@ def _parse_moldescriptor(
     if not molecule_sizes:
         raise ValueError("Molecule descriptor does not define any molecule types.")
     return molecule_sizes
+
+
+def _declares_water_type(content: str) -> bool:
+    for raw_line in content.splitlines():
+        fields = raw_line.split("#", 1)[0].split()
+        if len(fields) > 1 and fields[0].replace("-", "_").lower() == "water_type":
+            return True
+    return False
 
 
 def _positive_finite(value: float | None) -> bool:

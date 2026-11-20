@@ -4,8 +4,8 @@ Compatibility
 PQ inputs
 ---------
 
-PQSetup currently writes inputs for the stable PQ v0.7.0 release. Its keyword
-list is checked against the v0.7.x input parsers; it does not expose
+PQSetup currently writes inputs for the stable PQ v1.1.0 release. Its keyword
+list is checked against the v1.1.0 input parsers; it does not expose
 unreleased keywords merely because they exist on a development branch (see
 :doc:`settings`).
 
@@ -20,7 +20,7 @@ unreleased keywords merely because they exist on a development branch (see
      - Available
      - ``portable`` during export and ``installed`` from the CLI
    * - Does not advertise the validation contract
-     - Available for v0.7.0 inputs
+     - Available for v1.1.0 inputs
      - Not run; local checks remain active
    * - Not detected
      - Portable export remains available
@@ -29,9 +29,10 @@ unreleased keywords merely because they exist on a development branch (see
 Calculator availability is reported separately from PQ parser support.
 
 The guided QM methods are DFTB+, ASE · DFTB+, ASE · xTB, PySCF, Turbomole,
-MACE-MP, and MACE-OFF. PQ 0.7.0 also accepts FeNNol inputs, but PQSetup does
-not yet package its binary model file and therefore does not present a partial
-FeNNol workflow.
+MACE-MP, and MACE-OFF. PQ 1.1.0 also accepts FeNNol and ORCA inputs. PQSetup
+does not yet package FeNNol's binary model file or ORCA's input template
+(``orca_file``, written for polarized QM/MM), so it presents neither as a
+partial workflow.
 
 Structure formats
 -----------------

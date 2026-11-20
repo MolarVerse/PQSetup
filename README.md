@@ -6,7 +6,7 @@ Prepare and inspect portable input packages for [PQ](https://github.com/MolarVer
 
 ## Start
 
-Python 3.11+; PQSetup targets the stable PQ v0.7.0 input format.
+Python 3.11+; PQSetup targets the stable PQ v1.1.0 input format.
 
 ```bash
 python3 -m venv .venv
