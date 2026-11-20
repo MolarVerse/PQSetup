@@ -5,6 +5,8 @@ user-visible changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-20
+
 ### Changed
 
 - Target the stable PQ v1.1.0 input format (was v0.7.0). Advanced settings
