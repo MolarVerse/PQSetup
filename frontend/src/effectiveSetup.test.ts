@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fixedAxisOptions } from "./calculatorSettings";
 import { effectiveSetup } from "./effectiveSetup";
 import type { SimulationSetup } from "./types";
 
@@ -187,5 +188,58 @@ describe("effectiveSetup", () => {
       false,
     );
     expect(small.extra_settings).toEqual({ mace_model: "small" });
+  });
+
+  it("keeps fixed_axis only for NPT and the axes the isotropy allows", () => {
+    const fixed = { ...base, extra_settings: { fixed_axis: "z" } };
+    expect(
+      effectiveSetup({ ...fixed, ensemble: "NPT" }, false).extra_settings,
+    ).toEqual({ fixed_axis: "z" });
+    expect(
+      effectiveSetup({ ...fixed, ensemble: "NVT" }, false).extra_settings,
+    ).toEqual({});
+    expect(
+      effectiveSetup(
+        { ...fixed, ensemble: "NPT", pressure_isotropy: "xz" },
+        false,
+      ).extra_settings,
+    ).toEqual({});
+    expect(fixedAxisOptions("xy").map((option) => option.value)).toEqual([
+      "none",
+      "z",
+    ]);
+    expect(fixedAxisOptions("isotropic")).toHaveLength(7);
+  });
+
+  it("keeps async_output for MD runs, not for optimisations", () => {
+    const sync = { ...base, extra_settings: { async_output: false } };
+    expect(effectiveSetup(sync, false).extra_settings).toEqual({
+      async_output: false,
+    });
+    expect(
+      effectiveSetup({ ...sync, ensemble: "OPT" }, false).extra_settings,
+    ).toEqual({});
+  });
+
+  it("keeps water models for MM runs and rnoncoulomb only with water_inter", () => {
+    const water = {
+      ...base,
+      job_type: "mm-md" as const,
+      extra_settings: { water_intra: "spc_fw", rnoncoulomb: 9 },
+    };
+    expect(effectiveSetup(water, false).extra_settings).toEqual({
+      water_intra: "spc_fw",
+    });
+    const inter = {
+      ...water,
+      extra_settings: { water_inter: "tip3p", rnoncoulomb: 9 },
+    };
+    expect(effectiveSetup(inter, false).extra_settings).toEqual({
+      water_inter: "tip3p",
+      rnoncoulomb: 9,
+    });
+    expect(
+      effectiveSetup({ ...inter, job_type: "qm-md" }, false).extra_settings,
+    ).toEqual({});
   });
 });

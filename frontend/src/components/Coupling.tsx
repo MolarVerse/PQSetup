@@ -1,4 +1,5 @@
 import { Field } from "@molarverse/pq-design";
+import { fixedAxisOptions } from "../calculatorSettings";
 import {
   MANOSTATS,
   PRESSURE_ISOTROPIES,
@@ -117,11 +118,19 @@ export function PressureCoupling({
   value,
   onChange,
   controlId,
+  fixedAxis = "none",
+  onFixedAxisChange,
 }: {
   value: ManostatSettings;
   onChange: (patch: Partial<ManostatSettings>) => void;
   controlId?: string;
+  fixedAxis?: string;
+  onFixedAxisChange?: (axis: string | null) => void;
 }) {
+  const axisOptions = fixedAxisOptions(value.pressure_isotropy);
+  const shownAxis = axisOptions.some((option) => option.value === fixedAxis)
+    ? fixedAxis
+    : "none";
   return (
     <section className="coupling-section" aria-label="Pressure coupling">
       <div className="form-grid coupling-grid">
@@ -186,6 +195,28 @@ export function PressureCoupling({
             ))}
           </select>
         </Field>
+        {onFixedAxisChange && (
+          <Field
+            label="Fixed axes"
+            info="Cell axes the manostat leaves unscaled (fixed_axis)."
+            wide
+          >
+            <select
+              value={shownAxis}
+              onChange={(event) =>
+                onFixedAxisChange(
+                  event.target.value === "none" ? null : event.target.value,
+                )
+              }
+            >
+              {axisOptions.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <p className="condition-full pressure-default-note">
           The default compressibility is for ambient water. Check this value
           for your material before using NPT.

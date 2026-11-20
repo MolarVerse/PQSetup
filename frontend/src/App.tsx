@@ -2640,6 +2640,12 @@ export default function App() {
                   <PressureCoupling
                     value={setup}
                     controlId="sampling-manostat"
+                    fixedAxis={
+                      typeof setup.extra_settings.fixed_axis === "string"
+                        ? setup.extra_settings.fixed_axis
+                        : "none"
+                    }
+                    onFixedAxisChange={(axis) => setExtra("fixed_axis", axis)}
                     onChange={(patch) =>
                       setSetup((existing) => ({
                         ...existing,
@@ -2865,6 +2871,30 @@ export default function App() {
                       }
                     />
                   </Field>
+                  {setup.ensemble !== "OPT" && (
+                    <Field
+                      label="File writing"
+                      controlId="async-output"
+                      info="PQ writes trajectory and restart files on a separate thread; after a crash the last frame or two may be missing (async_output)."
+                    >
+                      <select
+                        value={
+                          setup.extra_settings.async_output === false
+                            ? "sync"
+                            : "async"
+                        }
+                        onChange={(event) =>
+                          setExtra(
+                            "async_output",
+                            event.target.value === "sync" ? false : null,
+                          )
+                        }
+                      >
+                        <option value="async">Background thread</option>
+                        <option value="sync">Before the next step</option>
+                      </select>
+                    </Field>
+                  )}
                 </ConditionRow>
 
                 <ConditionRow

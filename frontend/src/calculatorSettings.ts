@@ -63,6 +63,44 @@ export const VIRIAL_KINDS: ChoiceOption[] = [
   { value: "atomic", label: "Atomic" },
 ];
 
+export const WATER_MODELS: ChoiceOption[] = [
+  { value: "none", label: "None · from the force field" },
+  { value: "spc", label: "SPC" },
+  { value: "spc_e", label: "SPC/E" },
+  { value: "spc_fw", label: "SPC/Fw" },
+  { value: "qspc_fw", label: "qSPC/Fw" },
+  { value: "spc_dc", label: "SPC/DC" },
+  { value: "h2o_dc", label: "H2O-DC" },
+  { value: "tip3p", label: "TIP3P" },
+  { value: "opc3", label: "OPC3" },
+  { value: "spc_mtr", label: "SPC-mTR" },
+  { value: "tip3p_mtr", label: "TIP3P-mTR" },
+];
+
+/** PQ refuses fixing all axes while a manostat runs. */
+export const FIXED_AXES: ChoiceOption[] = [
+  { value: "none", label: "None" },
+  { value: "x", label: "x" },
+  { value: "y", label: "y" },
+  { value: "z", label: "z" },
+  { value: "xy", label: "x and y" },
+  { value: "xz", label: "x and z" },
+  { value: "yz", label: "y and z" },
+];
+
+/** Semi-isotropic coupling may only fix its out-of-plane axis. */
+const SEMI_ISOTROPIC_AXIS: Record<string, string> = { xy: "z", xz: "y", yz: "x" };
+
+export function fixedAxisOptions(
+  isotropy: SimulationSetup["pressure_isotropy"],
+): ChoiceOption[] {
+  const axis = SEMI_ISOTROPIC_AXIS[isotropy];
+  if (axis === undefined) return FIXED_AXES;
+  return FIXED_AXES.filter(
+    (option) => option.value === "none" || option.value === axis,
+  );
+}
+
 /** `on` and `shake` are synonyms in PQ; `mshake` also needs an mshake_file. */
 export const SHAKE_MODES: ChoiceOption[] = [
   { value: "off", label: "Off" },
@@ -97,6 +135,8 @@ export const MM_DEFAULTS = {
   "mshake-tolerance": 1e-8,
   "mshake-iter": 20,
   "cell-number": 7,
+  water_intra: "none",
+  water_inter: "none",
 } as const;
 
 export function extraString(
@@ -206,7 +246,13 @@ const MM_KEYS = [
   "mshake-iter",
   "distance-constraints",
   "virial",
+  "water_intra",
+  "water_inter",
+  "rnoncoulomb",
 ] as const;
+
+/** Run keywords edited next to the pressure coupling and output controls. */
+const RUN_KEYS = ["fixed_axis", "async_output"] as const;
 
 /**
  * Kinetic resets live in PQ's MD engine, so they apply to every MD run
@@ -230,10 +276,20 @@ export function isThermalEnsemble(setup: SimulationSetup): boolean {
   return setup.ensemble === "NVT" || setup.ensemble === "NPT";
 }
 
-/** Reset keys the Run section may write for this ensemble. */
+/** Run-section keys (resets, fixed axes, async output) for this ensemble. */
 function applicableResetKeys(setup: SimulationSetup): Set<string> {
   const keys = new Set<string>();
   if (setup.ensemble === "OPT") return keys;
+  keys.add("async_output");
+  const fixedAxis = setup.extra_settings.fixed_axis;
+  if (
+    setup.ensemble === "NPT" &&
+    fixedAxisOptions(setup.pressure_isotropy).some(
+      (option) => option.value === fixedAxis,
+    )
+  ) {
+    keys.add("fixed_axis");
+  }
   for (const key of MOMENTUM_RESET_KEYS) keys.add(key);
   if (isThermalEnsemble(setup)) {
     for (const key of TEMPERATURE_RESET_KEYS) keys.add(key);
@@ -261,6 +317,14 @@ function applicableSettingKeys(setup: SimulationSetup): Set<string> {
     }
     if (usesGuff(setup.mm_force_field)) {
       keys.add("noncoulomb");
+    }
+    keys.add("water_intra");
+    keys.add("water_inter");
+    if (
+      typeof setup.extra_settings.water_inter === "string" &&
+      setup.extra_settings.water_inter !== "none"
+    ) {
+      keys.add("rnoncoulomb");
     }
     for (const key of CONSTRAINT_KEYS) keys.add(key);
     if (setup.extra_settings.shake === "mshake") {
@@ -292,7 +356,12 @@ function applicableSettingKeys(setup: SimulationSetup): Set<string> {
 
 /** Drop dialog-owned keys that no longer apply; returns the same object if clean. */
 export function pruneExtraSettings(setup: SimulationSetup): ExtraSettings {
-  const owned = new Set<string>([...QM_KEYS, ...MM_KEYS, ...RESET_KEYS]);
+  const owned = new Set<string>([
+    ...QM_KEYS,
+    ...MM_KEYS,
+    ...RESET_KEYS,
+    ...RUN_KEYS,
+  ]);
   const allowed = new Set([
     ...applicableSettingKeys(setup),
     ...applicableResetKeys(setup),
@@ -327,6 +396,7 @@ export function settingsLines(setup: SimulationSetup): string[] {
 /** The reset keywords in force, in input-file form, for the Steps row. */
 export function runSettingsLines(setup: SimulationSetup): string[] {
   const allowed = applicableResetKeys(setup);
+  for (const key of RUN_KEYS) allowed.delete(key);
   return Object.keys(setup.extra_settings)
     .filter((key) => allowed.has(key))
     .sort()
