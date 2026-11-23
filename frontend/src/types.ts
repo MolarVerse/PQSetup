@@ -150,6 +150,7 @@ export interface Bootstrap {
   pq: PQStatus;
   runners: RunnerStatus[];
   presets: Preset[];
+  watching_run?: boolean;
 }
 
 export interface SimulationSetup {

@@ -28,6 +28,23 @@ running while you use PQSetup. ``ExitOnForwardFailure`` reports a failure to
 create the local listener; it does not verify that PQSetup is healthy on the
 server.
 
+Phone over Tailscale
+--------------------
+
+Connect the phone and server to the same tailnet. In two server terminals,
+start PQSetup with the server's full Tailscale DNS name and share it privately:
+
+.. code-block:: bash
+
+   pqsetup serve --no-browser --proxy-host server.example.ts.net
+   tailscale serve 8888
+
+Open the HTTPS URL printed by Tailscale in the phone browser. Replace the
+example name with the hostname from that URL. The proxy host option permits
+the hostname sent by the proxy; it does not change the loopback bind or
+authorize users. Limit access to your intended users with tailnet policy and
+use Serve, not Funnel.
+
 Work from home through the institutional VPN
 --------------------------------------------
 

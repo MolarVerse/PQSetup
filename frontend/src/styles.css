@@ -941,7 +941,7 @@ kbd {
   background: transparent;
 }
 
-.structure-summary > div:not(.file-icon) {
+.structure-file-details {
   flex: 1;
   min-width: 0;
 }
@@ -972,6 +972,12 @@ kbd {
 .structure-summary .structure-context {
   display: block;
   font-size: 0.78rem;
+}
+
+.structure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .structure-replace {
@@ -2055,10 +2061,6 @@ kbd {
     gap: 10px;
   }
 
-  .command-search {
-    max-width: none;
-  }
-
   .brand strong {
     display: none;
   }
@@ -2081,6 +2083,23 @@ kbd {
 
   .result-cards {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .header-center {
+    justify-content: flex-end;
+  }
+
+  .app-header .header-reset,
+  .app-header .header-docs-link {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .app-header .header-reset > span {
+    display: none;
   }
 }
 
@@ -2145,6 +2164,39 @@ kbd {
     padding: 0 14px;
   }
 
+  .switch-row,
+  .structure-meta .prepare-option .switch-row,
+  .condition-toggle,
+  .setup-section input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .setup-section select {
+    min-height: 44px;
+  }
+
+  .setup-section input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .setup-section select,
+  .palette-search input {
+    font-size: 16px;
+  }
+
+  .palette-search button,
+  .palette-results .command-group > button {
+    min-height: 44px;
+  }
+
+  .structure-summary {
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+  }
+
+  .structure-actions {
+    flex: 1 0 100%;
+    gap: 8px;
+  }
+
+  .structure-replace {
+    min-height: 44px;
+  }
+
   .setup-page {
     padding: 24px 16px 28px;
     gap: 24px;
@@ -2192,4 +2244,48 @@ kbd {
   .viewer-stage > svg {
     min-height: 230px;
   }
+}
+
+@media (max-width: 360px) {
+  .condition-head {
+    flex-wrap: wrap;
+  }
+}
+
+.run-progress-status {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.run-progress-status > :nth-child(2) {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-progress progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin-top: 8px;
+  appearance: none;
+  border: 0;
+  background: var(--border);
+}
+
+.run-progress progress::-webkit-progress-bar {
+  background: var(--border);
+}
+
+.run-progress progress::-webkit-progress-value {
+  background: var(--ink);
+}
+
+.run-progress progress::-moz-progress-bar {
+  background: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .pq-app-header.app-header { height: auto; }
 }

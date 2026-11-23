@@ -1,6 +1,7 @@
+import { AppHeader, HeaderStatus, HelpButton, HelpPanels, type HelpPage, SearchTrigger, useHealthProbe } from "@molarverse/pq-design";
+import { RunProgressPanel } from "./RunProgressPanel";
 import {
   Atom,
-  BookOpen,
   Boxes,
   CheckCircle2,
   ChevronRight,
@@ -15,10 +16,10 @@ import {
   Maximize2,
   Package as PackageIcon,
   Rotate3d,
-  Search,
   Sparkles,
   Terminal,
   Thermometer,
+  FilePlus,
   RotateCcw,
   Timer,
   Upload,
@@ -241,6 +242,16 @@ function thermostatDescription(value: string | null): string {
   );
 }
 
+function isBootstrapHealth(value: unknown): value is Bootstrap {
+  if (!value || typeof value !== "object" || !("pq" in value)) return false;
+  const pq = value.pq;
+  return Boolean(pq && typeof pq === "object" && "found" in pq && typeof pq.found === "boolean");
+}
+
+function isRunProgressHealth(value: unknown): value is { state: string } {
+  return Boolean(value && typeof value === "object" && "state" in value && typeof value.state === "string");
+}
+
 export default function App() {
   // The last page state of this browser; Reset clears it.
   const [restored] = useState(() => {
@@ -301,8 +312,9 @@ export default function App() {
     restored?.structure?.jitterSeed ?? 238917,
   );
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpPage, setHelpPage] = useState<HelpPage | null>(null);
   const [modal, setModal] = useState<
-    "structure" | "input" | "calculator" | "run" | null
+    "structure" | "input" | "calculator" | "run" | "new-setup" | null
   >(null);
   const generatedInputSelectId = useId();
   const modalInputSelectId = useId();
@@ -584,13 +596,6 @@ export default function App() {
   ]);
 
   function startNewSetup() {
-    if (
-      !window.confirm(
-        "Start a new setup? The settings and structure remembered in this browser are cleared.",
-      )
-    ) {
-      return;
-    }
     resetting.current = true;
     clearSavedSetup(browserStorage());
     window.location.reload();
@@ -1404,23 +1409,23 @@ export default function App() {
       {
         id: "reset",
         group: "Actions",
-        label: "Reset setup",
+        label: "New setup",
         detail: "Start clean; forget the setup remembered in this browser",
         keywords: ["new", "clear", "start over", "forget", "restore"],
-        run: startNewSetup,
+        run: () => setModal("new-setup"),
       },
       {
-        id: "documentation",
+        id: "help",
         group: "Actions",
-        label: "Open documentation",
-        detail: "Guides, validation, run packages, and command line",
-        keywords: ["docs", "help", "manual", "guide", "getting started"],
-        run: () =>
-          window.open(
-            DOCUMENTATION_URL,
-            "_blank",
-            "noopener,noreferrer",
-          ),
+        label: "Help",
+        keywords: ["documentation", "manual", "guide", "getting started"],
+        run: () => setHelpPage("help"),
+      },
+      {
+        id: "keyboard-shortcuts",
+        group: "Actions",
+        label: "Keyboard shortcuts",
+        run: () => setHelpPage("shortcuts"),
       },
     ];
   }, [
@@ -1452,6 +1457,12 @@ export default function App() {
       const editing =
         target?.matches("input, textarea, select, [contenteditable=true]") ??
         false;
+      if (event.defaultPrevented || event.isComposing || target?.closest("dialog[open]")) return;
+      if (!editing && !paletteOpen && event.key === "?" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault();
+        setHelpPage("shortcuts");
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((value) => !value);
@@ -1865,81 +1876,66 @@ export default function App() {
     }));
   }
 
+  const health = useHealthProbe("/api/bootstrap", isBootstrapHealth);
+  const watched = health.data?.watching_run ?? bootstrap?.watching_run ?? false;
+  const progressHealth = useHealthProbe(watched ? "/api/run/progress" : null, isRunProgressHealth);
+  const pqHealth = health.data?.pq;
   const runLauncher = packageRunLauncher(bootstrap?.pq ?? null);
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="brand" title="PQSetup">
-          <img src="/pq-logo.png" alt="PQSetup" />
-          <strong>PQSetup</strong>
-        </div>
-        <div className="header-center">
-          <button
-            type="button"
-            className="command-search"
-            aria-label={`Search setup, ${searchShortcut}`}
-            onClick={() => setPaletteOpen(true)}
-          >
-            <Search size={16} aria-hidden="true" />
-            <span>Search setup…</span>
-            <kbd>{searchShortcut}</kbd>
-          </button>
-        </div>
-        <div className="header-status">
+      <AppHeader
+          className="app-header"
+          status={<HeaderStatus
+            checks={[
+              { label: "Server connection", state: health.state },
+              {
+                label: "PQ executable",
+                state: pqHealth ? pqHealth.found ? "pass" : "fail" : health.state === "fail" ? "skipped" : "pending",
+                detail: pqHealth?.found ? pqHealth.version ? `PQ ${pqHealth.version}` : undefined
+                  : pqHealth ? "Install PQ or configure its executable on the server." : undefined,
+              },
+              {
+                label: "PQ input validation",
+                state: pqHealth ? pqHealth.validation_available ? "pass" : pqHealth.found ? "fail" : "skipped"
+                  : health.state === "fail" ? "skipped" : "pending",
+                detail: pqHealth && !pqHealth.validation_available ? pqHealth.capabilities_issue ?? undefined : undefined,
+              },
+              ...(watched ? [{
+                label: "Run progress",
+                state: progressHealth.state,
+                detail: progressHealth.data?.state === "waiting" ? "Waiting for the run’s output files." : undefined,
+              }] : []),
+            ]}
+          />}
+          name="PQSetup"
+          context={analysis.structure.source_name ?? undefined}
+          files={analysis.structure.source_name ? [analysis.structure.source_name] : undefined}
+          logo="/pq-logo.png"
+          actionsClassName="header-status"
+          search={<SearchTrigger
+            label="Search…"
+            accessibleName="Search setup"
+            shortcut={searchShortcut}
+            open={paletteOpen}
+            onOpen={() => setPaletteOpen(true)}
+          />}
+          actions={<>
           <button
             type="button"
             className="header-reset"
-            onClick={startNewSetup}
-            title="Start a new setup"
+            data-header-action=""
+            onClick={() => setModal("new-setup")}
+            aria-label="New setup"
+            aria-haspopup="dialog"
+            title="New setup"
           >
-            <RotateCcw size={14} aria-hidden="true" />
-            <span>Reset</span>
+            <FilePlus size={16} aria-hidden="true" />
+            <span className="pq-header-action-label">New setup</span>
           </button>
-          <a
-            className="header-docs-link"
-            href={DOCUMENTATION_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open PQSetup documentation"
-            title="Docs"
-          >
-            <BookOpen size={15} aria-hidden="true" />
-          </a>
-          {bootstrap ? (
-            <span
-              className={`pq-tag ${bootstrap.pq.found ? "ok" : "portable"}`}
-              title={
-                bootstrap.pq.found
-                  ? `PQ ${bootstrap.pq.version ?? "detected"}`
-                  : "PQ is not installed locally. Packaging is available; run and validate with PQ on the target machine."
-              }
-              aria-label={
-                bootstrap.pq.found
-                  ? `Local PQ ${bootstrap.pq.version ?? "detected"}`
-                  : "No local PQ. Packages can still be created."
-              }
-            >
-              <span className="pq-tag-label">PQ</span>
-              <span className="pq-tag-value">
-                {bootstrap.pq.found
-                  ? `PQ ${(bootstrap.pq.version ?? "detected").split("-")[0]}`
-                  : "PQ not local"}
-              </span>
-            </span>
-          ) : bootstrapError ? (
-            <span className="pq-tag missing" title="Backend unavailable">
-              <span className="pq-tag-label">PQ</span>
-              <span className="pq-tag-value">offline</span>
-            </span>
-          ) : (
-            <span className="pq-tag pending" title="Checking system">
-              <LoaderCircle size={13} className="spin" aria-hidden="true" />
-              <span className="pq-tag-value">checking</span>
-            </span>
-          )}
-        </div>
-      </header>
+          <HelpButton open={helpPage !== null} onClick={() => setHelpPage("help")} />
+        </>}
+        />
 
       <main className="page">
           {notice && notice.kind === "error" && (
@@ -1972,7 +1968,16 @@ export default function App() {
             </div>
           )}
 
+          {(bootstrapError || bootstrap?.pq.found === false) && (
+            <div className="notice" role="status">
+              {bootstrapError
+                ? "PQSetup server unavailable."
+                : "PQ is not installed here. You can still create a run package."}
+            </div>
+          )}
+
           <div className="setup-page">
+            {bootstrap?.watching_run && <RunProgressPanel />}
             <section
               className="setup-section"
               id="section-structure"
@@ -2016,7 +2021,7 @@ export default function App() {
                       <FileCode2 size={18} aria-hidden="true" />
                     )}
                   </div>
-                  <div>
+                  <div className="structure-file-details">
                     <strong>{analysis.structure.source_name}</strong>
                     <small>
                       <ChemicalFormula formula={analysis.summary.formula} />
@@ -2044,36 +2049,38 @@ export default function App() {
                       <CircleAlert size={16} aria-hidden="true" />
                     </span>
                   )}
-                  <button
-                    type="button"
-                    className="structure-replace"
-                    aria-haspopup="dialog"
-                    title="View in 3D"
-                    onClick={() => setModal("structure")}
-                  >
-                    <Rotate3d size={14} aria-hidden="true" />
-                    3D
-                  </button>
-                  <button
-                    type="button"
-                    className="structure-replace"
-                    aria-label="Import structure"
-                    title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · select companion files along, or drop them here"
-                    onClick={openFilePicker}
-                  >
-                    <Upload size={14} aria-hidden="true" />
-                    Import
-                  </button>
-                  <button
-                    type="button"
-                    className="structure-replace"
-                    aria-label="Import a run folder"
-                    title="Pick a folder: the structure and companion files (moldescriptor, guff, topology, …) are sorted by name"
-                    onClick={() => folderInput.current?.click()}
-                  >
-                    <FolderOpen size={14} aria-hidden="true" />
-                    Folder
-                  </button>
+                  <div className="structure-actions">
+                    <button
+                      type="button"
+                      className="structure-replace"
+                      aria-haspopup="dialog"
+                      title="View in 3D"
+                      onClick={() => setModal("structure")}
+                    >
+                      <Rotate3d size={14} aria-hidden="true" />
+                      3D
+                    </button>
+                    <button
+                      type="button"
+                      className="structure-replace"
+                      aria-label="Import structure"
+                      title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · select companion files along, or drop them here"
+                      onClick={openFilePicker}
+                    >
+                      <Upload size={14} aria-hidden="true" />
+                      Import
+                    </button>
+                    <button
+                      type="button"
+                      className="structure-replace"
+                      aria-label="Import a run folder"
+                      title="Pick a folder: the structure and companion files (moldescriptor, guff, topology, …) are sorted by name"
+                      onClick={() => folderInput.current?.click()}
+                    >
+                      <FolderOpen size={14} aria-hidden="true" />
+                      Folder
+                    </button>
+                  </div>
                 </div>
 
                 <div className="structure-meta band-row">
@@ -3274,6 +3281,22 @@ export default function App() {
           </footer>
       </main>
 
+      <Modal open={modal === "new-setup"} title="New setup" onClose={() => setModal(null)}>
+        <p>This clears the structure and settings remembered in this browser. Downloaded packages are not affected.</p>
+        <div className="pq-confirm-actions">
+          <button type="button" onClick={() => setModal(null)}>Cancel</button>
+          <button type="button" onClick={startNewSetup}>Start new setup</button>
+        </div>
+      </Modal>
+      <HelpPanels page={helpPage} onPage={setHelpPage} docs={DOCUMENTATION_URL}
+        intro={<p>Import a structure, choose a method and run settings, then review and package the inputs.</p>}
+        groups={[{ items: [
+          [searchShortcut + " / /", "Search setup"],
+          [runShortcut, "Create the run package when inputs are ready"],
+          ["Alt 1–4", "Go to a setup section"],
+          ["?", "Keyboard shortcuts"],
+          ["Esc", "Close the dialog"],
+        ] }]} />
       <Modal
         open={modal === "structure"}
         size="full"
