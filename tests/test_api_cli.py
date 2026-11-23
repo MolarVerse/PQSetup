@@ -115,6 +115,21 @@ def test_untrusted_host_is_rejected() -> None:
     assert response.status_code == 400
 
 
+def test_private_proxy_accepts_only_the_configured_hostname() -> None:
+    client = TestClient(create_app(proxy_host="server.example.ts.net"))
+    for host in ("localhost", "server.example.ts.net", "server.example.ts.net:8443"):
+        assert client.get("/api/health", headers={"host": host}).status_code == 200
+    assert client.get(
+        "/api/health", headers={"host": "other.example.ts.net"}
+    ).status_code == 400
+
+
+@pytest.mark.parametrize("host", ["*", "https://example.org", "example.org:443"])
+def test_proxy_host_requires_a_hostname(host: str) -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["serve", "--proxy-host", host])
+
+
 def test_local_api_does_not_expose_interactive_docs() -> None:
     client = TestClient(create_app())
 

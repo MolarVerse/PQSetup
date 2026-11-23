@@ -71,6 +71,8 @@ def create_app(
     *,
     pq_executable: str | None = None,
     logger: logging.Logger | None = None,
+    proxy_host: str | None = None,
+    watch_run: Path | None = None,
 ) -> FastAPI:
     event_log = logger if logger is not None else logging.Logger("PQSetup.api")
     if logger is None:
@@ -83,7 +85,10 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=_TRUSTED_HOSTS)
+    trusted_hosts = [*_TRUSTED_HOSTS, proxy_host] if proxy_host else _TRUSTED_HOSTS
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=trusted_hosts, www_redirect=False
+    )
     pq = discover_pq(pq_executable)
     runner_context = pq.executable if pq.found else None
     runners = apply_pq_capabilities(
@@ -130,6 +135,35 @@ def create_app(
             )
         return response
 
+    if watch_run is not None:
+        progress_path = watch_run.resolve() / "run-logs" / "progress.tsv"
+
+        @app.get("/api/run/progress")
+        def run_progress() -> Response:
+            try:
+                with progress_path.open(encoding="ascii") as progress:
+                    version, state, *counts = progress.read(256).strip().split("\t")
+                stage, completed, total, exit_code = map(int, counts)
+                if (
+                    version != "1"
+                    or state not in {"running", "completed", "failed"}
+                    or not 0 <= completed <= stage <= total
+                    or total < 1
+                ):
+                    raise ValueError("Invalid progress")
+                payload = dict(
+                    state=state, stage=stage, completed=completed, total=total,
+                    exit_code=exit_code,
+                )
+            except FileNotFoundError:
+                payload = {"state": "waiting"}
+            except (OSError, ValueError) as error:
+                raise HTTPException(503, "Run progress is unavailable.") from error
+            return Response(
+                json.dumps(payload), media_type="application/json",
+                headers={"Cache-Control": "no-store"},
+            )
+
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
@@ -142,6 +176,7 @@ def create_app(
             pq=pq,
             runners=runners,
             presets=list_presets(),
+            watching_run=watch_run is not None,
         )
 
     @app.post(

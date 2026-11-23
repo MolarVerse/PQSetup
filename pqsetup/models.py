@@ -313,6 +313,7 @@ class Bootstrap(BaseModel):
     pq: PQStatus
     runners: list[RunnerStatus]
     presets: list[Preset]
+    watching_run: bool = False
 
 
 class PreparationMetadata(BaseModel):

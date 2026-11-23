@@ -3,7 +3,19 @@
 PQSetup follows [Semantic Versioning](https://semver.org/). This file records
 user-visible changes.
 
-## [Unreleased]
+## [0.5.0] - 2026-11-23
+
+### Added
+
+- Add shared navigation, Help and health checks, and monitor run progress from the browser.
+
+### Added
+
+- Open PQSetup from a phone through a private reverse proxy while the server stays on loopback.
+
+### Fixed
+
+- Keep structure details readable above touch-friendly file actions on phones.
 
 ## [0.4.0] - 2026-11-20
 

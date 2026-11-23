@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import socket
 import sys
 import threading
@@ -29,6 +30,16 @@ def _port(value: str) -> int:
     if not 1 <= port <= 65535:
         raise argparse.ArgumentTypeError("port must be between 1 and 65535")
     return port
+
+
+def _proxy_hostname(value: str) -> str:
+    name = value.lower()
+    label = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    if len(name) > 253 or not re.fullmatch(rf"{label}(?:\.{label})*", name):
+        raise argparse.ArgumentTypeError(
+            "proxy host must be a hostname without a scheme, port, or wildcard"
+        )
+    return name
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,7 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
         default="127.0.0.1",
     )
     serve.add_argument("--port", default=8888, type=_port)
+    serve.add_argument(
+        "--proxy-host",
+        type=_proxy_hostname,
+        help="Allow this exact hostname through a private reverse proxy.",
+    )
     serve.add_argument("--no-browser", action="store_true")
+    serve.add_argument("--watch-run", type=Path)
     serve.add_argument(
         "--log-level",
         dest="command_log_level",
@@ -240,6 +257,8 @@ def _serve(args: argparse.Namespace) -> int:
                 getattr(args, "command_pq_executable", None) or args.pq_executable
             ),
             logger=terminal.log,
+            proxy_host=getattr(args, "proxy_host", None),
+            watch_run=getattr(args, "watch_run", None),
         )
 
         class BrowserServer(uvicorn.Server):
