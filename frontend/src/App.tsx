@@ -304,6 +304,7 @@ export default function App() {
   const [rendered, setRendered] = useState<PlanRenderResult | null>(null);
   const [selectedFileKey, setSelectedFileKey] = useState<string | null>(null);
   const [showInputHeader, setShowInputHeader] = useState(false);
+  const [showMoreBlockers, setShowMoreBlockers] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
@@ -695,7 +696,7 @@ export default function App() {
     }
     if (!methodReady) {
       if (!molecularMechanics && !setup.runner) {
-        issues.push({ message: "Choose a calculator", section: "method" });
+        issues.push({ message: "Choose a calculator", section: "method", controlId: "calculator" });
       } else if (
         !molecularMechanics &&
         electronicProgram &&
@@ -705,6 +706,7 @@ export default function App() {
         issues.push({
           message: "Choose an electronic method",
           section: "method",
+          controlId: "electronic-method",
         });
       } else if (molecularMechanics && !hasTypedMolecules) {
         issues.push({
@@ -2932,6 +2934,40 @@ export default function App() {
                     id="setup-checks"
                     tabIndex={-1}
                   >
+                    {blockingIssues.length > 0 && (
+                      <div className="review-check-list review-errors">
+                        <h3>Required fixes</h3>
+                        <ul id="review-blockers">
+                          {(showMoreBlockers ? blockingIssues : blockingIssues.slice(0, 1)).map((issue, index) => (
+                            <li key={`${issue.message}-${index}`}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  goToControl(issue.section, issue.controlId)
+                                }
+                              >
+                                <CircleAlert size={14} aria-hidden="true" />
+                                <span>{issue.message}</span>
+                                <strong>Fix</strong>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                        {blockingIssues.length > 1 && (
+                          <button
+                            type="button"
+                            className="review-more-blockers"
+                            aria-expanded={showMoreBlockers}
+                            aria-controls="review-blockers"
+                            onClick={() => setShowMoreBlockers(!showMoreBlockers)}
+                          >
+                            {showMoreBlockers
+                              ? "Show first blocker only"
+                              : `Show ${blockingIssues.length - 1} more`}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <dl className="review-facts">
                       <div>
                         <dt>Structure</dt>
@@ -2999,30 +3035,9 @@ export default function App() {
                         </dd>
                       </div>
                     </dl>
-                    {blockingIssues.length > 0 && (
-                      <div className="review-check-list review-errors">
-                        <h3>Fix before packaging</h3>
-                        <ul>
-                          {blockingIssues.map((issue, index) => (
-                            <li key={`${issue.message}-${index}`}>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  goToControl(issue.section, issue.controlId)
-                                }
-                              >
-                                <CircleAlert size={14} aria-hidden="true" />
-                                <span>{issue.message}</span>
-                                <ChevronRight size={14} aria-hidden="true" />
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                     {warningDiagnostics.length > 0 && (
                       <div className="review-check-list review-warnings">
-                        <h3>Check before running</h3>
+                        <h3>Warnings · not blocking</h3>
                         <ul>
                           {warningDiagnostics.map((warning) => (
                             <li key={`${warning.code}:${warning.message}`}>
