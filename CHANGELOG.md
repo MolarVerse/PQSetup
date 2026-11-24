@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Show compact status check symbols and one optional Details control.
+
+
 PQSetup follows [Semantic Versioning](https://semver.org/). This file records
 user-visible changes.
 
