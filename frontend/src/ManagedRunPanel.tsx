@@ -7,6 +7,7 @@ type RunProgress = { state: "idle" } | {
   stage: number;
   total: number;
   exit_code: number | null;
+  log_tail?: string;
   elapsed_seconds: number;
   eta_seconds: number | null;
   steps_per_second: number | null;
@@ -50,7 +51,7 @@ export function ManagedRunPanel({ revision, onRunning }: {
   const stage = run.outputs.find((output) => output.stage === run.stage)?.label;
   const label = offline ? "Run progress unavailable"
     : run.state === "completed" ? "Simulation finished"
-      : run.state === "failed" ? `Simulation failed (exit ${run.exit_code}). See the run logs.`
+      : run.state === "failed" ? `Simulation failed${stage ? ` · ${stage}` : ""}`
         : stage ? `${stage} · stage ${run.stage} of ${run.total}` : "Starting simulation…";
 
   const viewer = [...run.outputs].reverse().find((output) => output.viewer);
@@ -79,6 +80,10 @@ export function ManagedRunPanel({ revision, onRunning }: {
       </a>}
     </nav>}
     <div id="managed-run-details" className="managed-run-details" hidden={!details}>
+      {run.state === "failed" && <>
+        <div>Exit code: {run.exit_code}</div>
+        {run.log_tail && <pre className="managed-run-log" aria-label="Recent simulation log">{run.log_tail}</pre>}
+      </>}
       <div>Elapsed: {duration(run.elapsed_seconds)}</div>
       {run.steps_per_second != null && <div>Recent speed: {Math.round(run.steps_per_second).toLocaleString()} steps/s</div>}
       {run.outputs.length > 1 && run.outputs.map((output) =>

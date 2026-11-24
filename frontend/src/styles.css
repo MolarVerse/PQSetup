@@ -2322,6 +2322,12 @@ kbd {
   font-size: 0.8125rem;
 }
 
+.managed-run-log {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .run-stage { flex-wrap: wrap; }
 .run-details {
   display: inline-flex;

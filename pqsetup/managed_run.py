@@ -19,6 +19,18 @@ from urllib.request import urlopen
 from fastapi import HTTPException
 
 
+def _launcher_log_tail(path: Path) -> str:
+    try:
+        with path.open("rb") as log:
+            size = log.seek(0, io.SEEK_END)
+            log.seek(max(0, size - 8192))
+            if size > 8192:
+                log.readline()
+            return log.read(8192).decode("utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
 def _restart_step(path: Path) -> int | None:
     try:
         with path.open("rb") as restart:
@@ -151,6 +163,8 @@ class ManagedRun:
             "steps": steps, "target": total, "exit_code": exit_code,
             "outputs": outputs,
         }
+        if exit_code not in (None, 0):
+            self.progress["log_tail"] = _launcher_log_tail(directory / ".pqsetup" / "launcher.log")
         temporary = directory / ".pqsetup" / ".progress.json"
         temporary.write_text(json.dumps(self.progress), encoding="utf-8")
         temporary.replace(directory / ".pqsetup" / "progress.json")
