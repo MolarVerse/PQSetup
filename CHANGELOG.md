@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show stage durations, total simulated time, and expected sampling frames in Review.
+
 - Show compact status check symbols and one optional Details control.
 
 
