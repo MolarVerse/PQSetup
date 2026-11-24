@@ -42,6 +42,7 @@ import {
 } from "react";
 import {
   analyzeFile,
+  prepareCrystal,
   submitProject,
   getBootstrap,
   perturbFile,
@@ -319,8 +320,13 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpPage, setHelpPage] = useState<HelpPage | null>(null);
   const [modal, setModal] = useState<
-    "structure" | "input" | "calculator" | "run" | "new-setup" | null
+    "structure" | "input" | "calculator" | "run" | "new-setup" | "crystal" | null
   >(null);
+  const [crystalFile, setCrystalFile] = useState<File | null>(null);
+  const [crystalRepeats, setCrystalRepeats] = useState(["1", "1", "1"]);
+  const [crystalBlock, setCrystalBlock] = useState("");
+  const [crystalError, setCrystalError] = useState("");
+  const [preparingCrystal, setPreparingCrystal] = useState(false);
   const generatedInputSelectId = useId();
   const modalInputSelectId = useId();
   const searchShortcut =
@@ -1556,6 +1562,7 @@ export default function App() {
         kind: result.valid ? "success" : "info",
         message: result.valid ? file.name : `${file.name} needs review`,
       });
+      return true;
     } catch (error) {
       if (sequence === uploadSequence.current) {
         setNotice({ kind: "error", message: formatError(error) });
@@ -2083,6 +2090,15 @@ export default function App() {
                     >
                       <Upload size={14} aria-hidden="true" />
                       Import
+                    </button>
+                    <button type="button" className="structure-replace" aria-haspopup="dialog"
+                      onClick={() => {
+                        setCrystalFile(null);
+                        setCrystalError("");
+                        setModal("crystal");
+                      }}>
+                      <Boxes size={14} aria-hidden="true" />
+                      Prepare crystal
                     </button>
                     <button
                       type="button"
@@ -3324,6 +3340,56 @@ export default function App() {
           </footer>
       </main>
 
+      <Modal open={modal === "crystal"} title="Prepare crystal" onClose={() => {
+        if (!preparingCrystal) setModal(null);
+      }}>
+        <form className="crystal-form" onSubmit={async (event) => {
+          event.preventDefault();
+          if (!crystalFile || preparingCrystal) return;
+          setPreparingCrystal(true);
+          setCrystalError("");
+          try {
+            const restart = await prepareCrystal(crystalFile, crystalRepeats, crystalBlock);
+            if (await useFile(restart)) {
+              setSetupFiles([]);
+              setModal("structure");
+            } else {
+              setCrystalError("The generated structure couldn’t be loaded.");
+            }
+          } catch (error) {
+            setCrystalError(formatError(error));
+          } finally {
+            setPreparingCrystal(false);
+          }
+        }}>
+          <Field label="CIF file" controlId="crystal-file">
+            <input type="file" accept=".cif" required disabled={preparingCrystal}
+              onChange={(event) => setCrystalFile(event.target.files?.[0] ?? null)} />
+          </Field>
+          <div className="crystal-repeats">
+            {["a", "b", "c"].map((axis, index) => (
+              <Field key={axis} label={`Repeat ${axis}`} controlId={`crystal-repeat-${axis}`}>
+                <input type="number" min="1" step="1" required value={crystalRepeats[index]}
+                  disabled={preparingCrystal} onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setCrystalRepeats((previous) => previous.map((repeat, i) => i === index ? value : repeat));
+                  }} />
+              </Field>
+            ))}
+          </div>
+          <Field label="CIF block (optional)" controlId="crystal-block">
+            <input value={crystalBlock} disabled={preparingCrystal}
+              onChange={(event) => setCrystalBlock(event.currentTarget.value)} />
+          </Field>
+          <p>Geometry only. Preparing a new crystal clears attached setup files.</p>
+          {crystalError && <p role="alert">{crystalError}</p>}
+          <div className="pq-confirm-actions">
+            <button type="submit" disabled={!crystalFile || preparingCrystal}>
+              {preparingCrystal ? "Preparing…" : "Prepare and preview"}
+            </button>
+          </div>
+        </form>
+      </Modal>
       <Modal open={modal === "new-setup"} title="New setup" onClose={() => setModal(null)}>
         <p>This clears the structure and settings remembered in this browser. Downloaded packages are not affected.</p>
         <div className="pq-confirm-actions">

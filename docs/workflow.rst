@@ -90,3 +90,15 @@ Shortcuts
      - :kbd:`Ctrl+Enter` / :kbd:`Cmd+Enter`
    * - Close a dialog or search
      - :kbd:`Esc`
+
+Prepare a crystal
+-----------------
+
+Choose **Prepare crystal** in Structure, select an ordered CIF, and enter
+the repeats along its three lattice vectors. For a multi-structure CIF,
+enter the data block name without the ``data_`` prefix. **Prepare and
+preview** opens the generated cell in 3D.
+
+The server needs a PQAnalysis build that includes crystal preparation.
+The result is geometry only: no force field is assigned, and attached
+setup files are cleared. Check the cell and model before running.

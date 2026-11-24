@@ -67,6 +67,16 @@ export async function analyzeFile(file: File): Promise<StructureAnalysis> {
   );
 }
 
+export async function prepareCrystal(file: File, repeats: string[], block: string): Promise<File> {
+  const body = new FormData();
+  body.append("file", file);
+  ["a", "b", "c"].forEach((axis, index) => body.append(`repeat_${axis}`, repeats[index]));
+  if (block.trim()) body.append("block", block.trim());
+  const response = await fetch("/api/structure/crystal", { method: "POST", body });
+  if (!response.ok) await readJson(response);
+  return new File([await response.blob()], file.name.replace(/\.cif$/i, "-supercell.rst"));
+}
+
 export async function perturbFile(
   file: File,
   sigma: number,
