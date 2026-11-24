@@ -5,9 +5,13 @@ import json
 import logging
 import tempfile
 import zipfile
+
+import httpx
 from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
 from hashlib import sha256
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
@@ -25,6 +29,7 @@ from .companions import (
 )
 from .executable import discover_pq
 from .input_writer import render_input
+from .managed_run import ManagedRun
 from .mm import (
     mm_method_label,
     validate_mm_setup_contents,
@@ -52,6 +57,7 @@ from .pq_validation import PQValidationError, validate_pq_input
 from .presets import list_presets
 from .release import TARGET_PQ_RELEASE
 from .runners import apply_pq_capabilities, detect_runners
+from .run_app import serve_run_app
 from .run_plan import plan_requested, render_run_plan
 from .run_script import RUN_SCRIPT_NAME, python_requirements, render_run_script
 from .setup_files import required_qm_file_roles
@@ -73,12 +79,27 @@ def create_app(
     logger: logging.Logger | None = None,
     proxy_host: str | None = None,
     watch_run: Path | None = None,
+    run_directory: Path | None = None,
+    companion_origin: str | None = None,
 ) -> FastAPI:
     event_log = logger if logger is not None else logging.Logger("PQSetup.api")
     if logger is None:
         event_log.addHandler(logging.NullHandler())
         event_log.propagate = False
+    managed = ManagedRun(run_directory, portal_origin=companion_origin) if run_directory is not None and not proxy_host else None
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(15, read=None)) as client:
+            _app.state.run_app_client = client
+            try:
+                yield
+            finally:
+                if managed:
+                    managed.close()
+
     app = FastAPI(
+        lifespan=lifespan,
         title="PQSetup",
         version=__version__,
         docs_url=None,
@@ -177,6 +198,7 @@ def create_app(
             runners=runners,
             presets=list_presets(),
             watching_run=watch_run is not None,
+            can_start_run=managed is not None and pq.supports_validation("portable"),
         )
 
     @app.post(
@@ -376,6 +398,42 @@ def create_app(
         )
         return response
 
+    if managed is not None:
+        def require_local_post(request: Request) -> None:
+            origin = request.headers.get("origin")
+            if origin is not None and origin != f"http://{request.headers['host']}":
+                raise HTTPException(403, "Use the local PQSetup interface.")
+            if request.headers.get("sec-fetch-site") not in {None, "same-origin"}:
+                raise HTTPException(403, "Use the local PQSetup interface.")
+            if request.headers.get("content-type", "").split(";")[0] != "application/json":
+                raise HTTPException(415, "Expected JSON.")
+
+        @app.post("/api/run/start", status_code=202)
+        def start_run(request: Request, project: ExportRequest):
+            require_local_post(request)
+            if not pq.found or not pq.executable:
+                raise HTTPException(503, "PQ is not available on the server.")
+            project = _with_seeded_companions(
+                project, pq_executable=pq.executable, external_qm=pq.external_qm,
+            )
+            bundle = _export_plan(project, pq=pq, runners=runners)
+            try:
+                managed.start(bundle.body, pq.executable)
+            except OSError as error:
+                raise HTTPException(503, f"Could not start PQ: {error}") from error
+            return managed.progress
+
+        @app.get("/api/run/managed")
+        def managed_progress():
+            return Response(
+                json.dumps(managed.progress), media_type="application/json",
+                headers={"Cache-Control": "no-store"},
+            )
+
+        @app.api_route("/run-app/{tool}/{stage}/{path:path}", methods=["GET", "POST"])
+        async def run_app(request: Request, tool: Literal["viewer", "enalyzer"], stage: int, path: str):
+            return await serve_run_app(managed, request, tool, stage, path, app.state.run_app_client)
+
     frontend_candidates = (
         Path(__file__).resolve().parents[1] / "frontend" / "dist",
         Path(__file__).resolve().parent / "static",
@@ -552,6 +610,8 @@ def _export_plan(
             "name": item.name,
             "sha256": sha256(item.input_text.encode("utf-8")).hexdigest(),
             "stage": item.stage_id,
+            "label": item.stage_label,
+            "steps": item.steps,
             "stage_index": item.stage_index,
             "stage_count": item.stage_count,
             "segment_index": item.segment_index,
@@ -572,6 +632,7 @@ def _export_plan(
             RUN_SCRIPT_NAME,
             "pqproject.json",
             "run-logs",
+            ".pqsetup",
         },
     )
     setup_file_entries = [

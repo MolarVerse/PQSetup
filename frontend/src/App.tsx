@@ -1,4 +1,5 @@
 import { AppHeader, HeaderStatus, HelpButton, HelpPanels, type HelpPage, SearchTrigger, useHealthProbe } from "@molarverse/pq-design";
+import { ManagedRunPanel } from "./ManagedRunPanel";
 import { RunProgressPanel } from "./RunProgressPanel";
 import {
   Atom,
@@ -15,6 +16,7 @@ import {
   LoaderCircle,
   Maximize2,
   Package as PackageIcon,
+  Play,
   Rotate3d,
   Sparkles,
   Terminal,
@@ -40,7 +42,7 @@ import {
 } from "react";
 import {
   analyzeFile,
-  exportProject,
+  submitProject,
   getBootstrap,
   perturbFile,
   renderPlan,
@@ -306,6 +308,8 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [perturbing, setPerturbing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [runRevision, setRunRevision] = useState(0);
+  const [runActive, setRunActive] = useState(false);
   const [jitter, setJitter] = useState(restored?.structure?.jitter ?? false);
   const [sigma, setSigma] = useState(restored?.structure?.sigma ?? 0.01);
   const [jitterSeed, setJitterSeed] = useState(
@@ -875,7 +879,7 @@ export default function App() {
     [],
   );
 
-  const createRun = useCallback(async () => {
+  const createRun = useCallback(async (start = false) => {
     if (!ready || exporting || rendering) {
       if (firstBlockingIssue) {
         goToControl(firstBlockingIssue.section, firstBlockingIssue.controlId);
@@ -885,7 +889,7 @@ export default function App() {
     setExporting(true);
     setNotice(null);
     try {
-      const blob = await exportProject(
+      const response = await submitProject(
         effective,
         analysis.structure,
         setup.file_prefix,
@@ -893,8 +897,14 @@ export default function App() {
         equilibration,
         samplingRunCount,
         activeSetupFiles,
+        start,
       );
-      const url = URL.createObjectURL(blob);
+      if (start) {
+        setRunActive(true);
+        setRunRevision((revision) => revision + 1);
+        return;
+      }
+      const url = URL.createObjectURL(await response.blob());
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `${setup.file_prefix}.zip`;
@@ -3222,6 +3232,7 @@ export default function App() {
           </div>
 
           <footer className="page-footer">
+              {bootstrap?.can_start_run && <ManagedRunPanel revision={runRevision} onRunning={setRunActive} />}
             <div className="page-footer-bar">
               {!rendered || rendering ? (
                 <div className="footer-status loading" role="status">
@@ -3277,6 +3288,11 @@ export default function App() {
                   <PackageIcon size={16} aria-hidden="true" />
                 )}
               </button>
+              {bootstrap?.can_start_run && <button type="button" className="create-run"
+                disabled={!ready || exporting || runActive} onClick={() => void createRun(true)}>
+                <Play size={16} aria-hidden="true" />
+                Start simulation
+              </button>}
             </div>
           </footer>
       </main>

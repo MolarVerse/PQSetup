@@ -287,6 +287,7 @@ class PlannedInput(BaseModel):
     name: str
     stage_id: Literal["equilibration", "sampling"]
     stage_label: str
+    steps: int
     stage_index: int
     stage_count: int
     segment_index: int | None = None
@@ -314,6 +315,7 @@ class Bootstrap(BaseModel):
     runners: list[RunnerStatus]
     presets: list[Preset]
     watching_run: bool = False
+    can_start_run: bool = False
 
 
 class PreparationMetadata(BaseModel):

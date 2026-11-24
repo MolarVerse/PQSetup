@@ -219,15 +219,44 @@ run_total="""
         + str(total)
         + """
 
+run_number=0
+completed_inputs=0
+
+write_progress() {
+    local state=$1
+    local exit_status=$2
+    local temporary
+    temporary=$(mktemp "$log_directory/.progress.XXXXXX")
+    printf '1\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+        "$state" "$run_number" "$completed_inputs" "$run_total" "$exit_status" > "$temporary"
+    mv -f -- "$temporary" "$log_directory/progress.tsv"
+}
+
+finish_run() {
+    local status=$?
+    trap - EXIT
+    if (( status == 0 )); then
+        write_progress completed 0
+    else
+        write_progress failed "$status"
+    fi
+    exit "$status"
+}
+
+trap finish_run EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 run_input() {
     local input_file=$1
-    local run_number=$2
+    run_number=$2
     local log_file=$3
     local -a pipeline_status
     local pq_status
     local tee_status
 
     printf '\\n[%s/%s] PQ %s\\n' "$run_number" "$run_total" "$input_file"
+    write_progress running 0
     if "$pq_executable" "$input_file" 2>&1 | tee "$log_file"; then
         pipeline_status=("${PIPESTATUS[@]}")
     else
@@ -252,6 +281,7 @@ run_input() {
         retry_hint
         return 1
     fi
+    completed_inputs=$run_number
     printf 'Finished %s\\n' "$input_file"
 }
 

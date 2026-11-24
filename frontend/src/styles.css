@@ -1726,6 +1726,7 @@ kbd {
   flex-shrink: 0;
   min-width: 0;
   padding: 0 12px;
+  gap: 8px;
 }
 
 .viewer {
@@ -2264,7 +2265,7 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-.run-progress progress {
+:is(.run-progress, .managed-run) progress {
   display: block;
   width: 100%;
   height: 5px;
@@ -2274,18 +2275,73 @@ kbd {
   background: var(--border);
 }
 
-.run-progress progress::-webkit-progress-bar {
+:is(.run-progress, .managed-run) progress::-webkit-progress-bar {
   background: var(--border);
 }
 
-.run-progress progress::-webkit-progress-value {
+:is(.run-progress, .managed-run) progress::-webkit-progress-value {
   background: var(--ink);
 }
 
-.run-progress progress::-moz-progress-bar {
+:is(.run-progress, .managed-run) progress::-moz-progress-bar {
   background: var(--ink);
 }
 
 @media (max-width: 760px) {
   .pq-app-header.app-header { height: auto; }
+}
+
+
+.managed-run { padding: 0 12px; }
+.managed-run progress { margin: 0; }
+
+.managed-run-heading, .run-views, .run-stage {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem 0.85rem;
+}
+
+.managed-run-heading { justify-content: space-between; min-height: 44px; }
+.managed-run-summary { display: grid; gap: 2px; padding: 4px 0; font-size: 0.8125rem; }
+.managed-run-summary span { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.managed-run-details {
+  max-height: min(22dvh, 10rem);
+  overflow: auto;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.run-stage { flex-wrap: wrap; }
+.run-details {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  font-size: 0.8125rem;
+}
+
+.run-views { gap: 8px; padding: 6px 0 0; }
+.run-views > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  color: inherit;
+  font-size: 0.8125rem;
+  text-decoration: none;
+}
+
+.run-views > a:hover { background: var(--surface-2, var(--border)); }
+
+.run-details { border: 0; background: transparent; text-decoration: underline; cursor: pointer; }
+
+@media (max-width: 480px) {
+  .setup-page { padding: 16px 12px 20px; gap: 18px; }
+  .page-footer-bar .create-run { flex: 1 1 auto; width: auto; min-height: 44px; }
+  .page-footer-bar { gap: 6px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .footer-status { flex-basis: 100%; }
+  .footer-status.ready { display: none; }
 }
