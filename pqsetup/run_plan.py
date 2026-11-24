@@ -404,6 +404,7 @@ def _planned_input(
         name=name,
         stage_id=stage_id,
         stage_label=stage_label,
+        steps=setup.steps or 0,
         stage_index=stage_index,
         stage_count=stage_count,
         segment_index=segment_index,

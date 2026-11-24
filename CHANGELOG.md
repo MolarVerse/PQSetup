@@ -11,6 +11,10 @@
 PQSetup follows [Semantic Versioning](https://semver.org/). This file records
 user-visible changes.
 
+## [Unreleased]
+
+- Start local PQ simulations from the browser and open readable stage output in PQViewer or PQEnalyzer.
+
 ## [0.5.0] - 2026-11-23
 
 ### Added

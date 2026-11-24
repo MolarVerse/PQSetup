@@ -567,3 +567,31 @@ def test_exported_minimal_mm_package_runs_with_real_pq(
     assert "PQ ended normally" in (
         bundle_directory / "run-logs" / "run-01.log"
     ).read_text()
+
+
+def test_managed_mm_run_reports_progress_and_outputs(tmp_path: Path) -> None:
+    from time import monotonic, sleep
+
+    executable = _real_pq_executable()
+    if executable is None:
+        pytest.skip("Set PQ_REAL_EXECUTABLE to run the real PQ MM smoke test.")
+    payload = _export_payload("off", generated_cell=True)
+    setup = payload["setup"]
+    assert isinstance(setup, dict)
+    setup.update(coulomb_cutoff_angstrom=1.4, steps=12)
+    payload["sampling_run_count"] = 2
+
+    with TestClient(create_app(pq_executable=str(executable), run_directory=tmp_path)) as client:
+        response = client.post("/api/run/start", json=payload)
+        assert response.status_code == 202, response.text
+        deadline = monotonic() + 30
+        progress = response.json()
+        while progress["state"] == "running" and monotonic() < deadline:
+            sleep(0.2)
+            progress = client.get("/api/run/managed").json()
+        assert progress["state"] == "completed", (
+            next(tmp_path.glob("*/.pqsetup/launcher.log")).read_text()
+        )
+        assert (progress["steps"], progress["target"], progress["total"]) == (24, 24, 2)
+        assert len(progress["outputs"]) == 2
+        assert all(item["viewer"] and item["enalyzer"] for item in progress["outputs"])

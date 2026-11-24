@@ -112,3 +112,20 @@ simulation:
 ``pqsetup validate`` requires PQSetup on that machine. The packaged ``run.sh``
 only requires Bash, PQ, the selected calculator and its runtime dependencies.
 Use the launcher directly or call it from the site's scheduler script.
+
+Start from PQSetup
+------------------
+
+To run PQ on the same computer as your browser, enable the local launcher:
+
+.. code-block:: bash
+
+   pqsetup serve --run-directory ./runs
+
+Choose **Start simulation** instead of **Package**. Each attempt uses a
+new directory under `runs`. Keep the server running to see live progress.
+The launcher log is in `.pqsetup/launcher.log` in the run directory.
+Companion apps must be installed and on the server's PATH. Once output is
+readable, open a stage in PQViewer or PQEnalyzer. The latter needs a
+version with `--run-progress` support. This launch mode is not available
+through a reverse proxy.

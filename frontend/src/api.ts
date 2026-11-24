@@ -103,7 +103,7 @@ export async function renderPlan(
   );
 }
 
-export async function exportProject(
+export async function submitProject(
   setup: SimulationSetup,
   structure: Structure,
   projectName: string,
@@ -111,8 +111,9 @@ export async function exportProject(
   equilibration: EquilibrationStage | null,
   samplingRunCount: number,
   setupFiles: SetupFile[],
-): Promise<Blob> {
-  const response = await fetch("/api/project/export", {
+  start = false,
+): Promise<Response> {
+  const response = await fetch(start ? "/api/run/start" : "/api/project/export", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -130,8 +131,12 @@ export async function exportProject(
       | { detail?: unknown }
       | null;
     throw new Error(
-      errorDetail(payload?.detail, `Export failed (${response.status})`),
+      errorDetail(payload?.detail, `${start ? "Start failed" : "Export failed"} (${response.status})`),
     );
   }
-  return response.blob();
+  return response;
+}
+
+export async function exportProject(...args: Parameters<typeof submitProject>): Promise<Blob> {
+  return (await submitProject(...args)).blob();
 }

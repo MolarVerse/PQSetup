@@ -191,7 +191,9 @@ def test_run_script_uses_the_manifest_execution_order(
     assert completed.returncode == 0, completed.stderr
     assert executed == execution_order
     assert "Completed 4 input files." in completed.stdout
+    assert (bundle_directory / "run-logs" / "progress.tsv").read_text().strip() == "1\tcompleted\t4\t4\t4\t0"
     assert sorted(path.name for path in (bundle_directory / "run-logs").iterdir()) == [
+        "progress.tsv",
         "run-01.log",
         "run-02.log",
         "run-03.log",
@@ -371,7 +373,9 @@ def test_retry_refuses_earlier_outputs_and_fresh_keeps_them(
         "water-01.en",
         "water-eq.en",
     ]
+    assert (kept / "run-logs" / "progress.tsv").read_text().strip() == "1\tfailed\t3\t2\t4\t23"
     assert sorted(path.name for path in (kept / "run-logs").iterdir()) == [
+        "progress.tsv",
         "run-01.log",
         "run-02.log",
         "run-eq.log",

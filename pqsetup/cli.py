@@ -79,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--no-browser", action="store_true")
     serve.add_argument("--watch-run", type=Path)
+    serve.add_argument("--run-directory", type=Path, help="Enable local simulation launch and save runs here.")
     serve.add_argument(
         "--log-level",
         dest="command_log_level",
@@ -259,6 +260,7 @@ def _serve(args: argparse.Namespace) -> int:
             logger=terminal.log,
             proxy_host=getattr(args, "proxy_host", None),
             watch_run=getattr(args, "watch_run", None),
+            run_directory=getattr(args, "run_directory", None),
         )
 
         class BrowserServer(uvicorn.Server):
