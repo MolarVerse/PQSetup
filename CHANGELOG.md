@@ -5,6 +5,8 @@ user-visible changes.
 
 ## [Unreleased]
 
+- Show the failed simulation stage and keep recent log output under Details.
+
 - Start local PQ simulations from the browser and open readable stage output in PQViewer or PQEnalyzer.
 
 ## [0.5.0] - 2026-11-23
