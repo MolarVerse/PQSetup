@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Show stage durations, total simulated time, and expected sampling frames in Review.
+- Show the first required fix at the top of Review and jump to the relevant setting.
 
 - Show compact status check symbols and one optional Details control.
 
