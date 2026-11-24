@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Show the first required fix at the top of Review and jump to the relevant setting.
+
+- Show compact status check symbols and one optional Details control.
+
+
 PQSetup follows [Semantic Versioning](https://semver.org/). This file records
 user-visible changes.
 

@@ -1391,6 +1391,16 @@ kbd {
   color: var(--danger);
 }
 
+.review-errors button {
+  min-height: 44px;
+}
+
+.review-check-list .review-more-blockers {
+  width: auto;
+  color: var(--muted);
+  text-decoration: underline;
+}
+
 .review-warnings button > svg:first-child {
   color: var(--warning);
 }
