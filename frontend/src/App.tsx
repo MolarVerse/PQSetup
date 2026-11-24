@@ -349,15 +349,17 @@ export default function App() {
   const externalQM = bootstrap?.pq.external_qm ?? null;
   const thermalEnsemble =
     setup.ensemble === "NVT" || setup.ensemble === "NPT";
-  // "3 × 1000 × 0.5 fs = 1.5 ps" — total sampled time across chained runs.
-  const samplingSpan = useMemo(() => {
-    const steps = setup.steps;
-    const dt = setup.timestep_fs;
-    if (steps == null || dt == null || steps <= 0 || dt <= 0) return undefined;
-    const totalFs = samplingRunCount * steps * dt;
-    const runs = samplingRunCount > 1 ? `${samplingRunCount} × ` : "";
-    return `${runs}${steps} × ${formatCompact(dt)} fs = ${formatDuration(totalFs)}`;
-  }, [samplingRunCount, setup.steps, setup.timestep_fs]);
+  const samplingTime =
+    setup.steps != null && setup.timestep_fs != null &&
+    setup.steps > 0 && setup.timestep_fs > 0
+      ? setup.steps * setup.timestep_fs
+      : null;
+  const equilibrationTime = equilibration?.enabled
+    ? equilibration.steps * equilibration.timestep_fs
+    : null;
+  const totalRunTime = samplingTime == null
+    ? null
+    : samplingRunCount * samplingTime + (equilibrationTime ?? 0);
   // Editing σ / seed never touches the structure above; Apply is the only
   // action that does, so until then the applied line just reports drift.
   const preparationStale =
@@ -2683,7 +2685,7 @@ export default function App() {
                   timestepWarning ? (
                     <span className="hint-warn">{timestepWarning}</span>
                   ) : (
-                    samplingSpan
+                    samplingTime == null ? undefined : formatDuration(samplingTime)
                   )
                 }
               >
@@ -2985,17 +2987,27 @@ export default function App() {
                         <dt>Method</dt>
                         <dd>{methodSummary}</dd>
                       </div>
+                      {equilibrationTime != null && (
+                        <div>
+                          <dt>Equilibration</dt>
+                          <dd>NVT · {formatDuration(equilibrationTime)}</dd>
+                        </div>
+                      )}
                       <div>
                         <dt>Sampling</dt>
                         <dd>
-                          {setup.ensemble} · {samplingSpan ?? "set steps and timestep"}
-                          {equilibration
-                            ? ` · NVT equilibration ${formatDuration(
-                                equilibration.steps * equilibration.timestep_fs,
-                              )} first`
-                            : ""}
+                          {setup.ensemble} · {samplingTime == null
+                            ? "Set steps and timestep"
+                            : formatDuration(samplingTime)}
+                          {samplingRunCount > 1 && ` per stage · ${samplingRunCount} stages`}
                         </dd>
                       </div>
+                      {totalRunTime != null && (
+                        <div>
+                          <dt>Total time</dt>
+                          <dd>{formatDuration(totalRunTime)} simulated</dd>
+                        </div>
+                      )}
                       <div>
                         <dt>Velocities</dt>
                         <dd>
@@ -3031,7 +3043,7 @@ export default function App() {
                             ? `Every ${outputFrequency} ${outputFrequency === 1 ? "step" : "steps"}`
                             : `Write frequency ${outputFrequency} is invalid`}
                           {outputFrameCount != null &&
-                            ` · ${outputFrameCount.toLocaleString()} frames per sampling input`}
+                            ` · ${(outputFrameCount * samplingRunCount).toLocaleString()} expected sampling frames`}
                         </dd>
                       </div>
                     </dl>
