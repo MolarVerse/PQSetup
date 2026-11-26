@@ -604,3 +604,31 @@ def test_doctor_reports_selected_pq_build_support_separately(capsys) -> None:
 
     output = capsys.readouterr().out
     assert "ASE · xTB      calculator ready · PQ build mismatch" in output
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_crystal_availability_matches_endpoint(monkeypatch, available) -> None:
+    def prepare(source, repeats, *, block):
+        assert Path(source).read_bytes() == b"data_test"
+        assert repeats == (2, 1, 1)
+        assert block == "test"
+        return "prepared"
+
+    def write(system, destination):
+        assert system == "prepared"
+        Path(destination).write_text("restart")
+
+    monkeypatch.setattr(
+        pqsetup.api, "_load_crystal_tools", lambda: (prepare, write) if available else None
+    )
+    client = TestClient(create_app())
+    assert client.get("/api/bootstrap").json()["can_prepare_crystal"] is available
+
+    response = client.post(
+        "/api/structure/crystal",
+        files={"file": ("test.cif", b"data_test")},
+        data={"repeat_a": 2, "block": "test"},
+    )
+    assert response.status_code == (200 if available else 503)
+    if available:
+        assert response.text == "restart"

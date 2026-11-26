@@ -99,6 +99,17 @@ the repeats along its three lattice vectors. For a multi-structure CIF,
 enter the data block name without the ``data_`` prefix. **Prepare and
 preview** opens the generated cell in 3D.
 
-The server needs a PQAnalysis build that includes crystal preparation.
+**Prepare crystal** appears only when the server can load the crystal
+converter from PQAnalysis. Ordinary CIF import works without it.
+Until the converter ships in a PQAnalysis release, use Python 3.12 or
+newer and install the verified development revision into the same
+environment as PQSetup:
+
+.. code-block:: console
+
+   python -m pip install "PQAnalysis @ git+https://github.com/MolarVerse/PQAnalysis.git@0cd3da186dd0ce1cde1aca3846323a702589066c"
+
+Restart PQSetup after installing it.
+
 The result is geometry only: no force field is assigned, and attached
 setup files are cleared. Check the cell and model before running.

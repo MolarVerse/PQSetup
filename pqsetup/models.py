@@ -316,6 +316,7 @@ class Bootstrap(BaseModel):
     presets: list[Preset]
     watching_run: bool = False
     can_start_run: bool = False
+    can_prepare_crystal: bool = False
 
 
 class PreparationMetadata(BaseModel):

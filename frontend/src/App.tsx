@@ -341,6 +341,7 @@ export default function App() {
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const crystalInput = useRef<HTMLInputElement>(null);
   const renderSequence = useRef(0);
   const uploadSequence = useRef(0);
   const perturbSequence = useRef(0);
@@ -2091,15 +2092,17 @@ export default function App() {
                       <Upload size={14} aria-hidden="true" />
                       Import
                     </button>
-                    <button type="button" className="structure-replace" aria-haspopup="dialog"
-                      onClick={() => {
-                        setCrystalFile(null);
-                        setCrystalError("");
-                        setModal("crystal");
-                      }}>
-                      <Boxes size={14} aria-hidden="true" />
-                      Prepare crystal
-                    </button>
+                    {bootstrap?.can_prepare_crystal && (
+                      <button type="button" className="structure-replace" aria-haspopup="dialog"
+                        onClick={() => {
+                          setCrystalFile(null);
+                          setCrystalError("");
+                          setModal("crystal");
+                        }}>
+                        <Boxes size={14} aria-hidden="true" />
+                        Prepare crystal
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="structure-replace"
@@ -3362,9 +3365,23 @@ export default function App() {
             setPreparingCrystal(false);
           }
         }}>
-          <Field label="CIF file" controlId="crystal-file">
-            <input type="file" accept=".cif" required disabled={preparingCrystal}
-              onChange={(event) => setCrystalFile(event.target.files?.[0] ?? null)} />
+          <input ref={crystalInput} type="file" accept=".cif" hidden disabled={preparingCrystal}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              if (file) {
+                setCrystalFile(file);
+                setCrystalError("");
+              }
+              event.currentTarget.value = "";
+            }} />
+          <Field label="CIF file" controlId="crystal-file"
+            info="Use an ordered CIF. This prepares geometry only; it does not assign a force field.">
+            <button type="button" className="structure-replace crystal-picker" disabled={preparingCrystal}
+              title={crystalFile?.name} onClick={() => crystalInput.current?.click()}>
+              <Upload size={14} aria-hidden="true" />
+              <span>{crystalFile?.name ?? "Select CIF"}</span>
+              {crystalFile && <small>Replace</small>}
+            </button>
           </Field>
           <div className="crystal-repeats">
             {["a", "b", "c"].map((axis, index) => (
@@ -3377,12 +3394,15 @@ export default function App() {
               </Field>
             ))}
           </div>
-          <Field label="CIF block (optional)" controlId="crystal-block">
-            <input value={crystalBlock} disabled={preparingCrystal}
+          <Field label="CIF block" controlId="crystal-block"
+            info="Only needed for a CIF with multiple structures. Enter the block name without the data_ prefix.">
+            <input value={crystalBlock} placeholder="Optional" disabled={preparingCrystal}
               onChange={(event) => setCrystalBlock(event.currentTarget.value)} />
           </Field>
-          <p>Geometry only. Preparing a new crystal clears attached setup files.</p>
-          {crystalError && <p role="alert">{crystalError}</p>}
+          {setupFiles.length > 0 && (
+            <p className="inline-warning">Preparing replaces the structure and clears attached files.</p>
+          )}
+          {crystalError && <p className="inline-warning" role="alert">{crystalError}</p>}
           <div className="pq-confirm-actions">
             <button type="submit" disabled={!crystalFile || preparingCrystal}>
               {preparingCrystal ? "Preparing…" : "Prepare and preview"}

@@ -73,6 +73,15 @@ _MAX_SETUP_FILE_BYTES = 100 * 1024 * 1024
 _TRUSTED_HOSTS = ["127.0.0.1", "localhost", "[::1]", "testserver"]
 
 
+def _load_crystal_tools():
+    try:
+        from PQAnalysis.io.crystal import prepare_crystal
+        from PQAnalysis.io.restart_file.api import write_restart_file
+    except ImportError:
+        return None
+    return prepare_crystal, write_restart_file
+
+
 def create_app(
     *,
     pq_executable: str | None = None,
@@ -122,6 +131,7 @@ def create_app(
     )
     app.state.pq = pq
     app.state.runners = runners
+    crystal_tools = _load_crystal_tools()
 
     @app.middleware("http")
     async def log_request(
@@ -198,6 +208,7 @@ def create_app(
             runners=runners,
             presets=list_presets(),
             watching_run=watch_run is not None,
+            can_prepare_crystal=crystal_tools is not None,
             can_start_run=managed is not None and pq.supports_validation("portable"),
         )
 
@@ -230,11 +241,9 @@ def create_app(
     ) -> Response:
         if Path(file.filename or "").suffix.lower() != ".cif":
             raise HTTPException(400, "Choose a CIF file.")
-        try:
-            from PQAnalysis.io.crystal import prepare_crystal
-            from PQAnalysis.io.restart_file.api import write_restart_file
-        except ImportError as error:
-            raise HTTPException(503, "Crystal preparation requires PQAnalysis with CIF support.") from error
+        if crystal_tools is None:
+            raise HTTPException(503, "Crystal preparation requires PQAnalysis with CIF support.")
+        prepare_crystal, write_restart_file = crystal_tools
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.cif"
             restart = Path(directory) / "supercell.rst"
