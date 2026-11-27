@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Prepare ordered CIF supercells with PQAnalysis and inspect the result in 3D.
+
 - Show stage durations, total simulated time, and expected sampling frames in Review.
 - Show the first required fix at the top of Review and jump to the relevant setting.
 

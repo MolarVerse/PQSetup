@@ -152,6 +152,7 @@ export interface Bootstrap {
   presets: Preset[];
   watching_run?: boolean;
   can_start_run?: boolean;
+  can_prepare_crystal?: boolean;
 }
 
 export interface SimulationSetup {

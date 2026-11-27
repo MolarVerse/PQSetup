@@ -90,3 +90,25 @@ Shortcuts
      - :kbd:`Ctrl+Enter` / :kbd:`Cmd+Enter`
    * - Close a dialog or search
      - :kbd:`Esc`
+
+Prepare a crystal
+-----------------
+
+Choose **Prepare crystal** in Structure, select an ordered CIF, and enter
+the repeats along its three lattice vectors. For a multi-structure CIF,
+enter the data block name without the ``data_`` prefix. **Prepare and
+preview** opens the generated cell in 3D.
+
+**Prepare crystal** appears only when the server can load the crystal
+converter from PQAnalysis. Ordinary CIF import works without it.
+Install PQAnalysis 1.10.0 or newer in the same environment as PQSetup
+(Python 3.12 or newer):
+
+.. code-block:: console
+
+   python -m pip install "PQAnalysis>=1.10.0"
+
+Restart PQSetup after installing it.
+
+The result is geometry only: no force field is assigned, and attached
+setup files are cleared. Check the cell and model before running.
