@@ -43,6 +43,7 @@ import {
 import {
   analyzeFile,
   prepareCrystal,
+  importAmber,
   submitProject,
   getBootstrap,
   perturbFile,
@@ -320,7 +321,7 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpPage, setHelpPage] = useState<HelpPage | null>(null);
   const [modal, setModal] = useState<
-    "structure" | "input" | "calculator" | "run" | "new-setup" | "crystal" | null
+    "structure" | "input" | "calculator" | "run" | "new-setup" | "crystal" | "import" | "amber" | null
   >(null);
   const [crystalFile, setCrystalFile] = useState<File | null>(null);
   const [crystalRepeats, setCrystalRepeats] = useState(["1", "1", "1"]);
@@ -340,6 +341,11 @@ export default function App() {
     message: string;
   } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [amberTopology, setAmberTopology] = useState<File | null>(null);
+  const [amberCoordinates, setAmberCoordinates] = useState<File | null>(null);
+  const [amberError, setAmberError] = useState("");
+  const amberTopologyInput = useRef<HTMLInputElement>(null);
+  const amberCoordinatesInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const crystalInput = useRef<HTMLInputElement>(null);
   const renderSequence = useRef(0);
@@ -1579,6 +1585,58 @@ export default function App() {
     if (files.length > 0) void importFiles(files);
   }
 
+  async function submitAmberImport() {
+    if (!amberTopology || !amberCoordinates || uploading) return;
+    if (!/\.(prmtop|parm7)$/i.test(amberTopology.name) ||
+        !/\.(inpcrd|rst7)$/i.test(amberCoordinates.name)) {
+      setAmberError("Select a .prmtop or .parm7 topology and an .inpcrd or .rst7 restart.");
+      return;
+    }
+    const sequence = ++uploadSequence.current;
+    setUploading(true);
+    setAmberError("");
+    try {
+      const result = await importAmber(amberTopology, amberCoordinates);
+      if (sequence !== uploadSequence.current) return;
+      perturbSequence.current += 1;
+      setPerturbing(false);
+      setAnalysis(result.analysis);
+      setOriginalAnalysis(result.analysis);
+      setSourceFile(new File([result.restart], "start.rst"));
+      setBaseStartFile("start.rst");
+      setJitter(false);
+      setPreparation(null);
+      setRestoreNote(null);
+      setSetupFiles(result.setup_files);
+      setSetup((existing) => result.setup_files.reduce<SimulationSetup>(
+        (current, file) => withSetupFileName(current, file.role, file.name),
+        {
+          ...existing,
+          job_type: "mm-md",
+          runner: null,
+          runner_script: null,
+          start_file: "start.rst",
+          mm_force_field: "on",
+          density_g_cm3: null,
+          coulomb_cutoff_angstrom: result.cutoff,
+          guff_file: null,
+          mshake_file: null,
+          dftb_template_file: null,
+          turbomole_define_template_file: null,
+          extra_settings: { ...INITIAL_SETUP.extra_settings, ...result.settings },
+        } satisfies SimulationSetup,
+      ));
+      setModal(null);
+      setNotice({ kind: "success", message: "AMBER system imported." });
+    } catch (error) {
+      if (sequence === uploadSequence.current) {
+        setAmberError(formatError(error));
+      }
+    } finally {
+      if (sequence === uploadSequence.current) setUploading(false);
+    }
+  }
+
   async function addSetupFile(role: SetupFileRole, file: File) {
     const content = await file.text();
     const packageName = packagedSetupFileName(role, file.name);
@@ -2085,33 +2143,11 @@ export default function App() {
                     <button
                       type="button"
                       className="structure-replace"
-                      aria-label="Import structure"
-                      title="Import · RST · XYZ · CIF · PDB · MOL · SDF · TRAJ · select companion files along, or drop them here"
-                      onClick={openFilePicker}
+                      aria-haspopup="dialog"
+                      onClick={() => setModal("import")}
                     >
                       <Upload size={14} aria-hidden="true" />
                       Import
-                    </button>
-                    {bootstrap?.can_prepare_crystal && (
-                      <button type="button" className="structure-replace" aria-haspopup="dialog"
-                        onClick={() => {
-                          setCrystalFile(null);
-                          setCrystalError("");
-                          setModal("crystal");
-                        }}>
-                        <Boxes size={14} aria-hidden="true" />
-                        Prepare crystal
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="structure-replace"
-                      aria-label="Import a run folder"
-                      title="Pick a folder: the structure and companion files (moldescriptor, guff, topology, …) are sorted by name"
-                      onClick={() => folderInput.current?.click()}
-                    >
-                      <FolderOpen size={14} aria-hidden="true" />
-                      Folder
                     </button>
                   </div>
                 </div>
@@ -3343,6 +3379,78 @@ export default function App() {
           </footer>
       </main>
 
+      <Modal open={modal === "import"} title="Import" onClose={() => setModal(null)}>
+        <div className="crystal-form">
+          <button type="button" className="structure-replace crystal-picker" onClick={() => {
+            setModal(null);
+            openFilePicker();
+          }}><Upload size={14} aria-hidden="true" /> Structure files</button>
+          <button type="button" className="structure-replace crystal-picker" onClick={() => {
+            setModal(null);
+            folderInput.current?.click();
+          }}><FolderOpen size={14} aria-hidden="true" /> Run folder</button>
+          {bootstrap?.can_prepare_crystal && (
+            <button type="button" className="structure-replace crystal-picker" onClick={() => {
+              setCrystalFile(null);
+              setCrystalError("");
+              setModal("crystal");
+            }}><Boxes size={14} aria-hidden="true" /> Prepare crystal (.cif)</button>
+          )}
+          {bootstrap?.can_import_amber && (
+            <button type="button" className="structure-replace crystal-picker" onClick={() => {
+              setAmberTopology(null);
+              setAmberCoordinates(null);
+              setAmberError("");
+              setModal("amber");
+            }}><Upload size={14} aria-hidden="true" /> AMBER system</button>
+          )}
+        </div>
+      </Modal>
+      <Modal open={modal === "amber"} title="Import AMBER" onClose={() => {
+        if (!uploading) setModal(null);
+      }}>
+        <form className="crystal-form" onSubmit={(event) => {
+          event.preventDefault();
+          void submitAmberImport();
+        }}>
+          {[
+            { id: "amber-topology", label: "Topology (.prmtop, .parm7)", select: "Select topology",
+              accept: ".prmtop,.parm7", file: amberTopology, input: amberTopologyInput, setFile: setAmberTopology },
+            { id: "amber-coordinates", label: "Coordinates (.inpcrd, .rst7)", select: "Select coordinates",
+              accept: ".inpcrd,.rst7", file: amberCoordinates, input: amberCoordinatesInput, setFile: setAmberCoordinates },
+          ].map(({ id, label, select, accept, file, input, setFile }) => (
+            <div key={id}>
+              <input ref={input} type="file" accept={accept} hidden disabled={uploading}
+                onChange={(event) => {
+                  const selected = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (selected) {
+                    setFile(selected);
+                    setAmberError("");
+                  }
+                }} />
+              <Field label={label} controlId={id}>
+              <button id={id} type="button" className="structure-replace crystal-picker"
+                title={file?.name} disabled={uploading} onClick={() => input.current?.click()}>
+                <Upload size={14} aria-hidden="true" />
+                <span>{file?.name ?? select}</span>
+                {file && <small>Replace</small>}
+              </button>
+              </Field>
+            </div>
+          ))}
+          {setupFiles.length > 0 && (
+            <p className="inline-warning">Importing replaces the structure and attached files.</p>
+          )}
+          {amberError && <p className="inline-warning" role="alert">{amberError}</p>}
+          <div className="pq-confirm-actions">
+            <button type="button" disabled={uploading} onClick={() => setModal(null)}>Cancel</button>
+            <button type="submit" disabled={!amberTopology || !amberCoordinates || uploading}>
+              {uploading ? "Importing…" : "Import AMBER"}
+            </button>
+          </div>
+        </form>
+      </Modal>
       <Modal open={modal === "crystal"} title="Prepare crystal" onClose={() => {
         if (!preparingCrystal) setModal(null);
       }}>
@@ -3374,7 +3482,7 @@ export default function App() {
               }
               event.currentTarget.value = "";
             }} />
-          <Field label="CIF file" controlId="crystal-file"
+          <Field label="Crystal file (.cif)" controlId="crystal-file"
             info="Use an ordered CIF. This prepares geometry only; it does not assign a force field.">
             <button type="button" className="structure-replace crystal-picker" disabled={preparingCrystal}
               title={crystalFile?.name} onClick={() => crystalInput.current?.click()}>

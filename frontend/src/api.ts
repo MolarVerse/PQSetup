@@ -77,6 +77,19 @@ export async function prepareCrystal(file: File, repeats: string[], block: strin
   return new File([await response.blob()], file.name.replace(/\.cif$/i, "-supercell.rst"));
 }
 
+export async function importAmber(topology: File, coordinates: File): Promise<{
+  analysis: StructureAnalysis;
+  setup_files: SetupFile[];
+  restart: string;
+  cutoff: number;
+  settings: SimulationSetup["extra_settings"];
+}> {
+  const body = new FormData();
+  body.append("topology", topology);
+  body.append("coordinates", coordinates);
+  return readJson(await fetch("/api/structure/amber", { method: "POST", body }));
+}
+
 export async function perturbFile(
   file: File,
   sigma: number,
