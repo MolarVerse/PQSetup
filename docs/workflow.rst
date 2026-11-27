@@ -101,13 +101,12 @@ preview** opens the generated cell in 3D.
 
 **Prepare crystal** appears only when the server can load the crystal
 converter from PQAnalysis. Ordinary CIF import works without it.
-Until the converter ships in a PQAnalysis release, use Python 3.12 or
-newer and install the verified development revision into the same
-environment as PQSetup:
+Install PQAnalysis 1.10.0 or newer in the same environment as PQSetup
+(Python 3.12 or newer):
 
 .. code-block:: console
 
-   python -m pip install "PQAnalysis @ git+https://github.com/MolarVerse/PQAnalysis.git@0cd3da186dd0ce1cde1aca3846323a702589066c"
+   python -m pip install "PQAnalysis>=1.10.0"
 
 Restart PQSetup after installing it.
 
