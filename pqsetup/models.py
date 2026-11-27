@@ -315,6 +315,7 @@ class Bootstrap(BaseModel):
     runners: list[RunnerStatus]
     presets: list[Preset]
     watching_run: bool = False
+    can_import_amber: bool = False
     can_start_run: bool = False
     can_prepare_crystal: bool = False
 

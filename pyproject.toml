@@ -41,6 +41,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+amber = ["PQAnalysis[ff]>=1.10.0"]
 docs = [
   "furo>=2024.8.6,<2027",
   "sphinx>=8,<9",

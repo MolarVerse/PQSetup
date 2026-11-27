@@ -16,9 +16,11 @@ from typing import Literal
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
+from .amber import AmberImport, amber_available, import_amber
 from .companions import (
     SEEDABLE_ROLES,
     discover_slakos_3ob,
@@ -207,6 +209,7 @@ def create_app(
             pq=pq,
             runners=runners,
             presets=list_presets(),
+            can_import_amber=amber_available(),
             watching_run=watch_run is not None,
             can_prepare_crystal=crystal_tools is not None,
             can_start_run=managed is not None and pq.supports_validation("portable"),
@@ -259,6 +262,24 @@ def create_app(
             except (ValueError, AssertionError, IndexError, KeyError) as error:
                 raise HTTPException(400, str(error) or "Invalid CIF geometry.") from error
             return Response(restart.read_bytes(), media_type="text/plain")
+
+    @app.post("/api/structure/amber", response_model=AmberImport)
+    async def import_amber_pair(
+        topology: UploadFile = File(...),
+        coordinates: UploadFile = File(...),
+    ) -> AmberImport:
+        if not amber_available():
+            raise HTTPException(status_code=503, detail="AMBER import requires the PQSetup amber extra.")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            topology_file = root / "system.prmtop"
+            coordinates_file = root / "system.inpcrd"
+            topology_file.write_bytes(await _read_structure(topology))
+            coordinates_file.write_bytes(await _read_structure(coordinates))
+            try:
+                return await run_in_threadpool(import_amber, topology_file, coordinates_file, root)
+            except ValueError as error:
+                raise HTTPException(status_code=400, detail=str(error)) from error
 
     @app.post(
         "/api/structure/perturb",

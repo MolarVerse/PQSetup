@@ -15,6 +15,8 @@ user-visible changes.
 
 ## [Unreleased]
 
+- Import prepared AMBER topology and restart files as a classical PQ setup.
+
 - Show the failed simulation stage and keep recent log output under Details.
 
 - Start local PQ simulations from the browser and open readable stage output in PQViewer or PQEnalyzer.

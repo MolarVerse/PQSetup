@@ -151,6 +151,7 @@ export interface Bootstrap {
   runners: RunnerStatus[];
   presets: Preset[];
   watching_run?: boolean;
+  can_import_amber?: boolean;
   can_start_run?: boolean;
   can_prepare_crystal?: boolean;
 }
