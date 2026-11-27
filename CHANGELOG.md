@@ -1,24 +1,16 @@
 # Changelog
 
-## Unreleased
-
-- Prepare ordered CIF supercells with PQAnalysis and inspect the result in 3D.
-
-- Show stage durations, total simulated time, and expected sampling frames in Review.
-- Show the first required fix at the top of Review and jump to the relevant setting.
-
-- Show compact status check symbols and one optional Details control.
-
-
 PQSetup follows [Semantic Versioning](https://semver.org/). This file records
 user-visible changes.
 
-## [Unreleased]
+## [0.6.0] - 2026-11-27
 
+- Prepare ordered CIF supercells with PQAnalysis and inspect the result in 3D.
+- Show stage durations, total simulated time, and expected sampling frames in Review.
+- Show the first required fix at the top of Review and jump to the relevant setting.
+- Show compact status check symbols and one optional Details control.
 - Import prepared AMBER topology and restart files as a classical PQ setup.
-
 - Show the failed simulation stage and keep recent log output under Details.
-
 - Start local PQ simulations from the browser and open readable stage output in PQViewer or PQEnalyzer.
 
 ## [0.5.0] - 2026-11-23
